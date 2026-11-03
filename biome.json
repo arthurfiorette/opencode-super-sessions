@@ -1,0 +1,29 @@
+{
+  "$schema": "https://biomejs.dev/schemas/latest/schema.json",
+  "extends": ["@arthurfiorette/biomejs-config"],
+  "assist": {
+    "actions": {
+      "source": {
+        "useSortedPackageJson": "on"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "bracketSpacing": true
+    }
+  },
+  "yaml": {
+    "formatter": {
+      "quoteStyle": "single"
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["pnpm-lock.yaml"],
+      "formatter": {
+        "enabled": false
+      }
+    }
+  ]
+}

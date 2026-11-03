@@ -1,0 +1,13 @@
+node_modules
+.env
+.env.*
+!.env.example
+dist
+test-results
+coverage
+*.log
+.opencode
+.wrangler
+.DS_Store
+.serena
+docs/tmp

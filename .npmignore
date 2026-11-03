@@ -1,0 +1,11 @@
+# whitelist approach
+
+*
+
+!LICENSE
+!README.md
+!dist/
+!dist/**
+!index.js
+!tui.js
+!rpc.js
