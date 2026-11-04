@@ -31,19 +31,19 @@ SDK native parser addons may require Python and a C/C++ build toolchain. Their b
 
 ## Tests
 
-| Layer       | Files                       | Runner       | Covers                                                                                                                                                                                                                                |
-| ----------- | --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit        | `test/unit`                 | `tsx --test` | Pure logic: detection, ref parsing, Done, caches, `gh` and `glab` output from captured fixtures (`test/fixtures/github`, `test/fixtures/gitlab`), cleanup decisions, the version guard                                                |
-| Integration | `test/integration`          | `tsx --test` | The built plugin in an `@opencode/sdk` host run from `test/fixtures` in a child process with a throwaway home: RPC per Location, links, detection against `test/fixtures/fake-gh.mjs`, and cleanup on a real temporary git repository |
-| Contract    | `test/contract`             | `tsx --test` | The host assumptions listed under [Compatibility](#compatibility), against a real host and, in `tui.test.ts`, the real TUI                                                                                                            |
-| Native TUI  | `test/tui`                  | `bun test`   | The compiled browser, settings dialog and sidebar mounted with OpenTUI's `testRender`, including the cold lazy load                                                                                                                   |
-| Package     | `scripts/check-package.mjs` | Node         | `npm pack`, an install into a temporary directory, the `.`, `./tui` and `./rpc` exports, and `Host.resolve` finding all three                                                                                                         |
+| Layer       | Files                       | Runner       | Covers                                                                                                                                                                                                                                           |
+| ----------- | --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unit        | `test/unit`                 | `tsx --test` | Detection, ref parsing, Done, caches, `gh` and `glab` output from captured fixtures (`test/fixtures/github`, `test/fixtures/gitlab`), the forge host list, the write queue, cleanup decisions, the URL opener's scheme filter, the version guard |
+| Integration | `test/integration`          | `tsx --test` | The built plugin in an `@opencode/sdk` host run from `test/fixtures` in a child process with a throwaway home: RPC per Location, links, detection against `test/fixtures/fake-gh.mjs`, and cleanup on a real temporary git repository            |
+| Contract    | `test/contract`             | `tsx --test` | The host assumptions listed under [Compatibility](#compatibility), against a real host and, in `tui.test.ts`, the real TUI                                                                                                                       |
+| Native TUI  | `test/tui`                  | `bun test`   | The compiled browser, settings dialog and sidebar mounted with OpenTUI's `testRender`, including the cold lazy load                                                                                                                              |
+| Package     | `scripts/check-package.mjs` | Node         | `npm pack`, an install into a temporary directory, the `.`, `./tui` and `./rpc` exports, and `Host.resolve` finding all three                                                                                                                    |
 
 The contract tests in `test/contract/server.test.ts` run against an in-process host from `@opencode/sdk` with a scripted OpenAI-compatible model on loopback (`test/contract/harness.ts`), so the real agent loop, tool registry and title agent run without a model provider or network. The harness replaces the environment before the SDK loads, so nothing touches the developer's OpenCode config, credentials or sessions.
 
 `test/contract/tui.test.ts` is the smoke test. It starts `opencode --standalone` (`OPENCODE_BIN`, else the `opencode` on `PATH`) headless through OpenCode's Drive harness (`OPENCODE_DRIVE` with `OPENCODE_DRIVE_RENDERER=headless`) and drives one launch through `<leader>l`, a peek with `space`, `down`, `up` and `esc`, a rename with `ctrl+r` and the palette with `ctrl+p`. Drive is the host's own test harness, not a plugin API; when only the smoke test fails on a new release, check whether Drive changed first.
 
-CI (`.github/workflows/ci.yml`) runs `pnpm check` on Linux, Windows and macOS. It installs `@opencode/cli` at the version of the pinned `@opencode/sdk` under the runner's temp directory and exports `OPENCODE_BIN`.
+CI (`.github/workflows/ci.yml`) runs `pnpm check` on Linux, Windows and macOS. It installs `@opencode/cli` at the version of the pinned `@opencode/sdk` under the runner's temp directory and exports `OPENCODE_BIN`. The publish workflow (`.github/workflows/publish.yml`) installs it the same way before its own `pnpm check`.
 
 ## Architecture
 
@@ -55,7 +55,7 @@ Each Location registers its own tools, shell hook, `context` hook for the agent 
 
 ### Metadata and the write queue
 
-Links live in session metadata under `super-sessions` (`src/refs/ref.ts`), as `{ v: 1, links, dismissed, done?, doneAt? }`. `done` is the user's Done mark from `done.set`, and `doneAt` is when it was set to `true`, which auto-archive counts days from. The server plugin's `session.update({ metadata })` replaces the whole object, so every write goes through `src/server/queue.ts`: a per-session promise chain that reads the session, applies a pure mutation from `src/refs/store.ts` and writes only when it changed. Tools, the shell hook, events and RPC all share it, across Locations.
+Links live in session metadata under `super-sessions` (`src/refs/ref.ts`), as `{ v: 1, links, dismissed, done?, doneAt? }`. `done` is the user's Done mark from `done.set`, and `doneAt` is when it was set to `true`, which auto-archive counts days from. The server plugin's `session.update({ metadata })` replaces the whole object, so every write goes through `src/server/queue.ts`: a per-session promise chain that reads the session, applies a pure mutation from `src/refs/store.ts` and writes only when it changed. Tools, the shell hook, events and RPC all share it, across Locations. A stored value that does not parse, such as one a newer plugin version wrote, is never replaced: the write rejects and the daemon log names the session.
 
 `mergeLinks` dedupes by `refKey`, keeps the earliest `linkedAt`, and only moves a link up the source ladder (`agent`, `created` and `manual` above `prompt`, above `closes`, above `mention`). Only `agent` and `manual` links lift a dismissal. `dismissLink` also drops the `closes` links derived from a dismissed pull request.
 
@@ -70,7 +70,9 @@ Links live in session metadata under `super-sessions` (`src/refs/ref.ts`), as `{
 - `session.shell.ended`: `!` commands, which never reach the tool hook;
 - `execute.after` of the `shell` tool, registered per Location: commands the agent ran.
 
-Create detection (`src/refs/detect.ts`) is ported from t3code's `PullRequestSyncReactor`. It unwraps `sh -c` scripts, ignores heredoc bodies, quoted strings and comments, counts only create commands at a command start, skips scripts that also list refs, skips URLs whose number the rest of the script names, takes only URLs alone on an output line, and takes none when there are more URLs than create commands. Every candidate goes through the forge before it is linked. A merge or close command forces a refresh of the session's refs.
+Create detection (`src/refs/detect.ts`) is ported from t3code's `PullRequestSyncReactor`. It unwraps `sh -c` scripts, ignores heredoc bodies, quoted strings and comments, counts only create commands at a command start, skips scripts that also list refs, skips URLs whose number the rest of the script names, takes only URLs alone on an output line, and takes none when there are more URLs than create commands. Every candidate goes through the forge before it is linked. A bare number from a prompt is linked only when the forge found it; a URL or typed reference of known kind is also linked while the forge cannot answer. A merge or close command forces a refresh of the session's refs.
+
+A URL in a prompt, a reply or command output can name any host with a `github` or `gitlab` label, and the forge CLI would send the user's login there. So forges are asked only about the hosts in `runtime.hosts` (`src/server/hosts.ts`): each forge's `defaultHost`, the `gitlab.hosts` option, and the host of every remote the repository resolver recognized in a session's directory. A candidate on another host resolves without a call as unverified, with the reason `unknown-host`; its link is kept, and its state stays unknown.
 
 `session.deleted` and `session.execution.succeeded`, `failed` and `interrupted` also go to the sweeper (see [Auto-archive and cleanup](#auto-archive-and-cleanup)).
 
@@ -88,7 +90,7 @@ Concurrent requests for one key share a fetch. A rate limit sets `retryAt`, whic
 
 ### Child processes
 
-`src/process.ts` runs every child without a shell, from the home directory (Windows resolves bare names in the working directory first), with the environment `src/environment.ts` allows, a timeout, an 8 MiB cap per stream, and SIGKILL 2 seconds after SIGTERM. It always resolves, so callers classify results instead of catching.
+`src/process.ts` runs every child without a shell, from the home directory (Windows resolves bare names in the working directory first), with the environment `src/environment.ts` allows (`GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` only for a `gh` call to a host other than github.com), a timeout, an 8 MiB cap per stream, and SIGKILL 2 seconds after SIGTERM. It always resolves, so callers classify results instead of catching.
 
 | Runner | Timeout                                | Concurrency            | Notes                                                                                                                                   |
 | ------ | -------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -142,29 +144,29 @@ A crash in the browser's render or key actions closes it and opens the built-in 
 
 The dialog rows are in `src/settings/definitions.ts`. TUI settings live in `context.storage.store('settings')` (`src/settings/store.ts`), read reactively, so a change applies at once in every TUI. Server settings go over the `settings.get` and `settings.set` RPC methods to `src/server/settings.ts`, which persists them under the `settings` key of the server plugin's storage and notifies the runtime; `runtime.options` applies them, and a provider change rebuilds the forges. In both stores the plugin options are the defaults, overrides equal to a default are dropped, and each stored key is parsed on its own, so a schema change loses only that key.
 
-| RPC method                                           | Purpose                                                  |
-| ---------------------------------------------------- | -------------------------------------------------------- |
-| `status`                                             | `gh` and `glab` availability on each forge's public host |
-| `refs`, `refresh`                                    | Links, branch refs and states per session                |
-| `search`                                             | Ranked hits for a query, scope and archived flag         |
-| `link`, `unlink`                                     | Manual link and dismissal                                |
-| `done.set`                                           | The user's Done mark, or `null` to follow the refs again |
-| `settings.get`, `settings.set`                       | Server settings                                          |
-| `presence`                                           | A TUI's pins and open sessions                           |
-| `archive.claim`, `archive.report`, `archive.exclude` | Auto-archive hand-off and undo                           |
-| `cleanup.plan`, `cleanup.run`                        | Dry run and confirmed removal                            |
+| RPC method                                           | Purpose                                                   |
+| ---------------------------------------------------- | --------------------------------------------------------- |
+| `status`                                             | CLI availability of each enabled forge on its public host |
+| `refs`, `refresh`                                    | Links, branch refs and states per session                 |
+| `search`                                             | Ranked hits for a query, scope and archived flag          |
+| `link`, `unlink`                                     | Manual link and dismissal                                 |
+| `done.set`                                           | The user's Done mark, or `null` to follow the refs again  |
+| `settings.get`, `settings.set`                       | Server settings                                           |
+| `presence`                                           | A TUI's pins and open sessions                            |
+| `archive.claim`, `archive.report`, `archive.exclude` | Auto-archive hand-off, and sessions the user restored     |
+| `cleanup.plan`, `cleanup.run`                        | Dry run and confirmed removal                             |
 
 Events: `archive.due`, `cleanup.confirm` and `cleanup.removed`.
 
 ### Auto-archive and cleanup
 
-`src/server/sweep.ts` runs one sweep at a time on the first live Location: 5 seconds after start, every 10 minutes, and 5 seconds after `session.deleted`, `session.execution.succeeded`, `failed` or `interrupted`, or a cached ref turning merged. The dry run and "Run cleanup now" queue behind it, so two removals never race.
+`src/server/sweep.ts` keeps one sweeper per daemon on the runtime, not in module state: a plugin loaded from a local path is one module per Location, and a sweeper per module would sweep and remove in parallel. It runs one sweep at a time on the first live Location: 5 seconds after start, every 10 minutes, and 5 seconds after `session.deleted`, `session.execution.succeeded`, `failed` or `interrupted`, or a cached ref turning merged. The dry run and "Run cleanup now" queue behind it, so two removals never race.
 
-A sweep lists every session, works out roots and running families, lists each project's worktrees through `context.worktree.list` (projects from sessions, live Locations and the last sweep), and assigns each top-level session to the deepest worktree containing its resolved directory. Sessions a decision needs get a waited ref refresh in batches of 50, and Done candidates a check for a waiting permission or question and their last user message from `session.context`; a context that starts at a compaction without a user message after it counts as unknown and keeps the session out of Done.
+A sweep lists every session, works out roots and running families, lists each project's worktrees through `context.worktree.list` (projects from sessions, live Locations and the last sweep), and assigns each top-level session to the deepest worktree containing its resolved directory. Sessions a decision needs get a waited ref refresh in batches of 50, and Done candidates a check for a waiting permission or question and, without a Done mark, their last user message from `session.context`; a context that starts at a compaction without a user message after it counts as unknown and keeps the session out of Done.
 
-Auto-archive (`src/server/auto-archive.ts`) decides on the server, where ref states live, but archives in a TUI: the server plugin's `session.update` ignores `archived`, and plugins get no HTTP credentials. TUIs report pins and open sessions through `presence` every 5 minutes and on change, and the server forgets a TUI after 15 minutes. A sweep queues due sessions and emits `archive.due`; a TUI claims up to 50 under a 2 minute lease, checks pins, running state, permissions and questions again, archives over HTTP and reports back (`src/settings/maintenance.ts`). Undo restores the sessions and adds them to the `archive-excluded` list (at most 5000).
+Auto-archive (`src/server/auto-archive.ts`) decides on the server, where ref states live, but archives in a TUI: the server plugin's `session.update` ignores `archived`, and plugins get no HTTP credentials. TUIs report pins and open sessions through `presence` every 5 minutes and on change, and the server forgets a TUI after 15 minutes. A sweep queues due sessions and emits `archive.due`; a TUI claims up to 50 under a 2 minute lease, checks pins, running state, permissions and questions again, archives over HTTP and reports back (`src/settings/maintenance.ts`). Every restore (undo, `ctrl+s` in the Archived view, `/unarchive`) calls `archive.exclude` through `excludeFromAutoArchive`, which adds the sessions to the `archive-excluded` list (at most 5000) so the next sweep does not archive them again.
 
-Cleanup (`src/server/cleanup.ts`) gathers facts per worktree and calls `decideWorktree`, a pure function. Keep reasons come first: the main checkout, a running, waiting, open or pinned session, unreadable `git status`, then local changes under the keep mode. Then the rules, in order: deleted, merged, Done, inactive, unchanged. Unknown facts always keep. The merged rule needs the tracked pull requests merged and HEAD contained in the default branch, or, for squash and rebase merges, HEAD at or behind a merged head commit (`headSha` from the forge) that exists locally. Until the user confirms once, a sweep emits `cleanup.confirm` and removes nothing; the TUI asks when no dialog or the browser holds the screen. The `cleanup` storage key keeps the confirmation, the worktree each session was last seen in (so a deletion maps to its worktree) and the projects with linked worktrees. Right before each removal `git status` is read again, and removal goes through `context.worktree.remove` with `force: false`.
+Cleanup (`src/server/cleanup.ts`) gathers facts per worktree and calls `decideWorktree`, a pure function. Keep reasons come first: the main checkout, a running, waiting, open or pinned session, unreadable `git status`, any modified, staged or untracked file (`has local changes`; `git worktree remove` without force refuses these anyway, and keeping them stops every sweep from retrying), then commits only the worktree reaches. OpenCode creates worktrees on a detached HEAD, so a commit the agent made without a branch is lost with the worktree: when HEAD has commits beyond the default branch, is not in it and is not at or behind a merged pull request's head, `for-each-ref --contains HEAD` over `refs/heads`, `refs/remotes` and `refs/tags` must find a ref, or the worktree is kept with `has commits no branch or tag contains` (`could not tell whether a branch holds its commits` when git cannot answer). Then the rules, in order: deleted, merged, Done, inactive, unchanged. The deleted rule needs no session left, the Done, inactive and unchanged rules at least one, and the merged, Done and unchanged rules every session archived or Done. Unknown facts always keep. The merged rule needs the tracked pull requests merged and HEAD contained in the default branch, or, for squash and rebase merges, HEAD at or behind a merged head commit (`headSha` from the forge) that exists locally. Until the user confirms once, a sweep emits `cleanup.confirm` and removes nothing; the TUI asks when no dialog or the browser holds the screen. The `cleanup` storage key keeps the confirmation, the worktree each session was last seen in (so a deletion maps to its worktree) and the projects with linked worktrees. Right before each removal `freshFacts` reads the worktree again: `session.list({ directory })` for sessions started there since the sweep, `session.get`, pending permissions and questions and fresh presence for each, and git status, commits and refs. `decideWorktree` runs again on those facts, a session the sweep did not see counts as not Done, and a failed read keeps the worktree. Removal goes through `context.worktree.remove` with `force: false`. The "Run cleanup now" dialog says, while cleanup is unconfirmed, that confirming also turns on automatic removal.
 
 ## Providers
 
@@ -189,13 +191,15 @@ To add a forge:
 
 The `@opencode/*` pins only fix the types and the tests. At runtime the plugin runs inside whatever `opencode` the user installed, so everything it assumes about the host lives in `src/host/*`, one file per area, each linking the host source it mirrors:
 
-- `keymap.ts`: command ids the takeover reuses, layer priorities, keymap modes.
-- `events.ts`: where prompt text, assistant text and `!` commands sit in events, and the index keys shared with the backfill.
+- `keymap.ts`: command ids the takeover reuses, the `dialog.select.*` ids the settings dialog registers, layer priorities, keymap modes.
+- `events.ts`: where prompt text, assistant text and `!` commands sit in events, the index keys shared with the backfill, and the last user message in a `session.context` that starts at the latest compaction.
 - `tool-hook.ts`: the shell tool's name and its `execute.after` payload.
-- `session-api.ts`: archiving and title regeneration over HTTP, the project scope of the list, the running test.
+- `session-api.ts`: archiving and title regeneration over HTTP, the project scope of the list, the running test, the unread rule.
 - `worktree.ts`: worktree listing and removal without force.
 - `files.ts`: paths of `cli.json`, the host's `session.json` and the plugin's data directory.
-- `theme.ts`: the dialog surface, the session view background and the markdown styles.
+- `theme.ts`: the dialog surface and backdrop, the session view background and the markdown styles.
+- `tui.ts`: the slot names (`app`, `session.composer.top`, `sidebar.content`) and the focused editor's text on the renderer.
+- `rpc.ts`: the `type` and `data` of an RPC error a handler returned.
 - `git.ts`: how the plugin runs git next to the agent.
 - `compat.ts`: `TESTED_UP_TO` and the untested-version check.
 
@@ -213,6 +217,8 @@ Each assumption and what checks it:
 - `session.list` filters and cursors: a contract test.
 - The worktree list marks the main checkout, and removal without force refuses local files: a contract test.
 - Every agent request carries the plugin's tracking instruction once: a contract test.
+- The RPC error shape: the configured-host integration fixture reads real `link` errors through `rpcError`.
+- The `sidebar.content` slot, the `dialog.select.*` ids, the dialog backdrop, the unread rule and the compaction rule: not checked against a host. A unit test covers the compaction rule on hand-written messages.
 - The `cli.json` and `session.json` locations: not checked against a host. They are host files the plugin only reads, with defaults when missing.
 - Markdown styles and theme surfaces: the typecheck and the native TUI tests on the latest packages in `compat.yml`.
 - `gh` and `glab` output: fixture unit tests. A real check needs credentials.

@@ -236,27 +236,26 @@ Neither changes anything on GitHub or GitLab. Every request to the model also ca
 
 Open the settings with `ctrl+o` in the browser, `/super-sessions settings`, or "Super Sessions settings" in the palette. The dialog has a search field. `up` and `down` select a row (your dialog keys), `left` and `right` change the value, and `enter` steps forward, runs an action or asks for a custom value.
 
-| Group         | Setting                              | Values, default first                                      | Meaning                                                                                     |
-| ------------- | ------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| List          | Default scope                        | this project, all projects                                 | Which sessions the browser lists. Changing it also drops an earlier `ctrl+a` choice         |
-|               | PR and issue line                    | on, off                                                    | Whether rows show the PR, status and issues lines                                           |
-|               | Title scrolling on hover             | follow animations, off, on                                 | Whether a cut title in the sidebar and preview Work rows scrolls while the mouse is over it |
-| Preview       | Preview pane                         | on, off                                                    | Whether the browser shows the preview                                                       |
-|               | Preview width                        | 40%; 30% to 60% in 5% steps                                | The preview's share of the browser width                                                    |
-| Archiving     | Close tab when archiving             | on, off                                                    | Whether archiving a session also closes its tab                                             |
-|               | Archive on title suffix              | off, `" !"`, custom                                        | Archives a session when you rename it to end with this text, and removes the text           |
-|               | Auto-archive Done sessions           | off, immediately, after 1, 3 or 7 days                     | See [Auto-archive](#auto-archive)                                                           |
-| Tracking      | Record mentioned refs                | on, off                                                    | Whether links in the assistant's replies are kept for search and the preview                |
-|               | Record refs from prompts             | on, off                                                    | Whether pull requests and issues in your prompts are tracked                                |
-|               | Providers                            | GitHub, GitLab, both                                       | Which forges are asked for state                                                            |
-| Cleanup       | Delete worktrees of deleted sessions | off, on                                                    | See [Worktree cleanup](#worktree-cleanup)                                                   |
-|               | Delete merged worktrees              | off, on                                                    |                                                                                             |
-|               | Delete inactive worktrees            | off, after 3, 7, 14 or 30 days                             |                                                                                             |
-|               | Delete worktrees of Done sessions    | off, immediately, after 1, 3 or 7 days                     |                                                                                             |
-|               | Delete unchanged worktrees           | off, on                                                    |                                                                                             |
-|               | Keep worktrees with local changes    | any local files, uncommitted changes, edited tracked files |                                                                                             |
-|               | Run cleanup now                      | action                                                     | Lists what the rules would remove and asks before removing anything                         |
-| Compatibility | Use on untested OpenCode versions    | off, on                                                    | See [Compatibility](#compatibility)                                                         |
+| Group         | Setting                              | Values, default first                  | Meaning                                                                                     |
+| ------------- | ------------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------- |
+| List          | Default scope                        | this project, all projects             | Which sessions the browser lists. Changing it also drops an earlier `ctrl+a` choice         |
+|               | PR and issue line                    | on, off                                | Whether rows show the PR, status and issues lines                                           |
+|               | Title scrolling on hover             | follow animations, off, on             | Whether a cut title in the sidebar and preview Work rows scrolls while the mouse is over it |
+| Preview       | Preview pane                         | on, off                                | Whether the browser shows the preview                                                       |
+|               | Preview width                        | 40%; 30% to 60% in 5% steps            | The preview's share of the browser width                                                    |
+| Archiving     | Close tab when archiving             | on, off                                | Whether archiving a session also closes its tab                                             |
+|               | Archive on title suffix              | off, `" !"`, custom                    | Archives a session when you rename it to end with this text, and removes the text           |
+|               | Auto-archive Done sessions           | off, immediately, after 1, 3 or 7 days | See [Auto-archive](#auto-archive)                                                           |
+| Tracking      | Record mentioned refs                | on, off                                | Whether links in the assistant's replies are kept for search and the preview                |
+|               | Record refs from prompts             | on, off                                | Whether pull requests and issues in your prompts are tracked                                |
+|               | Providers                            | GitHub, GitLab, both                   | Which forges are asked for state                                                            |
+| Cleanup       | Delete worktrees of deleted sessions | off, on                                | See [Worktree cleanup](#worktree-cleanup)                                                   |
+|               | Delete merged worktrees              | off, on                                |                                                                                             |
+|               | Delete inactive worktrees            | off, after 3, 7, 14 or 30 days         |                                                                                             |
+|               | Delete worktrees of Done sessions    | off, immediately, after 1, 3 or 7 days |                                                                                             |
+|               | Delete unchanged worktrees           | off, on                                |                                                                                             |
+|               | Run cleanup now                      | action                                 | Lists what the rules would remove and asks before removing anything                         |
+| Compatibility | Use on untested OpenCode versions    | off, on                                | See [Compatibility](#compatibility)                                                         |
 
 The plugin options are the defaults, so the first value above is the default only when you set no option. A value changed in the dialog overrides the option, and changing it back to the option's value removes the override. Every change applies at once, without a restart.
 
@@ -268,19 +267,19 @@ With "Auto-archive Done sessions" on, a Done session is archived that many days 
 
 The daemon checks 5 seconds after it starts, every 10 minutes, and shortly after a session finishes, a session is deleted or a tracked pull request merges. OpenCode does not let server plugins archive, so an open TUI does the archiving: nothing is archived while no terminal is open.
 
-A toast reports each batch. For 10 minutes after it, `/super-sessions undo` or "Undo auto-archive" in the palette restores those sessions and keeps them from being archived automatically again.
+A toast reports each batch. For 10 minutes after it, `/super-sessions undo` or "Undo auto-archive" in the palette restores those sessions. A session you restore, with undo, `ctrl+s` in the Archived view or `/unarchive`, is never archived automatically again.
 
 ## Worktree cleanup
 
 All cleanup rules are off by default. They only touch worktrees OpenCode itself lists for a project, never the project's main checkout. Removing a worktree deletes its directory, including ignored files such as `.env`. Branches and session history are kept.
 
-| Rule                                 | Removes a worktree when                                                                                          |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| Delete worktrees of deleted sessions | A session in it was deleted while the plugin was running, and no session uses it any more                        |
-| Delete merged worktrees              | A tracked pull request is merged, none is still open or a draft, and the branch holds nothing the merge left out |
-| Delete inactive worktrees            | Every session in it was last updated more than this many days ago                                                |
-| Delete worktrees of Done sessions    | Every session in it is archived or Done, and the Done ones became Done more than this many days ago              |
-| Delete unchanged worktrees           | Every session in it is archived or Done, and the branch has no commits beyond the default branch                 |
+| Rule                                 | Removes a worktree when                                                                                                                 |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Delete worktrees of deleted sessions | A session in it was deleted while the plugin was running, and no session uses it any more                                               |
+| Delete merged worktrees              | A tracked pull request is merged, none is still open or a draft, and the branch holds nothing the merge left out                        |
+| Delete inactive worktrees            | At least one session uses it, and every session in it was last updated more than this many days ago                                     |
+| Delete worktrees of Done sessions    | At least one session in it is Done, every session in it is archived or Done, and the Done ones became Done more than this many days ago |
+| Delete unchanged worktrees           | At least one session uses it, every session in it is archived or Done, and the branch has no commits beyond the default branch          |
 
 The merged, Done and unchanged rules wait until every session in the worktree is archived or Done. The inactive rule does not.
 
@@ -290,9 +289,10 @@ Whatever the rules say, a worktree is kept when:
 
 - a session in it is running, waits for a permission or a question, is open in a terminal or is pinned;
 - `git status` cannot be read in it, or a fact a rule needs is unknown;
-- it has local changes that "Keep worktrees with local changes" protects: edited, staged or untracked files with "any local files"; edited or staged files with "uncommitted changes"; edited tracked files only with "edited tracked files".
+- it has local changes: any modified, staged or untracked file. Ignored files such as `.env` do not count;
+- it has commits that no branch, remote branch or tag contains ("has commits no branch or tag contains"). OpenCode creates worktrees on a detached HEAD, so commits made there without creating a branch would be lost with the worktree. Commits already in the default branch or in a merged pull request do not count.
 
-Removal has no undo. The first time a rule would remove something, a terminal shows the list and asks. After you confirm once, the rules remove on their own and a toast reports each removal. "Run cleanup now" in the settings shows a dry run with each worktree, what would happen to it and why, and asks before removing. Right before each removal the plugin reads `git status` again, and it removes through OpenCode without force, so git itself refuses a worktree that gained modified or untracked files in between.
+Removal has no undo, and nothing is removed with force. The first time a rule would remove something, a terminal shows the list and asks. After you confirm once, the rules remove on their own and a toast reports each removal. "Run cleanup now" in the settings shows a dry run with each worktree, what would happen to it and why, and asks before removing; until you have confirmed once, it says that confirming also turns on automatic removal. Right before each removal the plugin checks the worktree again: its sessions, including any started there since, whether one runs, waits, is open or is pinned, and its git status and commits. If anything now keeps it, it stays.
 
 ## Commands
 
@@ -301,14 +301,14 @@ Removal has no undo. The first time a rule would remove something, a terminal sh
 | `/sessions`                | Switch session                   | Open or close the browser                                                                                          |
 | `/super-sessions`          | Open Super Sessions              | Open or close the browser, also on untested OpenCode versions                                                      |
 | `/super-sessions settings` | Super Sessions settings          | Open the settings                                                                                                  |
-| `/super-sessions status`   | Super Sessions status            | Show whether `gh` and `glab` are installed and logged in                                                           |
+| `/super-sessions status`   | Super Sessions status            | Show whether the CLI of each forge in "Providers" is installed and logged in                                       |
 | `/super-sessions undo`     | Undo auto-archive                | Restore the last auto-archived sessions                                                                            |
 | `/sessions-classic`        | Classic session list             | Open OpenCode's built-in session list                                                                              |
 | `/archive`                 | Archive session                  | Archive the session on screen                                                                                      |
 | `/unarchive`               | Restore archived session         | Restore the session on screen                                                                                      |
 | `/archive-marked`          | Archive sessions ending in "..." | Archive every session whose title ends with the suffix, after confirmation. Only with "Archive on title suffix" on |
 
-`/archive` and `/unarchive` act on the top-level session when a subagent's view is on screen. The status check asks about github.com and gitlab.com only.
+`/archive` and `/unarchive` act on the top-level session when a subagent's view is on screen. The status check asks only the forges in "Providers", on github.com and gitlab.com.
 
 ## Configuration reference
 
@@ -337,7 +337,6 @@ Options go in the plugin entry's `options`. Unknown options are rejected. With a
 | `cleanup.inactiveDays`    | Unset (off)     | Delete worktrees inactive for this many days, from `1` to `365`                            |
 | `cleanup.doneDays`        | Unset (off)     | Delete worktrees this many days after their sessions became Done, from `0` to `365`        |
 | `cleanup.unchanged`       | `false`         | Delete worktrees with no commits beyond the default branch                                 |
-| `cleanup.keep`            | `"any"`         | Local changes that keep a worktree: `"any"`, `"uncommitted"` or `"tracked"`                |
 | `colors.<state>`          | GitHub's colors | State color as `"#rrggbb"`, or `{ "dark": "#rrggbb", "light": "#rrggbb" }` per theme mode  |
 
 The options accept any number of days. The settings dialog steps through its own list, and a value from the options moves to the nearest listed value in the direction you press.
@@ -355,6 +354,8 @@ The states for `colors` are `open`, `draft`, `merged` and `closed` for pull requ
 
 GitHub covers github.com, `*.ghe.com` and hosts with a `github` label, such as `github.example.com`. GitLab covers gitlab.com, hosts with a `gitlab` label and the hosts in `gitlab.hosts`. Log in to a self-managed host with `gh auth login --hostname` or `glab auth login --hostname`.
 
+The plugin asks `gh` and `glab` only about github.com, gitlab.com, the hosts in `gitlab.hosts` and the hosts of the git remotes in your sessions' directories, so a link in a prompt or a reply cannot send your login to a host you do not work with. A pull request or issue on any other host is still linked, but shows no state, which keeps its session out of Done. `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` reach `gh` only for calls to a host other than github.com.
+
 ## Data locations
 
 | Data                                                                       | Location                                                                                           |
@@ -366,6 +367,8 @@ GitHub covers github.com, `*.ghe.com` and hosts with a `github` label, such as `
 | Pull request and issue state                                               | Daemon memory only                                                                                 |
 
 The plugin reads OpenCode's `cli.json` (for `animations` and the session view settings) and, once, the built-in list's pins in `$XDG_STATE_HOME/opencode/session.json`. It never writes either file.
+
+If a session's `super-sessions` value cannot be read, for example because a newer version of the plugin wrote it, the plugin leaves the value as it is and does not change that session's links. The daemon log names the session.
 
 ## Compatibility
 
@@ -381,7 +384,6 @@ If the browser fails, it closes and opens the built-in list. If the pull request
 - For a `!` command, detection reads the first 1 MiB of its output, which is all OpenCode passes to plugins.
 - GitLab instances served under a URL path prefix, such as `https://example.com/gitlab`, are not supported.
 - GitHub Enterprise Server hosts without a `github` label in their name are not recognized.
-- Cleanup removes without force, and git refuses to remove a worktree with modified, staged or untracked files. With "uncommitted changes" or "edited tracked files", cleanup may pick such a worktree, but git keeps it and cleanup reports that git refused.
 - Squash and rebase merges are cleaned up only when the pull request's head commit is in your local repository, for example because the branch was pushed from this clone.
 - Auto-archive and the first cleanup confirmation need an open terminal.
 

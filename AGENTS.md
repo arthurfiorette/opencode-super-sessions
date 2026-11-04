@@ -16,15 +16,16 @@ Standalone OpenCode V2 plugin. User docs live in `README.md`; architecture and r
 Changes must preserve these. `docs/README.md` explains the reasoning.
 
 - Never write OpenCode's database, `cli.json` or the host's `session.json`. The plugin writes only its own key in session metadata (`super-sessions`), its plugin storage and its data directory.
-- Every session metadata write goes through the write queue in `src/server/queue.ts`. `session.update({ metadata })` replaces the whole object, and other metadata keys must survive.
-- State shared across Locations lives on `globalThis[Symbol.for('opencode-super-sessions')]`. Exactly one process-wide event subscriber runs.
+- Every session metadata write goes through the write queue in `src/server/queue.ts`. `session.update({ metadata })` replaces the whole object, and other metadata keys must survive. A stored `super-sessions` value that does not parse is never overwritten.
+- State shared across Locations lives on `globalThis[Symbol.for('opencode-super-sessions')]`. Exactly one process-wide event subscriber and one sweeper run.
 - Only the server plugin runs `gh`, `glab` and `git`, through `src/process.ts`: no shell, the environment from `src/environment.ts`, a timeout, an output cap, and the home directory as working directory. The TUI only starts the OS URL opener in `src/browser.ts`, for http(s) URLs.
+- A forge is asked only about hosts in `src/server/hosts.ts`: its `defaultHost`, `gitlab.hosts` and hosts of recognized git remotes. GitHub Enterprise tokens reach `gh` only for a host other than github.com.
 - Detection never tracks refs from assistant text; those are mentions only. A bare `#N` is accepted only from user prompts, against the session's repository, after the forge confirms it.
 - A dismissed ref is never added back automatically. Only explicit `agent` and `manual` links lift a dismissal.
 - Snapshot refreshes never write session metadata; only link changes do.
 - A keymap `run` that may fall through stays synchronous and returns a literal `false`.
 - Archiving happens only through the TUI's HTTP client (`setArchived`), on a user action, the user's title suffix, or auto-archive the user turned on. Auto-archive never takes pinned, running or waiting sessions, or sessions the user restored from it.
-- Cleanup only removes worktrees `context.worktree.list` reports, never the main checkout, always with `force: false`, and never before the user confirmed once. Unknown facts keep a worktree, keep reasons beat every rule, and `git status` is read again right before each removal.
+- Cleanup only removes worktrees `context.worktree.list` reports, never the main checkout, always with `force: false`, and never before the user confirmed once. Unknown facts keep a worktree, keep reasons beat every rule, local changes and commits only the worktree reaches always keep, and the decision runs again on freshly read sessions and git state right before each removal.
 - On a host newer than `TESTED_UP_TO` by minor or major, the takeover and the peek keys stay off unless the user enables them. A browser crash falls back to the built-in list; a crash in the sidebar's Work rows hides those rows.
 - The TUI degrades without the server plugin, `gh` or `glab`: titles and archiving still work.
 
@@ -33,7 +34,7 @@ Changes must preserve these. `docs/README.md` explains the reasoning.
 - Run `pnpm check` before committing.
 - TUI changes need a native render test that mounts the page through OpenTUI under Bun, including cold lazy-loading. Never insert raw text nodes into box renderables.
 - Package tests must exercise the packed build.
-- Cleanup changes need a decision test for every rule and keep mode they touch; removal has no undo.
+- Cleanup changes need a decision test for every rule and keep reason they touch; removal has no undo.
 - No skipped placeholder tests or tests that duplicate implementation logic.
 
 ## Documentation
