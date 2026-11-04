@@ -10,7 +10,6 @@ export const PREVIEW_WIDTHS = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6] as const;
 
 export const tuiValuesSchema = z.strictObject({
   scope: z.enum(['project', 'all']),
-  branchLine: z.boolean(),
   refLine: z.boolean(),
   /** `auto` follows the host's `animations` setting. */
   titleScroll: z.enum(['auto', 'on', 'off']),
@@ -28,7 +27,6 @@ export type TuiValues = z.output<typeof tuiValuesSchema>;
 export function tuiDefaults(options: Options): TuiValues {
   return {
     scope: options.scope,
-    branchLine: options.rows.branch,
     refLine: options.rows.refs,
     titleScroll: options.titleScroll,
     previewPane: options.preview,
@@ -101,15 +99,6 @@ export const SETTINGS: readonly SettingRow[] = [
     values: ['project', 'all'],
     labels: ['this project', 'all projects'],
     keywords: ['projects', 'filter']
-  },
-  {
-    side: 'tui',
-    key: 'branchLine',
-    group: 'List',
-    title: 'Branch line',
-    description: 'Whether rows show the branch when it is not the default branch',
-    ...onOff,
-    keywords: ['git']
   },
   {
     side: 'tui',

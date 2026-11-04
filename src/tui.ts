@@ -39,10 +39,11 @@ export default Plugin.define({
       return;
     }
     const pins = createPins(context);
+    // Settings dialog, its stores, and the TUI half of auto-archive and cleanup. First, because
+    // the browser and the sidebar read the stores through `tuiSettingsFor`.
+    const settings = installSettings(context, options, pins);
     const browser = installBrowser(context, options, pins);
     const uninstallSidebar = installSidebar(context, options);
-    // Settings dialog, its stores, and the TUI half of auto-archive and cleanup.
-    const settings = installSettings(context, options, pins);
 
     // Must stay synchronous: the keymap only falls through to the built-in dialog when `run`
     // returns a literal `false`, and a Promise counts as handled.

@@ -16,7 +16,6 @@ export interface TuiSettings {
   set<Key extends keyof TuiValues>(key: Key, value: TuiValues[Key]): Promise<void>;
   /** Default browser scope. */
   scope(): TuiValues['scope'];
-  branchLine(): boolean;
   refLine(): boolean;
   /** Whether hovered titles scroll, given the host's `animations` value for `auto`. */
   titleScroll(animations: boolean): boolean;
@@ -36,9 +35,14 @@ interface Stored {
 // read the settings with an import instead of a new prop.
 const byContext = new WeakMap<Plugin.Context, TuiSettings>();
 
-/** The settings created for this plugin context, or undefined before setup created them. */
-export function tuiSettingsFor(context: Plugin.Context): TuiSettings | undefined {
-  return byContext.get(context);
+/**
+ * The settings created for this plugin context. `src/tui.ts` creates them before installing the
+ * browser and the sidebar, so a miss is a setup-order bug and throws.
+ */
+export function tuiSettingsFor(context: Plugin.Context): TuiSettings {
+  const settings = byContext.get(context);
+  if (settings === undefined) throw new Error('Super Sessions settings read before setup');
+  return settings;
 }
 
 /** Creates the TUI settings store on the plugin's durable storage. */
@@ -63,7 +67,6 @@ function buildTuiSettings(context: Plugin.Context, options: Options): TuiSetting
         else draft.values[key] = value;
       }),
     scope: () => values().scope,
-    branchLine: () => values().branchLine,
     refLine: () => values().refLine,
     titleScroll(animations) {
       const mode = values().titleScroll;

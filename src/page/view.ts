@@ -121,8 +121,9 @@ export default function SessionBrowser(props: PageProps) {
   const [deleting, setDeleting] = createSignal<string>();
   const [projectLabel, setProjectLabel] = createSignal('');
   const [projectID, setProjectID] = createSignal<string>();
-  const settings = useCliSettings();
-  const marquee = createMarquee({ animated: () => settings.animations });
+  const cli = useCliSettings();
+  const settings = tuiSettingsFor(context);
+  const marquee = createMarquee({ animated: () => settings.titleScroll(cli.animations) });
   let input: InputRenderable | undefined;
   let listBox: BoxRenderable | undefined;
   let panelBox: BoxRenderable | undefined;
@@ -144,14 +145,17 @@ export default function SessionBrowser(props: PageProps) {
     const fallback = view?.defaultBranch ?? vcs?.default;
     return current && current !== fallback ? current : undefined;
   };
+  // Empty with the "PR and issue line" setting off, which also drops the row's second line.
   const refsOf = (session: SessionInfo): Segment[] =>
-    refSegments({
-      options: props.options,
-      theme: theme(),
-      mode: context.themeMode,
-      refs: data.refs[session.id],
-      matched: reason(session)?.ref
-    });
+    settings.refLine()
+      ? refSegments({
+          options: props.options,
+          theme: theme(),
+          mode: context.themeMode,
+          refs: data.refs[session.id],
+          matched: reason(session)?.ref
+        })
+      : [];
   const lines = createMemo(() =>
     layoutLines(model.groups(), (session) => refsOf(session).length > 0)
   );
@@ -249,7 +253,7 @@ export default function SessionBrowser(props: PageProps) {
       refreshVisible();
     }, REFRESH_INTERVAL),
     setInterval(() => {
-      if (!untrack(() => settings.animations)) return;
+      if (!untrack(() => cli.animations)) return;
       if (untrack(() => rows().some((session) => model.running(session.id))))
         setFrame((value) => value + 1);
     }, 80)
@@ -301,7 +305,7 @@ export default function SessionBrowser(props: PageProps) {
       return;
     }
     controller.archived(session.id, archived, Date.now());
-    if (archived && props.options.closeTabOnArchive) context.ui.tabs.close(session.id);
+    if (archived && settings.closeTabOnArchive()) context.ui.tabs.close(session.id);
   };
   const rename = async () => {
     const session = selected();
@@ -378,7 +382,7 @@ export default function SessionBrowser(props: PageProps) {
       try {
         await client.session.update({ sessionID: session.id, archived: true });
         controller.archived(session.id, true, Date.now());
-        if (props.options.closeTabOnArchive) context.ui.tabs.close(session.id);
+        if (settings.closeTabOnArchive()) context.ui.tabs.close(session.id);
       } catch {
         failed++;
       }
@@ -490,6 +494,16 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Close',
       run: () => (focus() === 'work' ? focusList() : props.close())
     },
+    // The dialog opens above the overlay, and closing it gives the keys back to the browser.
+    // Not ctrl+,: the host splits binding strings on commas (registerCommaBindings in
+    // @opentui/keymap), so `ctrl+,` throws and `ctrl+comma` never matches the key event, and
+    // legacy terminals cannot send it anyway. The host's ctrl+o (`open.menu`) belongs to the
+    // session view, which is not active under the browser.
+    {
+      bind: 'ctrl+o',
+      title: 'Super Sessions settings',
+      run: () => context.keymap.dispatch('super-sessions.settings')
+    },
     {
       bind: 'tab',
       title: 'Next view',
@@ -506,12 +520,7 @@ export default function SessionBrowser(props: PageProps) {
     {
       bind: 'ctrl+a',
       title: 'Toggle all projects',
-      run: () =>
-        void model
-          .setPrefs((draft) => {
-            draft.allProjects = !draft.allProjects;
-          })
-          .catch(() => {})
+      run: () => void model.toggleScope().catch(() => {})
     },
     { bind: 'ctrl+s', title: 'Archive or restore', run: () => void archive() },
     { id: 'session.rename', title: 'Rename session', run: () => void rename() },
@@ -612,7 +621,7 @@ export default function SessionBrowser(props: PageProps) {
     }
     if (model.running(session.id)) {
       // The host's spinner stands still as `⋯` while animations are off.
-      const text = settings.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯';
+      const text = cli.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯';
       return { text, fg: theme().text.muted };
     }
     const info = live(session);
@@ -733,7 +742,7 @@ export default function SessionBrowser(props: PageProps) {
     return rows().length === 0 ? { text: EMPTY[memory.view], error: false } : undefined;
   });
 
-  const wide = () => panelWidth() >= PREVIEW_MIN_COLUMNS;
+  const wide = () => panelWidth() >= PREVIEW_MIN_COLUMNS && settings.previewPane();
   const span = (text: string | (() => string), fg: () => unknown, bold = false) =>
     jsx('span', {
       // Text nodes take colors and attributes only through `style`.
@@ -960,7 +969,7 @@ export default function SessionBrowser(props: PageProps) {
     flexShrink: 0,
     // Only while the list overflows: with nothing to scroll the slider is one solid column.
     get visible() {
-      return settings.session.scrollbar && lines().length > listHeight();
+      return cli.session.scrollbar && lines().length > listHeight();
     },
     ref: (value: BoxRenderable) => {
       slider = new SliderRenderable(context.renderer, {
@@ -986,7 +995,7 @@ export default function SessionBrowser(props: PageProps) {
    * The preview's share of the panel; the list column takes the rest. A fixed split, so the
    * columns stay put whatever sessions the list holds.
    */
-  const split = (): number => tuiSettingsFor(context)?.previewWidth() ?? props.options.previewWidth;
+  const split = (): number => settings.previewWidth();
   /** Cells of the preview column, its blank first cell included. */
   const previewWidth = () => Math.floor(panelWidth() * split());
   const pane = createComponent(Preview, {
@@ -1061,6 +1070,8 @@ export default function SessionBrowser(props: PageProps) {
       // Before the session actions: on narrow terminals the hints that do not fit are dropped,
       // and switching views is how the Done and Archived views are found at all.
       ['view', 'tab/shift+tab'],
+      // The only way to the settings from here, so it is not left for the widest terminals.
+      ['settings', 'ctrl+o'],
       ['rename', shortcut('session.rename', 'ctrl+r')],
       ['retitle', shortcut('super-sessions.retitle', 'ctrl+t')],
       [

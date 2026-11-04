@@ -17,6 +17,7 @@ import { useCliSettings } from '../cli-settings.js';
 import type { Options } from '../config.js';
 import { createMarquee } from '../marquee.js';
 import type { SessionRefView } from '../rpc.js';
+import { tuiSettingsFor } from '../settings/store.js';
 import { PreviewHeader, SPINNER } from './preview-header.js';
 import { Transcript } from './transcript.js';
 import { transcriptRows } from './transcript-model.js';
@@ -89,7 +90,8 @@ export function Preview(props: PreviewProps): JSX.Element {
     onCleanup(() => clearInterval(timer));
   });
   const spinner = () => (settings.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯');
-  const marquee = createMarquee({ animated: () => settings.animations });
+  const tui = tuiSettingsFor(context);
+  const marquee = createMarquee({ animated: () => tui.titleScroll(settings.animations) });
   // The hovered line may be replaced without a mouse-out when the pane follows another row, so
   // a scroll in progress stops here instead of carrying over to the next session's title.
   createEffect(on(shown, () => marquee.leave(marquee.active() ?? '')));

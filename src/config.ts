@@ -69,10 +69,8 @@ export const optionsSchema = z
     // Defaults for the settings dialog. A value changed in the dialog overrides these.
     /** Which sessions the browser lists when it opens. */
     scope: z.enum(['project', 'all']).default('project'),
-    /** Show the branch line and the PR and issue line on browser rows. */
-    rows: z
-      .strictObject({ branch: z.boolean().default(true), refs: z.boolean().default(true) })
-      .default({ branch: true, refs: true }),
+    /** Show the PR and issue line on browser rows. */
+    rows: z.strictObject({ refs: z.boolean().default(true) }).default({ refs: true }),
     /** Scroll a hovered title that does not fit. `auto` follows the host's `animations`. */
     titleScroll: z.enum(['auto', 'on', 'off']).default('auto'),
     /** Show the preview pane on wide terminals. */
@@ -110,7 +108,7 @@ export const optionsSchema = z
     closeTabOnArchive: true,
     previewWidth: 0.4,
     scope: 'project',
-    rows: { branch: true, refs: true },
+    rows: { refs: true },
     titleScroll: 'auto',
     preview: true,
     cleanup: { deletedSessions: false, merged: false, unchanged: false, keep: 'any' },
