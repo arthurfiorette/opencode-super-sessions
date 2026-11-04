@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { type Runner, run } from './process.js';
+import { createLimiter, type Runner, run } from './process.js';
 import type { ForgeDefinition, RepoRef } from './providers/provider.js';
 
 /** What the plugin knows about a session directory's git checkout. Every field is optional. */
@@ -35,6 +35,10 @@ const REMOTE_TTL_MS = 15 * 60_000;
 // Short: the agent switches branches inside sessions and the row should follow soon after.
 const BRANCH_TTL_MS = 10_000;
 const TIMEOUT_MS = 5000;
+// A `refs` call for every session in all projects resolves dozens of new directories at once,
+// and each spawn blocks the daemon's event loop for a moment. Unbounded, they pile into stalls
+// of a few hundred milliseconds that lag every client of the daemon.
+const MAX_CONCURRENT = 8;
 // No credential prompts, and no index refresh that could fight the agent's own git commands for
 // `index.lock`.
 const GIT_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
@@ -68,19 +72,20 @@ function memo<T>(ttl: number, load: (key: string) => Promise<T>): (key: string) 
 /**
  * Creates a resolver that reads the forge repository, default branch and current branch of a
  * directory with git. Remote data is cached 15 minutes per directory and branch data 10 seconds.
+ * At most {@link MAX_CONCURRENT} git processes run at once per resolver; the runtime holds one.
  */
 export function createRepoResolver(options: {
   definitions: ForgeDefinition[];
   git?: Runner;
 }): RepoResolver {
   const runner = options.git ?? run;
+  const limit = createLimiter(MAX_CONCURRENT);
 
   /** Runs git against `directory`; returns trimmed stdout on success. */
   const git = async (directory: string, args: string[]) => {
-    const result = await runner('git', ['-C', directory, ...args], {
-      timeoutMs: TIMEOUT_MS,
-      env: GIT_ENV
-    });
+    const result = await limit(() =>
+      runner('git', ['-C', directory, ...args], { timeoutMs: TIMEOUT_MS, env: GIT_ENV })
+    );
     return result.code === 0 ? result.stdout.trim() : undefined;
   };
 
