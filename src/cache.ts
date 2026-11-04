@@ -85,7 +85,7 @@ export function createSnapshotCache(options: { now?: () => number } = {}): Snaps
     const previous = entries.get(resolved)?.value;
     const expiresAt = value.retryAt ?? at + ERROR_TTL;
     // A transient failure keeps showing the last known state; only `not-found` replaces it,
-    // because the ref really is gone or no longer visible.
+    // because the ref is gone or no longer visible.
     const kept = previous && 'ref' in previous && value.reason !== 'not-found' ? previous : value;
     entries.set(resolved, {
       value: kept,

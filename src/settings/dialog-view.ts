@@ -18,7 +18,7 @@ import type { SettingsDialogProps } from './install.js';
 
 // Laid out like the host's Settings dialog (packages/tui/src/component/dialog-config.tsx on
 // ui/dialog-select.tsx, classic design): the host's dialog panel, a bold title with `esc`, the
-// search field, accent group headers, values right-aligned, `←/→` to change. The selected row's
+// search field, accent group headers, values right-aligned, `left/right` to change. The selected row's
 // description shows under the list, like the host's new-designs detail line.
 
 /** Side padding of the dialog layout (the host's DIALOG_INSET). */

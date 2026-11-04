@@ -80,7 +80,7 @@ const VIEW_LABELS: Record<PageView, string> = {
 };
 const EMPTY: Record<PageView, string> = {
   active: 'No sessions',
-  done: 'No done sessions',
+  done: 'No Done sessions',
   archived: 'No archived sessions'
 };
 // Header row layout, shared by the boxes and the measure that decides which pieces fit. The title
@@ -333,6 +333,7 @@ export default function SessionBrowser(props: PageProps) {
       draft.scroll = 0;
     });
 
+  /** Archives the selected session, or restores it when it is archived. */
   const archive = async () => {
     const session = selected();
     if (!session) return;
@@ -351,6 +352,7 @@ export default function SessionBrowser(props: PageProps) {
     controller.archived(session.id, archived, Date.now());
     if (archived && settings.closeTabOnArchive()) context.ui.tabs.close(session.id);
   };
+  /** Renames the selected session to the title the user enters. */
   const rename = async () => {
     const session = selected();
     if (!session) return;
@@ -365,6 +367,7 @@ export default function SessionBrowser(props: PageProps) {
       toast('Could not rename the session.', 'error');
     }
   };
+  /** Deletes the selected session on the second press; the first press marks the row. */
   const remove = async () => {
     const session = selected();
     if (!session) return;
@@ -380,6 +383,7 @@ export default function SessionBrowser(props: PageProps) {
       toast('Could not delete the session.', 'error');
     }
   };
+  /** Asks OpenCode to regenerate the selected session's title. */
   const retitle = async () => {
     const session = selected();
     if (!session) return;
@@ -390,6 +394,7 @@ export default function SessionBrowser(props: PageProps) {
       toast('Could not regenerate the title.', 'error');
     }
   };
+  /** Links the pull request or issue the user enters to the selected session. */
   const link = async () => {
     const session = selected();
     if (!session) return;
@@ -411,12 +416,13 @@ export default function SessionBrowser(props: PageProps) {
       toast(linkError(error), 'error');
     }
   };
+  /** Archives every Done session after the user confirms. */
   const archiveDone = async () => {
     const done = rowsOf(model.doneGroups());
     if (done.length === 0) return;
     const confirmed = await context.ui.dialog.confirm({
-      title: 'Archive done sessions?',
-      message: `Archive ${done.length} done ${done.length === 1 ? 'session' : 'sessions'}.`,
+      title: 'Archive Done sessions?',
+      message: `Archive ${done.length} Done ${done.length === 1 ? 'session' : 'sessions'}.`,
       label: { confirm: 'Archive' }
     });
     if (!confirmed) return;
@@ -444,7 +450,7 @@ export default function SessionBrowser(props: PageProps) {
       await model.rpc()['done.set']({ sessionID: session.id, done }, model.rpcOptions());
     } catch {
       toast(
-        done ? 'Could not mark the session done.' : 'Could not mark the session not done.',
+        done ? 'Could not mark the session Done.' : 'Could not mark the session not Done.',
         'error'
       );
       return;
@@ -522,7 +528,7 @@ export default function SessionBrowser(props: PageProps) {
   };
   /**
    * Every browser action with the key that runs it, in the order the keys dialog lists them.
-   * Actions that do nothing in the current state, such as archiving all done sessions outside
+   * Actions that do nothing in the current state, such as archiving all Done sessions outside
    * the Done view, are left out.
    */
   const keyActions = (): Array<{ title: string; key: string; run: () => unknown }> => {
@@ -536,7 +542,7 @@ export default function SessionBrowser(props: PageProps) {
         run: archive
       },
       {
-        title: current && doneNow(current) ? 'Mark not done' : 'Mark done',
+        title: current && doneNow(current) ? 'Mark not Done' : 'Mark Done',
         key: DONE_KEY,
         run: toggleDone
       },
@@ -570,7 +576,7 @@ export default function SessionBrowser(props: PageProps) {
       ...(memory.view === 'done' && !data.search
         ? [
             {
-              title: 'Archive all done sessions',
+              title: 'Archive all Done sessions',
               key: shortcut('super-sessions.archive.done', 'ctrl+y'),
               run: archiveDone
             }
@@ -711,7 +717,7 @@ export default function SessionBrowser(props: PageProps) {
       run: () => void model.toggleScope().catch(() => {})
     },
     { bind: 'ctrl+s', title: 'Archive or restore', run: () => void archive() },
-    { bind: DONE_KEY, title: 'Mark done or not done', run: () => void toggleDone() },
+    { bind: DONE_KEY, title: 'Mark Done or not Done', run: () => void toggleDone() },
     { id: HOST_COMMANDS.rename, title: 'Rename session', run: () => void rename() },
     { id: HOST_COMMANDS.delete, title: 'Delete session', run: () => void remove() },
     {
@@ -733,7 +739,7 @@ export default function SessionBrowser(props: PageProps) {
     },
     {
       id: 'super-sessions.archive.done',
-      title: 'Archive all done sessions',
+      title: 'Archive all Done sessions',
       bind: 'ctrl+y',
       enabled: () => memory.view === 'done' && !data.search,
       run: () => void archiveDone()

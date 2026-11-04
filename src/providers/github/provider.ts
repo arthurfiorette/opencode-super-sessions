@@ -111,7 +111,7 @@ export function createGitHubProvider(options: {
         }
       }
 
-      // Chunks start together; the client's limiter decides how many gh processes really run.
+      // Chunks start together; the client's limiter decides how many gh processes run at once.
       await Promise.all(
         chunks.map(async ({ host, indexes }) => {
           const batch: RefCandidate[] = indexes.map((index) => candidates[index] as RefCandidate);

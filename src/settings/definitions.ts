@@ -73,7 +73,7 @@ interface RowShape {
   title: string;
   /** Muted line under the list while the row is selected. A function reads the current value. */
   description: string | ((value: unknown) => string);
-  /** Values `←/→` cycle through, in order. */
+  /** Values `left/right` cycle through, in order. */
   values: readonly unknown[];
   labels?: readonly string[];
   /** Label for any value, used instead of `labels`. */
@@ -210,7 +210,7 @@ export const SETTINGS: readonly SettingRow[] = [
     group: 'Cleanup',
     title: 'Delete worktrees of deleted sessions',
     description:
-      'Removes unused worktrees when their sessions are deleted. Worktrees with local changes are kept.',
+      'Removes a worktree when a session in it is deleted while the plugin is running and no other session uses it. Worktrees with local changes are kept.',
     ...onOff,
     keywords: ['worktree', 'delete']
   },

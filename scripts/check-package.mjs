@@ -17,6 +17,7 @@ const npmCli =
         .find((entry) => existsSync(entry))
     : undefined;
 
+/** Runs npm with `args` in `cwd` and returns its stdout. */
 const run = (args, cwd) =>
   execFileSync(npmCli ? process.execPath : 'npm', npmCli ? [npmCli, ...args] : args, {
     cwd,

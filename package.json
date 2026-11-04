@@ -1,12 +1,13 @@
 {
   "name": "opencode-super-sessions",
   "version": "0.0.0",
-  "description": "Full-page session browser for the OpenCode V2 TUI with archiving and pull request tracking",
+  "description": "Session browser overlay for the OpenCode V2 TUI, with archiving and pull request and issue tracking",
   "keywords": [
     "opencode",
     "plugin",
     "sessions",
-    "github"
+    "github",
+    "gitlab"
   ],
   "homepage": "https://github.com/arthurfiorette/opencode-super-sessions#readme",
   "bugs": {

@@ -155,7 +155,7 @@ export function createGitLabProvider(options: {
         }
       }
 
-      // Chunks start together; the client's limiter decides how many glab processes really run.
+      // Chunks start together; the client's limiter decides how many glab processes run at once.
       await Promise.all(
         chunks.map(async ({ host, indexes }) => {
           const batch = indexes.map((index) => candidates[index] as RefCandidate);

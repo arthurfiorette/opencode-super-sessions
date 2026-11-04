@@ -1328,7 +1328,10 @@ function questionTool(
   });
 }
 
-/** One line naming the subagent and its task, with the host's exact label (`Subagent`). */
+/**
+ * One line naming the subagent and its task, with the host's exact label and its em dash
+ * (`Subagent`, packages/tui/src/routes/session/index.tsx:3325).
+ */
 function subagentTool(
   props: TranscriptProps,
   part: Tool,

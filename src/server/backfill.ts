@@ -19,7 +19,6 @@ export interface BackfillOptions {
   warn(message: string, error?: unknown): void;
 }
 
-// Sessions per `session.list` page.
 const PAGE_SIZE = 50;
 // Rest between sessions and between batches of entries, so the backfill never competes with the
 // daemon's own work for long: index writes run on its event loop.

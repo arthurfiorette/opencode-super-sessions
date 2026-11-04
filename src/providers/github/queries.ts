@@ -206,7 +206,7 @@ function errorAt(
 /**
  * Reads a snapshot response back into entries aligned with the candidates the document was
  * built from. The forge's `__typename` decides the kind, so a candidate guessed as a PR that is
- * really an issue comes back as an issue.
+ * an issue comes back as an issue.
  */
 export function parseSnapshotResponse(
   document: SnapshotDocument,

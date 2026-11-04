@@ -270,7 +270,6 @@ function lineBox(
   });
 }
 
-// Marker column plus the gap before the right column.
 const MARKER_WIDTH = 2;
 const RIGHT_GAP = 2;
 // Lines under the title start this many cells right of it, so the titles form their own column.
