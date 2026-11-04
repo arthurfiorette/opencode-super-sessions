@@ -1,6 +1,6 @@
 import type { Options } from '../config.js';
-import { definitions } from '../providers/registry.js';
 import type { RepoRef } from '../providers/provider.js';
+import { definitions } from '../providers/registry.js';
 import type { ProviderId } from '../refs/ref.js';
 
 /**
