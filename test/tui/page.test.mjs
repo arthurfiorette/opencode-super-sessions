@@ -167,8 +167,9 @@ const BINDINGS = {
  * A host stand-in: the real plugin entry against fake client, data, keymap, storage and router.
  * `search` answers the server plugin's search RPC; by default the plugin is missing.
  */
-async function host(search) {
+async function host(search, version = '2.2.5') {
   let renderer;
+  const toasts = [];
   const sessions = fixtures();
   const layers = [];
   const slots = [];
@@ -179,6 +180,7 @@ async function host(search) {
   const updates = [];
   const memories = new Map();
   const context = {
+    app: { name: 'opencode', version, channel: 'latest' },
     options: {},
     location: { directory: '/repo' },
     theme,
@@ -309,7 +311,11 @@ async function host(search) {
         },
         current: route
       },
-      toast: { show() {} },
+      toast: {
+        show(toast) {
+          toasts.push(toast);
+        }
+      },
       dialog: { clear() {} },
       tabs: { enabled: () => false, close: () => true, list: () => [] },
       format: { path: (value) => value }
@@ -327,6 +333,7 @@ async function host(search) {
     modes,
     navigations,
     updates,
+    toasts,
     route,
     /** Runs a command registered by any layer, like `keymap.dispatch`. */
     dispatch(id) {
@@ -590,6 +597,20 @@ test('right, down and enter open the second Work link of the selected session', 
   await eventually(rendered, () => opened.length > 0);
   assert.deepEqual(opened, ['https://github.com/mastra-ai/mastra/issues/12']);
   assert.deepEqual(terminal.navigations, [], 'enter opened the link, not the session.');
+});
+
+// On a release CI never ran, the host's own list must answer its keys, and the user must learn
+// why the browser is gone and how to reach it.
+test('an untested OpenCode keeps its session list and quick switch, and says how to open the browser', async () => {
+  const terminal = await host(undefined, '99.0.0');
+  const ids = terminal.layers.flatMap((layer) => layer.commands ?? []).map((item) => item.id);
+  assert.ok(ids.includes('super-sessions.open'));
+  assert.ok(!ids.includes('session.list'));
+  assert.ok(!ids.includes('session.quick_switch.1'));
+  assert.deepEqual(
+    terminal.toasts.map((toast) => toast.message),
+    ['Super Sessions has not been tested with OpenCode 99.0.0. Open it with /super-sessions.']
+  );
 });
 
 test('space types into a non-empty search instead of peeking', async () => {

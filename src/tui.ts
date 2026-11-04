@@ -62,7 +62,10 @@ export default Plugin.define({
       browser.toggle();
     };
 
-    const commands: KeymapCommand[] = [
+    // Commands that take over host command ids. On a host newer than the tested one they stay
+    // unregistered, so `/sessions`, `<leader>l` and the quick switch keys keep the built-in
+    // behavior while `/super-sessions` still opens the browser.
+    const takeover: KeymapCommand[] = [
       {
         id: SESSION_LIST,
         title: 'Switch session',
@@ -71,7 +74,28 @@ export default Plugin.define({
         slash: { name: 'sessions', aliases: ['resume', 'continue'] },
         run: (input) => (input?.trim() === CLASSIC_LIST ? false : toggleBrowser())
       },
-      ...quickSwitch(context, pins),
+      ...quickSwitch(context, pins)
+    ];
+    const commands: KeymapCommand[] = [
+      {
+        id: 'super-sessions.open',
+        title: 'Open Super Sessions',
+        group: 'Session',
+        palette: true,
+        // Takes an argument so `/super-sessions settings` reaches the dialog.
+        slash: { name: 'super-sessions', arguments: true },
+        run: (input) => {
+          const argument = input?.trim() ?? '';
+          if (argument === '') return toggleBrowser();
+          if (argument === 'settings') return settings.open();
+          if (argument === 'undo') return void settings.maintenance.undo();
+          if (argument === 'status') return void showStatus(context);
+          context.ui.toast.show({
+            message: `Unknown argument "${argument}". Try /super-sessions settings, status or undo.`,
+            variant: 'warning'
+          });
+        }
+      },
       {
         id: 'super-sessions.classic',
         title: 'Classic session list',
@@ -101,31 +125,22 @@ export default Plugin.define({
         title: 'Super Sessions status',
         group: 'Session',
         palette: true,
-        // Takes an argument so `/super-sessions settings` reaches the dialog; plain
-        // `/super-sessions` still shows the status.
-        slash: { name: 'super-sessions', arguments: true },
-        run: (input) => {
-          const argument = input?.trim() ?? '';
-          if (argument === 'settings') return settings.open();
-          if (argument === 'undo') return void settings.maintenance.undo();
-          if (argument === '' || argument === 'status') return showStatus(context);
-          context.ui.toast.show({
-            message: `Unknown argument "${argument}". Try /super-sessions settings or undo.`,
-            variant: 'warning'
-          });
-        }
+        run: () => void showStatus(context)
       },
       ...settings.commands
     ];
+    const guarded = () => settings.tui.hostGuarded(context.app.version);
     // Priority 1 puts these IDs above the host's own commands, so the user's configured keys,
     // the slash names and the palette entries all reach this plugin first. The layer factory is
-    // reactive, so the marked-archive entry follows the suffix setting.
+    // reactive, so the takeover follows the compatibility setting and the marked-archive entry
+    // the suffix setting.
     context.keymap.layer(() => {
       const suffix = settings.tui.archiveSuffix();
       return {
         mode: 'global',
         priority: OVER_HOST,
         commands: [
+          ...(guarded() ? [] : takeover),
           ...commands,
           {
             id: 'super-sessions.archive.marked',
@@ -139,6 +154,8 @@ export default Plugin.define({
         ]
       };
     });
+
+    warnUntested(context, guarded);
 
     // Read at event time, so turning suffix archiving on or off in the dialog applies at once.
     const offRenamed = context.data.on('session.renamed', (event) => {
@@ -157,6 +174,25 @@ export default Plugin.define({
     };
   }
 });
+
+/**
+ * Says once per host version, across restarts, that the takeover is off because CI never tested
+ * this release. Stored, so a user who keeps the version is not told on every start.
+ */
+function warnUntested(context: Plugin.Context, guarded: () => boolean) {
+  if (!guarded()) return;
+  const version = context.app.version;
+  const [store, update] = context.storage.store<{ warned?: string }>('compat', { initial: {} });
+  if (store.warned === version) return;
+  context.ui.toast.show({
+    title: TITLE,
+    message: `Super Sessions has not been tested with OpenCode ${version}. Open it with /super-sessions.`,
+    variant: 'warning'
+  });
+  void update((draft) => {
+    draft.warned = version;
+  }).catch(() => {});
+}
 
 /** Names the first invalid option for the toast. */
 function describeOptionsError(error: unknown): string {

@@ -18,7 +18,9 @@ export const tuiValuesSchema = z.strictObject({
   previewWidth: z.number().min(0.2).max(0.7),
   closeTabOnArchive: z.boolean(),
   /** Null turns suffix archiving off. */
-  archiveSuffix: z.string().min(1).max(10).nullable()
+  archiveSuffix: z.string().min(1).max(10).nullable(),
+  /** Take over the session list and the peek keys even on a host newer than TESTED_UP_TO. */
+  untestedHosts: z.boolean()
 });
 
 export type TuiValues = z.output<typeof tuiValuesSchema>;
@@ -32,7 +34,8 @@ export function tuiDefaults(options: Options): TuiValues {
     previewPane: options.preview,
     previewWidth: options.previewWidth,
     closeTabOnArchive: options.closeTabOnArchive,
-    archiveSuffix: options.archiveSuffix ?? null
+    archiveSuffix: options.archiveSuffix ?? null,
+    untestedHosts: options.untestedHosts
   };
 }
 
@@ -271,6 +274,16 @@ export const SETTINGS: readonly SettingRow[] = [
     title: 'Run cleanup now',
     description: 'Lists what the rules above would remove and asks before removing anything',
     keywords: ['worktree', 'dry run', 'clean']
+  },
+  {
+    side: 'tui',
+    key: 'untestedHosts',
+    group: 'Compatibility',
+    title: 'Use on untested OpenCode versions',
+    description:
+      'Whether the browser replaces the session list and takes the peek keys on an OpenCode release newer than the one this plugin was tested with',
+    ...onOff,
+    keywords: ['version', 'upgrade', 'takeover']
   }
 ];
 

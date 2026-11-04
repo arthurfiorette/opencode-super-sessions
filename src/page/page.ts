@@ -12,6 +12,7 @@ import {
 import type { Options } from '../config.js';
 import { BASE_MODE, DIALOG_MODE, OVER_PROMPT } from '../host/keymap.js';
 import type { Pins } from '../pins.js';
+import { tuiSettingsFor } from '../settings/store.js';
 import { type BrowserModel, createBrowserModel } from './model.js';
 import { moveSelection } from './state.js';
 
@@ -106,11 +107,15 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
     clearTimeout(follow);
     follow = setTimeout(() => show(next), PEEK_DELAY);
   };
-  /** Whether the peek keys apply: the peeked session is on screen and nothing else has keys. */
+  /**
+   * Whether the peek keys apply: the peeked session is on screen and nothing else has keys. Off
+   * on a host newer than the tested one, where beating the prompt's layers is unverified.
+   */
   const peekActive = (modes: (mode: string) => boolean) => {
     const id = peeked();
     const route = router.current();
     return (
+      !tuiSettingsFor(context).hostGuarded(context.app.version) &&
       id !== undefined &&
       route.type === 'session' &&
       route.sessionID === id &&
