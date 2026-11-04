@@ -31,6 +31,11 @@ export function userPrompt(event: Event<'session.inbox.enqueued'>): IndexedText 
   };
 }
 
+/** Whether an inbox item is the user's own prompt, the same test {@link userPrompt} makes. */
+export function isUserPrompt(event: Event<'session.inbox.enqueued'>): boolean {
+  return event.data.item.type === 'user';
+}
+
 /**
  * Finished assistant text in `session.text.ended` (packages/schema/src/session-event.ts:420).
  * `ordinal` counts only the text parts of the assistant message, which is how

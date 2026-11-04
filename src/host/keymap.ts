@@ -51,3 +51,17 @@ export const BASE_MODE = 'base';
 
 /** The mode every host dialog pushes (packages/tui/src/ui/dialog.tsx:322). */
 export const DIALOG_MODE = 'modal';
+
+/**
+ * The host's select dialog commands (packages/tui/src/ui/dialog-select.tsx:480 to 530). The
+ * settings dialog registers the same ids, so the keys the user set for them apply there too.
+ */
+export const DIALOG_SELECT = {
+  prev: 'dialog.select.prev',
+  next: 'dialog.select.next',
+  pageUp: 'dialog.select.page_up',
+  pageDown: 'dialog.select.page_down',
+  home: 'dialog.select.home',
+  end: 'dialog.select.end',
+  submit: 'dialog.select.submit'
+} as const;

@@ -1,6 +1,7 @@
 import type { Plugin } from '@opencode/plugin/tui';
 import { createComponent, createMemo, ErrorBoundary, lazy } from 'solid-js';
 import type { Options } from './config.js';
+import { SLOTS } from './host/tui.js';
 
 /** Everything the sidebar view needs from the plugin entry. */
 export interface SidebarProps {
@@ -23,7 +24,7 @@ const Sidebar = lazy(() => import('./sidebar-view.js'));
  */
 export function installSidebar(context: Plugin.Context, options: Options): () => void {
   return context.ui.slot({
-    prepend: 'sidebar.content',
+    prepend: SLOTS.sidebar,
     // A failing section hides itself instead of reaching the host's slot boundary, which would
     // toast a crash in the middle of the user's session (packages/tui/src/plugin/render.tsx:27 in
     // OpenCode v2.2.5).

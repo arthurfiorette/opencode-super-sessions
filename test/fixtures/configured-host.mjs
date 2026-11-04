@@ -37,6 +37,7 @@ process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
 
 const { OpenCode } = await import('@opencode/sdk');
 const { SuperSessions } = await import('opencode-super-sessions/rpc');
+const { rpcError } = await import('../../dist/host/rpc.js');
 
 /** Runs git without the developer's hooks or signing. */
 function git(cwd, ...args) {
@@ -134,13 +135,14 @@ try {
     [[12, 'manual']]
   );
 
+  // Read through the accessor the browser uses to word its link errors.
   await assert.rejects(
     rpc.link({ sessionID, reference: '#999' }, { location }),
-    (error) => error.type === 'not_found'
+    (error) => rpcError(error).type === 'not_found'
   );
   await assert.rejects(
     rpc.link({ sessionID, reference: 'not a ref' }, { location }),
-    (error) => error.type === 'invalid_reference'
+    (error) => rpcError(error).type === 'invalid_reference'
   );
 
   const key = 'github:github.com/acme/widgets/issue/12';

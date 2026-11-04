@@ -66,6 +66,18 @@ export function listFilters(
 }
 
 /**
+ * Whether a session finished a run the user has not looked at since: the host's own unread rule
+ * for tabs (packages/tui/src/context/session-tabs.tsx:125). `time.viewed` has no doc comment in
+ * the schema, so this follows the host's reading of it.
+ */
+export function isUnread(info: SessionInfo): boolean {
+  return (
+    info.time.idle !== undefined &&
+    (info.time.viewed === undefined || info.time.idle > info.time.viewed)
+  );
+}
+
+/**
  * Whether a session runs now. `time.busy` is the start of the latest execution, and while it runs
  * `time.idle` still holds the end of the one before (packages/schema/src/session.ts:49).
  */
