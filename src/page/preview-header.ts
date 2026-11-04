@@ -225,9 +225,9 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
   });
 }
 
-/** The visible slice of a text: scrolling while hovered, otherwise cut with an ellipsis. */
+/** The visible slice of a text: scrolled while hovered, otherwise cut with an ellipsis. */
 function scrolled(marquee: Hover, key: string, text: string, width: number): string {
-  return marquee.active() === key
+  return marquee.active() === key && marquee.offset() > 0
     ? marqueeText(text, width, marquee.offset())
     : fitText(text, width);
 }

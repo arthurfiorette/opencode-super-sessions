@@ -180,7 +180,7 @@ export default function Sidebar(props: SidebarProps) {
           },
           get children() {
             if (!title() || room() <= 0) return '';
-            return marquee.active() === refKey(ref())
+            return marquee.active() === refKey(ref()) && marquee.offset() > 0
               ? ` ${marqueeText(title(), room(), marquee.offset())}`
               : ` ${fitText(title(), room())}`;
           }

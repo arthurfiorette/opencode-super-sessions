@@ -393,9 +393,7 @@ export default function SessionBrowser(props: PageProps) {
       bind: 'shift+tab',
       title: 'Previous view',
       run: () =>
-        setView(
-          VIEWS[(VIEWS.indexOf(memory.view) + VIEWS.length - 1) % VIEWS.length] ?? 'active'
-        )
+        setView(VIEWS[(VIEWS.indexOf(memory.view) + VIEWS.length - 1) % VIEWS.length] ?? 'active')
     },
     {
       bind: 'ctrl+a',
