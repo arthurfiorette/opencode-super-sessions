@@ -488,6 +488,116 @@ export default function SessionBrowser(props: PageProps) {
       toast('Could not open the browser.', 'error');
   };
 
+  const nextView = (step: number) =>
+    setView(VIEWS[(VIEWS.indexOf(memory.view) + VIEWS.length + step) % VIEWS.length] ?? 'active');
+  const peek = () => {
+    if (memory.selected !== undefined) props.peek(memory.selected);
+  };
+  const togglePin = () => {
+    const session = selected();
+    if (session)
+      void props.pins.toggle(session.id).catch(() => toast('Could not save pins.', 'error'));
+  };
+  /**
+   * Every browser action with the key that runs it, in the order the keys dialog lists them.
+   * Actions that do nothing in the current state, such as archiving all done sessions outside
+   * the Done view, are left out.
+   */
+  const keyActions = (): Array<{ title: string; key: string; run: () => unknown }> => {
+    const current = selected();
+    return [
+      { title: 'Open session', key: 'enter', run: () => open() },
+      { title: 'Peek session', key: 'space', run: peek },
+      {
+        title: memory.view === 'archived' ? 'Restore session' : 'Archive session',
+        key: keyLabel('ctrl+s'),
+        run: archive
+      },
+      { title: 'Next view', key: 'tab', run: () => nextView(1) },
+      { title: 'Previous view', key: keyLabel('shift+tab'), run: () => nextView(-1) },
+      {
+        title: scope() === 'project' ? 'Show all projects' : 'Show this project',
+        key: keyLabel('ctrl+a'),
+        run: () => model.toggleScope().catch(() => {})
+      },
+      {
+        title: 'Rename session',
+        key: keyLabel(shortcut(HOST_COMMANDS.rename, 'ctrl+r')),
+        run: rename
+      },
+      {
+        title: 'Regenerate title',
+        key: keyLabel(shortcut('super-sessions.retitle', 'ctrl+t')),
+        run: retitle
+      },
+      {
+        title: current && props.pins.has(current.id) ? 'Unpin session' : 'Pin session',
+        key: keyLabel(shortcut(HOST_COMMANDS.pin, 'ctrl+f')),
+        run: togglePin
+      },
+      {
+        title: 'Delete session',
+        key: keyLabel(shortcut(HOST_COMMANDS.delete, 'ctrl+d')),
+        run: remove
+      },
+      ...(memory.view === 'done' && !data.search
+        ? [
+            {
+              title: 'Archive all done sessions',
+              key: keyLabel(shortcut('super-sessions.archive.done', 'ctrl+y')),
+              run: archiveDone
+            }
+          ]
+        : []),
+      {
+        title: 'Link pull request or issue',
+        key: keyLabel(shortcut('super-sessions.link', 'ctrl+l')),
+        run: link
+      },
+      {
+        title: 'Open pull request in browser',
+        key: keyLabel(shortcut('super-sessions.open.ref', 'ctrl+g')),
+        run: openRef
+      },
+      ...(wide() && workRefs().length > 0
+        ? [{ title: 'Focus the preview links', key: keyLabel('right'), run: focusWork }]
+        : []),
+      {
+        title: 'Show command palette',
+        key: keyLabel('ctrl+p'),
+        run: () => context.keymap.dispatch(COMMAND_PALETTE)
+      },
+      {
+        title: 'Super Sessions settings',
+        key: keyLabel('ctrl+o'),
+        run: () => context.keymap.dispatch('super-sessions.settings')
+      },
+      { title: 'Close', key: 'esc', run: props.close }
+    ];
+  };
+  /**
+   * The keys dialog: the browser's actions in the host's select dialog, key on the right like the
+   * command palette. Picking one closes the dialog and runs it on the selected session.
+   */
+  const showKeys = async () => {
+    const actions = keyActions();
+    const index = await context.ui.dialog.select({
+      title: 'Keys',
+      placeholder: 'Search actions',
+      options: actions.map((action, value) => ({
+        title: action.title,
+        value,
+        footer: action.key
+      }))
+    });
+    if (index === undefined) return;
+    // The host gives the focus back to the search field a tick after the dialog closes. An action
+    // that opens another dialog (rename, link) runs before that tick, and that dialog would
+    // remember no focus to return to on close.
+    if (input && !input.isDestroyed) input.focus();
+    void actions[index]?.run();
+  };
+
   // Host dialogs push the "modal" mode above this one, which turns this layer off while a rename
   // prompt or confirm is open and back on when it closes. Created inside the component, so the
   // layer goes away with the browser.
@@ -527,9 +637,21 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Peek session',
       run: () => {
         if (memory.query.length > 0) return false;
-        if (memory.selected !== undefined) props.peek(memory.selected);
+        peek();
       }
     },
+    // Terminals without the kitty protocol send ctrl+/ as 0x1F, which OpenTUI reads as ctrl+_;
+    // kitty sends ctrl+/. `?` arrives as `?`, or as shift+/ or shift+? under kitty, and types
+    // into a non-empty search like space.
+    ...['ctrl+/', 'ctrl+_'].map((bind) => ({ bind, title: 'Keys', run: () => void showKeys() })),
+    ...['?', 'shift+/', 'shift+?'].map((bind) => ({
+      bind,
+      title: 'Keys',
+      run: () => {
+        if (memory.query.length > 0) return false;
+        void showKeys();
+      }
+    })),
     {
       bind: 'escape',
       title: 'Close',
@@ -552,19 +674,10 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Show command palette',
       run: () => context.keymap.dispatch(COMMAND_PALETTE)
     },
-    {
-      bind: 'tab',
-      title: 'Next view',
-      run: () => setView(VIEWS[(VIEWS.indexOf(memory.view) + 1) % VIEWS.length] ?? 'active')
-    },
+    { bind: 'tab', title: 'Next view', run: () => nextView(1) },
     // The host binds shift+tab to agent.cycle; this layer's mode is on top while the browser is
     // open, so the key cycles views here and agents everywhere else.
-    {
-      bind: 'shift+tab',
-      title: 'Previous view',
-      run: () =>
-        setView(VIEWS[(VIEWS.indexOf(memory.view) + VIEWS.length - 1) % VIEWS.length] ?? 'active')
-    },
+    { bind: 'shift+tab', title: 'Previous view', run: () => nextView(-1) },
     {
       bind: 'ctrl+a',
       title: 'Toggle all projects',
@@ -576,11 +689,7 @@ export default function SessionBrowser(props: PageProps) {
     {
       id: HOST_COMMANDS.pin,
       title: 'Pin or unpin session',
-      run: () => {
-        const session = selected();
-        if (session)
-          void props.pins.toggle(session.id).catch(() => toast('Could not save pins.', 'error'));
-      }
+      run: togglePin
     },
     {
       id: 'super-sessions.retitle',
@@ -1111,28 +1220,14 @@ export default function SessionBrowser(props: PageProps) {
         ['open', 'enter'],
         ['back', '←/esc']
       ];
-    const current = selected();
-    const items: Array<[string, string]> = [
+    // The rest of the actions live in the keys dialog.
+    return [
+      ['open', 'enter'],
       ['peek', 'space'],
       [memory.view === 'archived' ? 'restore' : 'archive', keyLabel('ctrl+s')],
-      ['view', keyLabel('tab/shift+tab')],
-      ['rename', keyLabel(shortcut(HOST_COMMANDS.rename, 'ctrl+r'))],
-      ['retitle', keyLabel(shortcut('super-sessions.retitle', 'ctrl+t'))],
-      [
-        current && props.pins.has(current.id) ? 'unpin' : 'pin',
-        keyLabel(shortcut(HOST_COMMANDS.pin, 'ctrl+f'))
-      ],
-      ['delete', keyLabel(shortcut(HOST_COMMANDS.delete, 'ctrl+d'))]
+      ['view', 'tab'],
+      ['keys', '^/']
     ];
-    if (memory.view === 'done' && !data.search)
-      items.push(['archive all', keyLabel(shortcut('super-sessions.archive.done', 'ctrl+y'))]);
-    items.push(
-      ['link', keyLabel(shortcut('super-sessions.link', 'ctrl+l'))],
-      ['open PR', keyLabel(shortcut('super-sessions.open.ref', 'ctrl+g'))],
-      ['commands', keyLabel('ctrl+p')],
-      ['settings', keyLabel('ctrl+o')]
-    );
-    return items;
   });
   const scopeHint = (): [string, string] => [
     scope() === 'project' ? 'all projects' : 'this project',

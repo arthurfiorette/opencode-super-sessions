@@ -182,6 +182,7 @@ async function host(search, version = '2.2.5') {
   const navigations = [];
   const updates = [];
   const memories = new Map();
+  const selects = [];
   const context = {
     app: { name: 'opencode', version, channel: 'latest' },
     options: {},
@@ -321,7 +322,11 @@ async function host(search, version = '2.2.5') {
           toasts.push(toast);
         }
       },
-      dialog: { clear() {} },
+      dialog: {
+        clear() {},
+        // The test answers each select dialog through `resolve`.
+        select: (options) => new Promise((resolve) => selects.push({ options, resolve }))
+      },
       tabs: { enabled: () => false, close: () => true, list: () => [] },
       format: { path: (value) => value }
     }
@@ -340,6 +345,7 @@ async function host(search, version = '2.2.5') {
     updates,
     toasts,
     dispatched,
+    selects,
     route,
     /** Runs a command registered by any layer, like `keymap.dispatch`. */
     dispatch(id) {
@@ -539,6 +545,20 @@ test('tab cycles views and ctrl+s archives the selected row', async () => {
   await eventually(rendered, (frame) => !frame.includes('Mastra build: Rollup to Rspack'));
   assert.deepEqual(terminal.updates, [{ sessionID: 'running', archived: true }]);
   assert.match(rendered.captureCharFrame(), /Archived 2/);
+});
+
+test('? opens the keys dialog, whose pick runs on the selected session, and types into a search', async () => {
+  const { terminal, rendered } = await mount(100);
+  rendered.mockInput.pressKey('?');
+  await eventually(rendered, () => terminal.selects.length === 1);
+  const [{ options, resolve }] = terminal.selects;
+  resolve(options.options.find((option) => option.title === 'Archive session').value);
+  await eventually(rendered, () => terminal.updates.length > 0);
+  assert.deepEqual(terminal.updates, [{ sessionID: 'pinned', archived: true }]);
+
+  await rendered.mockInput.typeText('a?');
+  await eventually(rendered, (frame) => frame.includes('a?'));
+  assert.equal(terminal.selects.length, 1, 'With a query, ? is text.');
 });
 
 test('search lists local matches before the server answers and says why each matched', async () => {
