@@ -72,10 +72,19 @@ function candidate(host: string, repo: string, number: number, kind?: RefKind): 
     : { provider: 'github', host, repo, number, kind };
 }
 
-/** Resolves a remote host and path to a GitHub repository, mapping SSH aliases to github.com. */
-function remoteRepo(host: string, segments: string[], ssh: boolean): RepoRef | undefined {
+/**
+ * Lower-cases a host and folds names that reach github.com under another spelling, so refs from
+ * `www.github.com` links or aliased SSH remotes share one key with github.com.
+ */
+function canonicalHost(host: string, ssh: boolean): string {
   const name = host.toLowerCase();
-  const resolved = ssh && SSH_ALIAS.test(name) ? PUBLIC_HOST : name;
+  if (name === 'www.github.com' || (ssh && SSH_ALIAS.test(name))) return PUBLIC_HOST;
+  return name;
+}
+
+/** Resolves a remote host and path to a GitHub repository. */
+function remoteRepo(host: string, segments: string[], ssh: boolean): RepoRef | undefined {
+  const resolved = canonicalHost(host, ssh);
   if (!isGitHubHost(resolved)) return undefined;
   const repo = repoPath(segments);
   return repo === undefined ? undefined : { provider: 'github', host: resolved, repo };
@@ -113,7 +122,7 @@ function parseUrl(url: string): Ref | undefined {
     return undefined;
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined;
-  const host = parsed.hostname.toLowerCase();
+  const host = canonicalHost(parsed.hostname, false);
   if (!isGitHubHost(host)) return undefined;
   const match = REF_PATH.exec(parsed.pathname);
   if (match?.[1] === undefined || match[2] === undefined) return undefined;

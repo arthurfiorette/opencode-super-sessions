@@ -43,6 +43,7 @@ test('parses pull request and issue URLs with trailing paths, queries and fragme
     ['https://github.com/acme/app/pull/12', pr],
     ['https://github.com/Acme/App/pull/12/files', pr],
     ['https://github.com/acme/app/pull/12?w=1', pr],
+    ['https://www.github.com/acme/app/pull/12', pr],
     ['https://github.com/acme/app/pull/12#discussion_r1', pr],
     ['https://github.com/acme/app/issues/12#issuecomment-99', issue],
     [
