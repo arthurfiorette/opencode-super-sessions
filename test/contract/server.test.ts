@@ -5,7 +5,13 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import type { OpenCodeEvent, SessionInfo, SessionMessageInfo } from '@opencode/client';
 import { Plugin } from '@opencode/plugin';
-import { assistantText, shellRun, storedTexts, userPrompt } from '../../src/host/events.js';
+import {
+  assistantText,
+  shellRun,
+  storedHistory,
+  storedTexts,
+  userPrompt
+} from '../../src/host/events.js';
 import {
   listFilters,
   projectScope,
@@ -179,6 +185,15 @@ test('message.list returns the transcript shapes the preview draws, in pages tha
   // Without an idle message the preview falls back to legacy turn timing.
   assert.equal(all.at(-1)?.type, 'idle');
 
+  // The history scan reads the same pages for sessions the plugin never saw live.
+  const history = storedHistory(all);
+  assert.deepEqual(
+    history.map((entry) => (entry.type === 'shell' ? entry.command : entry.text)),
+    ['show me a transcript', SHELL_COMMAND, ANSWER]
+  );
+  const shell = history.find((entry) => entry.type === 'shell');
+  assert.match(shell?.type === 'shell' ? shell.output : '', new RegExp(SHELL_OUTPUT));
+
   // The Done rule reads the last user message through the type filter.
   const users = await host.message.list({ sessionID, order: 'desc', limit: 1, type: 'user' });
   assert.deepEqual(
@@ -212,6 +227,10 @@ test('a user ! command publishes session.shell.ended with its command and output
     hooks.some((item) => item.sessionID === session.id),
     false
   );
+  // The history scan finds the stored command and its output.
+  const stored = storedHistory(await messages(session.id)).find((entry) => entry.type === 'shell');
+  assert.equal(stored?.type === 'shell' && stored.command, 'echo bang-output');
+  assert.match(stored?.type === 'shell' ? stored.output : '', /bang-output/);
 });
 
 test('server plugin session.update replaces metadata and session.get returns it with the location', async () => {
