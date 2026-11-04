@@ -115,6 +115,9 @@ async function launch(baseURL: string): Promise<Tui> {
       // in-process hosts in harness.ts turn the fetch off the same way (`models.fetch: false`;
       // the variable is read in packages/cli/src/server-process.ts).
       OPENCODE_DISABLE_MODELS_FETCH: '1',
+      // The update check is the other startup network call; a newer release would show a notice
+      // over the screen the test reads (packages/cli/src/services/updater.ts).
+      OPENCODE_DISABLE_AUTOUPDATE: '1',
       OPENCODE_DRIVE: 'contract',
       OPENCODE_DRIVE_RENDERER: 'headless',
       OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({ plugins: [PACKAGE] }),
