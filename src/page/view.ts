@@ -64,6 +64,7 @@ import {
   type Line,
   layoutLines,
   layoutPulls,
+  MESSAGES_GROUP,
   moveSelection,
   type PageView,
   type PullRow,
@@ -1184,11 +1185,12 @@ export default function SessionBrowser(props: PageProps) {
             children: jsx('text', {
               attributes: TextAttributes.BOLD,
               // The token the host uses for its select dialog's category headers; the Running
-              // group takes the spinner's color instead of every running title.
+              // group takes the spinner's color instead of every running title, and the search's
+              // message hits are muted below the stronger matches.
               get fg() {
-                return value.title === RUNNING_GROUP
-                  ? runningColor(theme())
-                  : theme().hue.accent[200];
+                if (value.title === RUNNING_GROUP) return runningColor(theme());
+                if (value.title === MESSAGES_GROUP) return theme().text.muted;
+                return theme().hue.accent[200];
               },
               children: value.title
             })

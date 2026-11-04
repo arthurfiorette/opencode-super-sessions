@@ -250,7 +250,10 @@ export function groupSessions(input: GroupInput): Group[] {
   ];
 }
 
-// Match tiers in the order a day group lists them.
+/** Title of the search group of message text hits, whose header is muted. */
+export const MESSAGES_GROUP = 'In messages';
+
+// Match tiers in the order a day group lists them. Message hits have a group of their own.
 const MATCH_TIER: Record<SearchMatch, number> = {
   title: 0,
   'ref-number': 1,
@@ -261,8 +264,9 @@ const MATCH_TIER: Record<SearchMatch, number> = {
 /**
  * Groups search results like the Active list: Running first, then one group per day of
  * `time.updated`, with pins left in place. Within a group, title matches come first, then ref
- * numbers, ref titles and message hits, newest update first within a tier. Hits the server adds
- * later land in their day group by the same rule instead of after the local ones.
+ * numbers and ref titles, newest update first within a tier. Message hits, running or not, go
+ * last in an {@link MESSAGES_GROUP} group, newest first, so they never push the stronger matches
+ * around when the server answers after the local filter.
  */
 export function groupSearch(
   sessions: readonly SessionInfo[],
@@ -270,17 +274,21 @@ export function groupSearch(
   running: (sessionID: string) => boolean,
   now: number
 ): Group[] {
-  const tier = (session: SessionInfo) => MATCH_TIER[reasons[session.id]?.match ?? 'body'];
-  const ranked = (a: SessionInfo, b: SessionInfo) =>
-    tier(a) - tier(b) || b.time.updated - a.time.updated;
-  const active = sessions.filter((session) => running(session.id)).sort(ranked);
+  const match = (session: SessionInfo) => reasons[session.id]?.match ?? 'body';
+  const byUpdated = (a: SessionInfo, b: SessionInfo) => b.time.updated - a.time.updated;
+  const messages = sessions.filter((session) => match(session) === 'body').sort(byUpdated);
+  const matched = sessions.filter((session) => match(session) !== 'body');
+  const tier = (session: SessionInfo) => MATCH_TIER[match(session)];
+  const ranked = (a: SessionInfo, b: SessionInfo) => tier(a) - tier(b) || byUpdated(a, b);
+  const active = matched.filter((session) => running(session.id)).sort(ranked);
   const day = (session: SessionInfo) => startOfDay(session.time.updated);
-  const idle = sessions
+  const idle = matched
     .filter((session) => !running(session.id))
     .sort((a, b) => day(b) - day(a) || ranked(a, b));
   return [
     ...(active.length > 0 ? [{ title: RUNNING_GROUP, sessions: active }] : []),
-    ...byDay(idle, (session) => session.time.updated, now)
+    ...byDay(idle, (session) => session.time.updated, now),
+    ...(messages.length > 0 ? [{ title: MESSAGES_GROUP, sessions: messages }] : [])
   ];
 }
 

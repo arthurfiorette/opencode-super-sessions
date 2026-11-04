@@ -98,9 +98,14 @@ const BINDINGS = {
 
 /**
  * A host stand-in: the real plugin entry against fake client, data, keymap, storage and router.
- * The server plugin is missing, so its search RPC throws.
+ * The server plugin is missing, so its search RPC throws unless `search` stands in for it.
  */
-async function host(version = '2.2.5') {
+async function host(
+  version = '2.2.5',
+  search = async () => {
+    throw new Error('not registered');
+  }
+) {
   let renderer;
   const toasts = [];
   // Commands the plugin hands to the host keymap, as `[id, input]`.
@@ -174,9 +179,7 @@ async function host(version = '2.2.5') {
           scans.push(input);
           return { skipped: false };
         },
-        search: async () => {
-          throw new Error('not registered');
-        }
+        search
       })
     },
     data: {
@@ -445,6 +448,49 @@ test('hovering another row leaves the preview on the selected session', async ()
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
   assert.deepEqual(terminal.pages, [shown]);
+});
+
+// Message hits used to land in Running and the day groups a second after the title match, which
+// read as the search breaking.
+test('server message hits go under "In messages" and leave the local rows in place', async () => {
+  let answer;
+  const answered = new Promise((resolve) => {
+    answer = resolve;
+  });
+  const terminal = await host(undefined, () => answered);
+  const rendered = await testRender(() => terminal.overlay.render({}), { width: 100, height: 30 });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  await eventually(rendered, (frame) => frame.includes('Mastra build'));
+  await rendered.mockInput.typeText('worktrees');
+  await eventually(rendered, (frame) => !frame.includes('Mastra build'));
+  const lines = () => rendered.captureCharFrame().split('\n');
+  const row = (text) => lines().findIndex((line) => line.includes(text));
+  const header = (title) => lines().findIndex((line) => line.trim() === title);
+  const before = row('can you find all merged worktrees');
+  assert.ok(before > 0);
+
+  answer([
+    { sessionID: 'unread', match: 'title', score: 3 },
+    { sessionID: 'pinned', match: 'body', score: 1 },
+    { sessionID: 'running', match: 'body', score: 1 }
+  ]);
+  await eventually(rendered, (frame) => frame.includes('Mastra build'));
+  assert.equal(row('can you find all merged worktrees'), before);
+  assert.equal(header('Running'), -1, 'A running message hit stays out of Running.');
+  const messages = header('In messages');
+  assert.ok(before < messages, 'Message hits come after the title match.');
+  assert.ok(messages < row('Mastra build') && row('Mastra build') < row('Homelab Mastra'));
+  const spans = rendered.captureSpans().lines.flatMap((line) => line.spans);
+  const spanOf = (text) => spans.find((span) => span.text.includes(text));
+  const dialog = theme.surface('dialog');
+  assert.ok(spanOf('In messages')?.fg.equals(dialog.text.muted));
+  assert.ok(
+    spanOf('can you find all merged')?.bg.equals(dialog.background.action.primary.focused),
+    'The title match stays selected.'
+  );
 });
 
 // On a release CI never ran, the host's own list must answer its keys, and the user must learn
