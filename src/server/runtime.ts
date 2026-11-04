@@ -160,8 +160,8 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
   const cache = watchMerges(createSnapshotCache(), () => runtime.onMerged?.());
   const hosts = createForgeHosts(base);
   const repos: RepoResolver = {
-    async resolve(directory) {
-      const info = await forges.repos.resolve(directory);
+    async resolve(directory, resolveOptions) {
+      const info = await forges.repos.resolve(directory, resolveOptions);
       if (info.repo !== undefined) hosts.learn(info.repo);
       if (info.headRepo !== undefined) hosts.learn(info.headRepo);
       return info;

@@ -35,6 +35,8 @@ export interface PullPreviewProps {
   refs(sessionID: string): SessionRefView | undefined;
   /** Author, branches, description and checks, from the server. Rejects when it cannot answer. */
   details(ref: Ref): Promise<PullDetails>;
+  /** Details a reload fetched, drawn at once when they belong to the pull request on screen. */
+  reloaded?(): { key: string; details: PullDetails } | undefined;
   /** Index of the session row the keyboard selected, while the pane has the arrow keys. */
   selectedSession(): number | undefined;
   /** Opens a session, as a click on its row does. */
@@ -112,6 +114,18 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
     })
   );
   onCleanup(() => clearTimeout(follow));
+  createEffect(
+    on(
+      () => props.reloaded?.(),
+      (fresh) => {
+        if (fresh === undefined || fresh.key !== state.pull?.key) return;
+        // An answer still loading for the old details is dropped.
+        token++;
+        setState({ status: 'ready', details: fresh.details });
+      },
+      { defer: true }
+    )
+  );
 
   const cli = useCliSettings();
   const marquee = createMarquee({

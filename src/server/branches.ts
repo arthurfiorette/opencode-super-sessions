@@ -14,6 +14,8 @@ export interface BranchCache {
   get(target: BranchTarget): Ref[] | undefined;
   /** Whether the entry is missing or expired. */
   stale(target: BranchTarget): boolean;
+  /** Why the last lookup failed, when it did. `not-found` is an answer, not a failure. */
+  failure(target: BranchTarget): ForgeError | undefined;
   /**
    * Looks the branch up when its entry is missing or expired (always with `force`, unless an
    * error is still backing off). Concurrent calls for one branch share a request.
@@ -30,6 +32,8 @@ interface Entry {
   expiresAt: number;
   /** An error's backoff, honored even by forced lookups. */
   retryAt?: number;
+  /** The last lookup's error, other than `not-found`. */
+  failure?: ForgeError;
 }
 
 const MINUTE = 60_000;
@@ -70,7 +74,8 @@ export function createBranchCache(options: {
       entries.set(key, {
         refs: result.reason === 'not-found' ? [] : refs,
         expiresAt: result.retryAt ?? at + ERROR_TTL,
-        ...(result.retryAt === undefined ? {} : { retryAt: result.retryAt })
+        ...(result.retryAt === undefined ? {} : { retryAt: result.retryAt }),
+        ...(result.reason === 'not-found' ? {} : { failure: result })
       });
       return;
     }
@@ -90,6 +95,8 @@ export function createBranchCache(options: {
     get: (target) => entries.get(branchKey(target))?.refs,
 
     stale: (target) => due(entries.get(branchKey(target)), false),
+
+    failure: (target) => entries.get(branchKey(target))?.failure,
 
     ensure(provider, target, ensureOptions = {}) {
       const key = branchKey(target);

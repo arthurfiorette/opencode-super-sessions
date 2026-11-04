@@ -29,7 +29,7 @@ import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
 import { rpcError } from '../host/rpc.js';
 import { isUnread, regenerateTitle, setArchived } from '../host/session-api.js';
 import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.js';
-import { type Ref, refKey, refNumber } from '../refs/ref.js';
+import { type ProviderId, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import { excludeFromAutoArchive } from '../settings/maintenance.js';
 import { tuiSettingsFor } from '../settings/store.js';
@@ -104,6 +104,12 @@ const HINT_GAP = 2;
 // Free in the host's default keymap and in the search input's own bindings: ctrl+e and ctrl+k
 // edit the line there, ctrl+n moves through host dialogs, ctrl+x is the host's leader.
 const DONE_KEY = 'ctrl+q';
+// ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e and ctrl+k edit the search, ctrl+h is backspace in
+// many terminals; the host binds nothing to f5.
+const RELOAD_KEY = 'f5';
+// A reload that answers sooner than this shows no "Reloading…" toast, which would only flash.
+const RELOAD_TOAST_DELAY = 300;
+const FORGE_NAMES: Record<ProviderId, string> = { github: 'GitHub', gitlab: 'GitLab' };
 
 /** Which optional pieces the header row shows. */
 interface HeaderFit {
@@ -551,6 +557,71 @@ export default function SessionBrowser(props: PageProps) {
       toast('Could not open the browser.', 'error');
   };
 
+  /** The forge the selected row's refs live on, for the reload's title and messages. */
+  const selectedForge = (): ProviderId | undefined => {
+    if (pullView()) return selectedPull()?.ref.provider;
+    const session = selected();
+    const view = session ? data.refs[session.id] : undefined;
+    return view
+      ? [...view.branchRefs, ...view.links.map((link) => link.ref)][0]?.provider
+      : undefined;
+  };
+  /** The keys dialog's name for `f5`, with the selected row's forge when it has refs. */
+  const reloadTitle = () => {
+    const forge = selectedForge();
+    return `Reload from ${forge ? FORGE_NAMES[forge] : 'GitHub/GitLab'}`;
+  };
+  /** Fresh details of the Pull requests view's selection, handed to its preview after `f5`. */
+  const [reloadedDetails, setReloadedDetails] = createSignal<
+    { key: string; details: PullDetails } | undefined
+  >();
+  /** Waits for `task`, with a "Reloading…" toast when it takes longer than a moment. */
+  const withReloadToast = async <T>(task: Promise<T>): Promise<T> => {
+    const timer = setTimeout(() => toast('Reloading…'), RELOAD_TOAST_DELAY);
+    try {
+      return await task;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  /**
+   * `f5`: refetches the selected session's refs, branch pull requests and git checkout, or in
+   * the Pull requests view the selected pull request's snapshot and details. A rate limit still
+   * holds on the server.
+   */
+  const reload = async () => {
+    if (pullView()) {
+      const pull = selectedPull();
+      if (!pull) return;
+      const forge = FORGE_NAMES[pull.ref.provider];
+      try {
+        const details = await withReloadToast(
+          Promise.resolve().then(() =>
+            model.rpc()['pull.details']({ ref: pull.ref, force: true }, model.rpcOptions())
+          )
+        );
+        setReloadedDetails({ key: pull.key, details });
+      } catch {
+        toast(`Could not reload from ${forge}.`, 'error');
+        return;
+      }
+      // The sessions' views carry the pull request's state to the row.
+      void controller.refresh(pull.sessions.map((session) => session.id));
+      return;
+    }
+    const session = selected();
+    if (!session) return;
+    try {
+      const failed = await withReloadToast(controller.reload(session.id));
+      if (failed.length > 0) {
+        const names = failed.map((provider) => FORGE_NAMES[provider]).join(' and ');
+        toast(`Could not reload from ${names}.`, 'error');
+      }
+    } catch {
+      toast('Could not reload. Is the opencode-super-sessions server plugin enabled?', 'error');
+    }
+  };
+
   // The arrow keys drive the list, or the preview's Work rows after `right`. The search input
   // keeps the terminal focus either way, so typing still searches.
   const [focus, setFocus] = createSignal<'list' | 'work'>('list');
@@ -691,6 +762,7 @@ export default function SessionBrowser(props: PageProps) {
         key: shortcut('super-sessions.open.ref', 'ctrl+g'),
         run: openRef
       },
+      { title: reloadTitle(), key: RELOAD_KEY, run: reload },
       ...(wide() && workRefs().length > 0
         ? [{ title: 'Focus the preview links', key: 'right', run: focusWork }]
         : []),
@@ -719,6 +791,7 @@ export default function SessionBrowser(props: PageProps) {
       key: shortcut('super-sessions.open.ref', 'ctrl+g'),
       run: openRef
     },
+    { title: reloadTitle(), key: RELOAD_KEY, run: reload },
     ...(wide() && workCount() > 0
       ? [{ title: 'Focus the sessions in the preview', key: 'right', run: focusWork }]
       : []),
@@ -909,6 +982,7 @@ export default function SessionBrowser(props: PageProps) {
       bind: 'ctrl+g',
       run: openRef
     },
+    { bind: RELOAD_KEY, title: 'Reload from the forge', run: () => void reload() },
     // Last on purpose: the specific bindings above win on keys shared with app.exit (ctrl+d).
     // Like the host's dialogs, the exit keys clear the search first and close on the next press;
     // quitting OpenCode from a list is never what the user meant.
@@ -1427,6 +1501,7 @@ export default function SessionBrowser(props: PageProps) {
     pull: () => (wide() && pullView() ? selectedPull() : undefined),
     refs: (sessionID) => data.refs[sessionID],
     details: (ref) => model.rpc()['pull.details']({ ref }, model.rpcOptions()),
+    reloaded: reloadedDetails,
     selectedSession: () => (focus() === 'work' && pullView() ? workIndex() : undefined),
     open: (sessionID) => open(sessionID),
     now: model.now,
@@ -1778,7 +1853,8 @@ function linkError(error: unknown): string {
   if (type === 'unavailable') {
     const provider =
       typeof data === 'object' && data !== null && 'provider' in data ? data.provider : undefined;
-    const forge = provider === 'gitlab' ? 'GitLab' : provider === 'github' ? 'GitHub' : 'The forge';
+    const forge =
+      provider === 'gitlab' || provider === 'github' ? FORGE_NAMES[provider] : 'The forge';
     return `${forge} is unavailable. Run /super-sessions status for details.`;
   }
   return 'Could not link. Enable the opencode-super-sessions server plugin.';

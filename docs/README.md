@@ -104,7 +104,7 @@ Opened and peeked sessions go first, then the previewed one, then "Scan all". A 
 | Current branch             | `src/repo.ts`                 | 10 s per directory                                                                          |
 | Forge availability         | `src/providers/*/provider.ts` | 5 min, 10 s while the CLI is missing                                                        |
 
-Concurrent requests for one key share a fetch. A rate limit sets `retryAt`, which holds even for forced refreshes, and a transient error keeps the last known state; only `not-found` replaces it. Snapshot refreshes never write metadata. The `refs` RPC returns cached data at once and refreshes stale sessions in the background (`runtime.refreshing` keeps those from stacking); `refresh` waits for the forge.
+Concurrent requests for one key share a fetch. A rate limit sets `retryAt`, which holds even for forced refreshes, and a transient error keeps the last known state; only `not-found` replaces it. Snapshot refreshes never write metadata. The `refs` RPC returns cached data at once and refreshes stale sessions in the background (`runtime.refreshing` keeps those from stacking); `refresh` waits for the forge. A forced `refresh` also skips the repository caches in `src/repo.ts` and sets `failed` on a view to the forges whose last answer for it was an error (`failure` on the snapshot and branch caches), so `f5` can say which forge did not answer.
 
 ### Child processes
 
@@ -168,7 +168,9 @@ The dialog rows are in `src/settings/definitions.ts`. TUI settings live in `cont
 | ---------------------------------------------------- | --------------------------------------------------------- |
 | `status`                                             | CLI availability of each enabled forge on its public host |
 | `refs`, `refresh`                                    | Links, branch refs and states per session                 |
+| `refresh` with `force`                               | `f5`: refetch everything and rerun git, report `failed`   |
 | `pull.details`                                       | Author, branches, description and checks of one PR        |
+| `pull.details` with `force`                          | `f5` in the Pull requests view: details and snapshot      |
 | `search`                                             | Ranked hits for a query, scope and archived flag          |
 | `link`, `unlink`                                     | Manual link and dismissal                                 |
 | `done.set`                                           | The user's Done mark, or `null` to follow the refs again  |

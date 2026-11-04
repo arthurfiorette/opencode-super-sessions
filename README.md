@@ -183,6 +183,7 @@ Keys are written the way OpenCode writes them. Keys marked "yours" belong to an 
 | `ctrl+y`                      | Archive every Done session after confirmation. Done view, not while searching                                                  |
 | `ctrl+l`                      | Link a pull request or issue: a URL, `owner/repo#N` or `#N`                                                                    |
 | `ctrl+g`                      | Open the main pull request, or else the first issue, in your web browser. In the Pull requests view, the selected pull request |
+| `f5`                          | Reload the selected session's refs and branch from GitHub or GitLab, or the selected pull request in the Pull requests view    |
 | `ctrl+p`                      | OpenCode's command palette; `esc` returns to the browser                                                                       |
 | `ctrl+o`                      | [Settings](#settings)                                                                                                          |
 | `ctrl+c`, `<leader>q` (yours) | Clear the search, then close the browser (`app.exit`)                                                                          |

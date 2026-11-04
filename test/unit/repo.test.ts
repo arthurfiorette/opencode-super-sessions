@@ -93,3 +93,13 @@ test('resolve picks the forge remote and reads default branch, branch and upstre
     assert.deepEqual(await resolver.resolve(directory), expected, name);
   }
 });
+
+test('a forced resolve reads a branch switch the cache still hides', async (t) => {
+  const directory = await repository((dir) => git(dir, 'checkout', '-q', '-b', 'one'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const resolver = createRepoResolver({ definitions });
+  assert.equal((await resolver.resolve(directory)).branch, 'one');
+  git(directory, 'checkout', '-q', '-b', 'two');
+  assert.equal((await resolver.resolve(directory)).branch, 'one');
+  assert.equal((await resolver.resolve(directory, { force: true })).branch, 'two');
+});

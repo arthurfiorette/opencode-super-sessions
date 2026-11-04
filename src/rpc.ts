@@ -24,7 +24,12 @@ export const sessionRefViewSchema = z.strictObject({
   /** The user's Done override (see `done.set`); absent follows the refs. */
   done: z.boolean().optional(),
   /** When the user marked the session Done. */
-  doneAt: z.number().int().optional()
+  doneAt: z.number().int().optional(),
+  /**
+   * Forges whose last answer for this session's branch or refs was an error, rate limits
+   * included. Only a forced `refresh` sets it.
+   */
+  failed: z.array(providerIdSchema).optional()
 });
 
 export const searchScopeSchema = z.union([
@@ -136,7 +141,11 @@ export const SuperSessions = Rpc.define({
       input: z.strictObject({ sessionIDs }),
       output: z.record(z.string(), sessionRefViewSchema)
     },
-    /** Like `refs`, but waits for a forge refresh of entries whose cache expired, or all with `force`. */
+    /**
+     * Like `refs`, but waits for a forge refresh of entries whose cache expired. `force` refetches
+     * every entry and reads the sessions' git checkouts again, except where a rate limit's
+     * `retryAt` has not passed.
+     */
     refresh: {
       input: z.strictObject({ sessionIDs, force: z.boolean().optional() }),
       output: z.record(z.string(), sessionRefViewSchema)
@@ -167,9 +176,11 @@ export const SuperSessions = Rpc.define({
     /**
      * Author, branches, description and CI checks of one pull request, for the preview of the
      * Pull requests view. Cached like its snapshot; `unavailable` says why the forge did not answer.
+     * `force` refetches the details and the snapshot, unless a rate limit's `retryAt` has not
+     * passed, and reports a failed snapshot as `unavailable` too.
      */
     'pull.details': {
-      input: z.strictObject({ ref: refSchema }),
+      input: z.strictObject({ ref: refSchema, force: z.boolean().optional() }),
       output: pullDetailsSchema,
       errors: { unavailable: z.strictObject({ reason: z.string() }) }
     },

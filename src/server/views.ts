@@ -1,5 +1,5 @@
 import type { Plugin } from '@opencode/plugin';
-import { type Ref, type RefState, readSessionRefs, refKey } from '../refs/ref.js';
+import { type ProviderId, type Ref, type RefState, readSessionRefs, refKey } from '../refs/ref.js';
 import { rankSessions, type SearchSession } from '../refs/search.js';
 import type { RepoInfo } from '../repo.js';
 import type { SearchHit, SearchScope, SessionRefView } from '../rpc.js';
@@ -46,17 +46,17 @@ export async function buildViews(
   sessionIDs: string[],
   mode: ViewMode
 ): Promise<Record<string, SessionRefView>> {
+  const force = mode.wait && mode.force === true;
   const loaded = await Promise.all(
     [...new Set(sessionIDs)].map(async (id) => {
       const info = await readSession(session, id);
       if (info === undefined) return undefined;
-      const repo = await resolveRepo(runtime, info.location.directory);
+      const repo = await resolveRepo(runtime, info.location.directory, { force });
       return { id, refs: readSessionRefs(info.metadata), repo, target: branchTarget(repo) };
     })
   );
   const sessions = loaded.filter((entry) => entry !== undefined);
 
-  const force = mode.wait && mode.force === true;
   const stale = new Set<string>();
   const withBranches = await Promise.all(
     sessions.map(async (entry) => {
@@ -77,8 +77,10 @@ export async function buildViews(
   }
 
   const views: Record<string, SessionRefView> = {};
+  const targets = new Map<string, BranchTarget | undefined>();
   const added: Ref[] = [];
   for (const entry of withBranches) {
+    targets.set(entry.id, entry.target);
     const refs = await syncCloses(runtime, session, entry.id, entry.refs, entry.branchRefs).catch(
       (error: unknown) => {
         warn(`Recording closed issues for ${entry.id} failed`, error);
@@ -108,6 +110,13 @@ export async function buildViews(
     );
     view.states = statesOf(runtime, keys);
     if (!mode.wait && runtime.cache.stale(keys).length > 0) stale.add(id);
+    if (force) {
+      const failed = failedForges(runtime, targets.get(id), [
+        ...view.links.map((link) => link.ref),
+        ...view.branchRefs
+      ]);
+      if (failed.length > 0) view.failed = failed;
+    }
   }
 
   if (stale.size > 0) refreshInBackground(runtime, session, [...stale]);
@@ -122,6 +131,20 @@ function trackedRefsOf(entry: { refs: { links: Array<{ ref: Ref }> }; branchRefs
 /** Drops repeated refs, keeping the first of each key. */
 function uniqueRefs(refs: Ref[]): Ref[] {
   return [...new Map(refs.map((ref) => [refKey(ref), ref])).values()];
+}
+
+/** Forges whose last answer for the branch lookup or one of the refs was an error. */
+function failedForges(
+  runtime: Runtime,
+  target: BranchTarget | undefined,
+  refs: Ref[]
+): ProviderId[] {
+  const failed = new Set<ProviderId>();
+  if (target !== undefined && runtime.branches.failure(target)) failed.add(target.repo.provider);
+  for (const ref of refs) {
+    if (runtime.cache.failure(refKey(ref))) failed.add(ref.provider);
+  }
+  return [...failed];
 }
 
 /** Cached states for keys whose last answer was a state rather than an error. */

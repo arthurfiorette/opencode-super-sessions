@@ -113,7 +113,8 @@ export function createBrowserModel(
           rpcOptions()
         ),
       refs: (sessionIDs) => rpc().refs({ sessionIDs }, rpcOptions()),
-      refresh: (sessionIDs) => rpc().refresh({ sessionIDs }, rpcOptions()),
+      refresh: (sessionIDs, force) =>
+        rpc().refresh(force ? { sessionIDs, force } : { sessionIDs }, rpcOptions()),
       running,
       async pending(sessionID) {
         const permission = context.data.session.permission;
