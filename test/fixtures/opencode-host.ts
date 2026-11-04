@@ -24,7 +24,7 @@ try {
     const location: LocationRef = { directory: path.join(directory, name) };
     await mkdir(location.directory);
     await host.sessions.create({ location });
-    assert.deepEqual(await host.rpc(SuperSessions).status({}, { location }), {});
+    assert.deepEqual(await host.rpc(SuperSessions).status({}, { location }), { providers: {} });
   }
 
   console.log('OpenCode integration passed');

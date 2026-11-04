@@ -8,7 +8,7 @@ export default Plugin.define({
   id: 'opencode-super-sessions',
   async setup(context) {
     await context.rpc.register(SuperSessions, {
-      status: async () => ({})
+      status: async () => ({ providers: {} })
     });
   }
 });
