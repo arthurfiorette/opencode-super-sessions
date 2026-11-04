@@ -8,6 +8,22 @@ This guide covers stable releases through GitHub Actions and npm trusted publish
 2. On npm, configure a GitHub Actions trusted publisher for the package: owner `arthurfiorette`, repository `opencode-super-sessions`, workflow `publish.yml`, environment `NPM Registry`. Enable direct `npm publish` for this publisher; stage-only permission does not authorize the current workflow.
 3. A new package may need a manual first publish before its trusted publisher can be configured. Complete that bootstrap using your npm account and required authentication, then use the workflow for subsequent releases. Do not store a long-lived npm token in the repository.
 
+### Manual first publish
+
+From a clean checkout of the commit CI passed on:
+
+```sh
+git status --short             # must print nothing
+pnpm install --frozen-lockfile
+OPENCODE_BIN=$(which opencode) pnpm check
+npm pack --dry-run             # dist/*.js, *.js.map, *.d.ts, the three entry files, README, LICENSE
+npm login
+npm publish --access public    # runs prepack, which rebuilds dist
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Then add the trusted publisher on npmjs.com (step 2 above), and from then on publish only through GitHub releases. A manual publish carries no provenance; releases from `publish.yml` do.
+
 Complete a successful publish within two days of creating the trusted publisher, or npm expires the unvalidated configuration. Create it when the release is ready. See [npm's trusted publishing guide](https://docs.npmjs.com/trusted-publishers/).
 
 ## Prepare and publish
