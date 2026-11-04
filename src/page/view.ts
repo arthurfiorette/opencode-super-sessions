@@ -31,6 +31,7 @@ import { regenerateTitle, setArchived } from '../host/session-api.js';
 import { dialogTheme, sessionBackground } from '../host/theme.js';
 import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
+import { excludeFromAutoArchive } from '../settings/maintenance.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import { ICONS, titleGradient } from './icons.js';
 import { guardActions, type PageProps, type PeekBannerProps, routeKey } from './page.js';
@@ -350,6 +351,7 @@ export default function SessionBrowser(props: PageProps) {
     }
     controller.archived(session.id, archived, Date.now());
     if (archived && settings.closeTabOnArchive()) context.ui.tabs.close(session.id);
+    if (!archived) void excludeFromAutoArchive(context, [session.id]);
   };
   const rename = async () => {
     const session = selected();

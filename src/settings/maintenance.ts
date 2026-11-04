@@ -246,10 +246,7 @@ export function installMaintenance(
           failed++;
         }
       }
-      // Excluded on the server, or the next sweep would archive them again.
-      await rpc()
-        ['archive.exclude']({ sessionIDs: ids }, options())
-        .catch(() => {});
+      await excludeFromAutoArchive(context, ids);
       toast(
         failed === 0
           ? `Restored ${count(ids.length, 'session')}`
@@ -300,6 +297,30 @@ export function installMaintenance(
       disposeRoot();
     }
   };
+}
+
+/**
+ * Tells the server the user restored these sessions, so auto-archive never takes them again.
+ * Called after every restore: the undo command, `ctrl+s` in the Archived view and `/unarchive`.
+ * Never rejects; without the server plugin there is no auto-archive to stop.
+ */
+export function excludeFromAutoArchive(
+  context: Plugin.Context,
+  sessionIDs: readonly string[]
+): Promise<void> {
+  return Promise.resolve()
+    .then(() =>
+      context.client
+        .rpc(SuperSessions)
+        ['archive.exclude'](
+          { sessionIDs: [...sessionIDs] },
+          { location: context.location ?? context.data.location.default() }
+        )
+    )
+    .then(
+      () => {},
+      () => {}
+    );
 }
 
 /** "1 worktree", "2 worktrees". */
