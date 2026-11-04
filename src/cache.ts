@@ -128,6 +128,25 @@ export function candidateKey(candidate: RefCandidate): string {
 }
 
 /**
+ * Fills an open pull request's unknown `conflicts` with the previous answer, following t3code:
+ * forges compute mergeability lazily and answer "unknown" for a while after the base branch
+ * moves, which would make the icon blink. Only while `updatedAt` is unchanged: a push to the pull
+ * request bumps it and may have resolved the conflict.
+ */
+function withKnownConflicts(
+  previous: Snapshot | undefined,
+  next: { ref: Ref; state: RefState }
+): { ref: Ref; state: RefState } {
+  const { state } = next;
+  const open = (status: RefStatus) => status === 'open' || status === 'draft';
+  if (!open(state.status) || state.review?.conflicts !== undefined) return next;
+  if (previous === undefined || !('ref' in previous) || !open(previous.state.status)) return next;
+  const known = previous.state.review?.conflicts;
+  if (known === undefined || previous.state.updatedAt !== state.updatedAt) return next;
+  return { ...next, state: { ...state, review: { ...state.review, conflicts: known } } };
+}
+
+/**
  * Creates the snapshot cache. The server keeps one per process so every Location shares the
  * same states and never asks the forge twice for one ref.
  */
@@ -156,7 +175,8 @@ export function createSnapshotCache(options: { now?: () => number } = {}): Snaps
         aliases.set(key, resolved);
         entries.delete(key);
       }
-      entries.set(resolved, { value, expiresAt: at + TTL[value.state.status] });
+      const kept = withKnownConflicts(entries.get(resolved)?.value, value);
+      entries.set(resolved, { value: kept, expiresAt: at + TTL[kept.state.status] });
       return;
     }
     const resolved = aliases.get(key) ?? key;

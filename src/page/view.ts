@@ -67,6 +67,7 @@ import {
   moveSelection,
   type PageView,
   type PullRow,
+  RUNNING_GROUP,
   rowsOf,
   type SearchReason,
   scrollFor,
@@ -183,7 +184,8 @@ export default function SessionBrowser(props: PageProps) {
           theme: theme(),
           mode: context.themeMode,
           refs: data.refs[session.id],
-          matched: reason(session)?.ref
+          matched: reason(session)?.ref,
+          groupIssues: settings.groupIssues()
         })
       : NO_DETAILS;
   /** The age, or the archive and update ages in the Archived view, on the title line. */
@@ -1104,8 +1106,6 @@ export default function SessionBrowser(props: PageProps) {
     width: listWidth() - 2,
     details: detailsOf(session),
     selected: memory.selected === session.id,
-    // Pinned rows show their slot instead of the spinner, but their title still says it runs.
-    running: model.running(session.id),
     deleting: deleting() === session.id,
     hovered: hoveredRow() === session.id
   });
@@ -1165,8 +1165,8 @@ export default function SessionBrowser(props: PageProps) {
           ? 'b'
           : value.kind === 'pull'
             ? `p:${value.pull.key}`
-            : value.kind === 'wrap'
-              ? `w${value.index}:${value.session.id}`
+            : value.kind === 'wrap' || value.kind === 'issue'
+              ? `${value.kind}${value.index}:${value.session.id}`
               : `${value.kind}:${value.session.id}`;
     });
     return createMemo(() => {
@@ -1183,9 +1183,12 @@ export default function SessionBrowser(props: PageProps) {
             paddingLeft: 1,
             children: jsx('text', {
               attributes: TextAttributes.BOLD,
-              // The token the host uses for its select dialog's category headers.
+              // The token the host uses for its select dialog's category headers; the Running
+              // group takes the spinner's color instead of every running title.
               get fg() {
-                return theme().hue.accent[200];
+                return value.title === RUNNING_GROUP
+                  ? runningColor(theme())
+                  : theme().hue.accent[200];
               },
               children: value.title
             })
@@ -1222,7 +1225,7 @@ export default function SessionBrowser(props: PageProps) {
         };
         if (value.kind === 'title') return titleLine(theme, row, events);
         if (value.kind === 'wrap') return wrapLine(value.index, theme, row, events);
-        return detailsLine(value.kind, theme, row, events);
+        return detailsLine(value, theme, row, events);
       });
     });
   };

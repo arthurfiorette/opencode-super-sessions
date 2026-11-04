@@ -113,6 +113,41 @@ test('a rate limit keeps the last state and blocks even forced refetches until r
   assert.equal(calls.length, 3);
 });
 
+test('an unknown mergeability keeps the last known conflicts until the pull request changes', async () => {
+  let clock = 0;
+  const cache = createSnapshotCache({ now: () => clock });
+  const item = candidate(8, 'pr');
+  const key = candidateKey(item);
+  let answer: { conflicts?: boolean; updatedAt: number } = { conflicts: true, updatedAt: 1 };
+  const { provider } = fakeProvider((value) => {
+    const base = resolved(value, 'open');
+    if (!('state' in base)) return base;
+    const { conflicts, updatedAt } = answer;
+    return {
+      ...base,
+      state: {
+        ...base.state,
+        updatedAt,
+        review: { checks: 'passing', ...(conflicts === undefined ? {} : { conflicts }) }
+      }
+    };
+  });
+  /** Fetches the ref again and returns its review. */
+  const review = async () => {
+    clock += 3 * MINUTE;
+    const value = (await cache.ensure(provider, [item])).get(key);
+    return value && 'state' in value ? value.state.review : undefined;
+  };
+
+  await review();
+  // GitHub answers UNKNOWN while it recomputes after the base branch moved.
+  answer = { updatedAt: 1 };
+  assert.deepEqual(await review(), { checks: 'passing', conflicts: true });
+  // A push to the pull request bumps updatedAt and may have resolved the conflict.
+  answer = { updatedAt: 2 };
+  assert.deepEqual(await review(), { checks: 'passing' });
+});
+
 test('forced details loads skip fresh entries but wait out a rate limit', async () => {
   let clock = 0;
   const cache = createDetailsCache({ now: () => clock });

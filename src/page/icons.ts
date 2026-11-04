@@ -17,14 +17,19 @@ export const ICONS = {
   issueNotPlanned: '\uf517',
   done: '\uf49e',
   archived: '\uf411',
-  // Review and CI, in GitHub's glyphs: file_diff, check_circle_fill, eye, check, x, dot_fill and
-  // comment. Approval takes the filled circle so it never reads like a passing CI tick beside it.
+  // Review and CI, in GitHub's glyphs: file_diff, check_circle_fill, eye, check, x, dot_fill,
+  // stop, skip, alert and comment. Approval takes the filled circle so it never reads like a
+  // passing CI tick beside it.
   changesRequested: '\uf4d2',
   approved: '\uf4a4',
   reviewRequired: '\uf441',
   checksPassing: '\uf42e',
   checksFailing: '\uf467',
   checksPending: '\uf444',
+  checksCancelled: '\uf46e',
+  checksSkipped: '\uf517',
+  actionRequired: '\uf421',
+  conflicts: '\uf421',
   threads: '\uf41f'
 } as const;
 

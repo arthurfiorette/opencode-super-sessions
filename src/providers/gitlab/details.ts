@@ -25,14 +25,14 @@ export function buildDetailsQuery(ref: Ref): {
   return { query: DETAILS_QUERY, variables: { path: ref.repo, iid: String(ref.number) } };
 }
 
-// A manual job waits for a person, which says nothing about the code, like a neutral check run.
+// Manual jobs wait for a person, which says nothing about the code; they are left out, as in the
+// snapshot's job counts, so the preview's check summary adds up to the same total.
 const STATUSES: Record<string, PullCheck['status']> = {
   SUCCESS: 'success',
   FAILED: 'failure',
   CANCELED: 'cancelled',
   CANCELING: 'cancelled',
   SKIPPED: 'skipped',
-  MANUAL: 'neutral',
   CREATED: 'pending',
   WAITING_FOR_RESOURCE: 'pending',
   PREPARING: 'pending',
@@ -47,6 +47,7 @@ function entryOf(node: unknown, host: string): CheckEntry[] {
   if (!isRecord(node) || typeof node.name !== 'string' || typeof node.status !== 'string') {
     return [];
   }
+  if (node.status === 'MANUAL') return [];
   const url = typeof node.webPath === 'string' ? `https://${host}${node.webPath}` : undefined;
   const stage = isRecord(node.stage) ? node.stage.name : undefined;
   return [

@@ -1,5 +1,5 @@
 {
-  "source": "Live: anonymous POSTs to https://gitlab.com/api/graphql on 2026-11-04, one per batch snapshotBatches makes for the candidates in gitlab.test.ts, each with the document buildSnapshotQuery builds for it (scored 140, 159, 142 and 48 of 200). Bodies and rate limit headers are verbatim; the status line, exit code and stderr follow glab's api command source (exit 0 when the body has no errors). Header names are canonicalized the way glab prints them. !4156's head pipeline had 17 jobs, one of them manual.",
+  "source": "Live: anonymous POSTs to https://gitlab.com/api/graphql on 2026-11-04, one per batch snapshotBatches makes for the candidates in gitlab.test.ts, each with the document buildSnapshotQuery builds for it (scored 144, 163, 146 and 94 of 200). Bodies and rate limit headers are verbatim; the status line, exit code and stderr follow glab's api command source (exit 0 when the body has no errors). Header names are canonicalized the way glab prints them. !4156's head pipeline had 17 jobs, one of them manual. Recaptured the same day to add `conflicts`; draft !4282 conflicts while `detailedMergeStatus` names the draft.",
   "batches": [
     {
       "code": 0,
@@ -7,9 +7,9 @@
       "headers": {
         "Ratelimit-Limit": "500",
         "Ratelimit-Name": "throttle_unauthenticated_api",
-        "Ratelimit-Observed": "3",
-        "Ratelimit-Remaining": "497",
-        "Ratelimit-Reset": "1793799960"
+        "Ratelimit-Observed": "1",
+        "Ratelimit-Remaining": "499",
+        "Ratelimit-Reset": "1793806260"
       },
       "stderr": "",
       "body": {
@@ -33,6 +33,7 @@
               "approved": true,
               "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
               "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": false,
               "resolvableDiscussionsCount": 1,
               "resolvedDiscussionsCount": 1,
               "headPipeline": {
@@ -54,12 +55,13 @@
               "approved": false,
               "approvedBy": { "nodes": [] },
               "detailedMergeStatus": "DRAFT_STATUS",
+              "conflicts": false,
               "resolvableDiscussionsCount": 3,
               "resolvedDiscussionsCount": 0,
               "headPipeline": {
-                "status": "RUNNING",
+                "status": "SUCCESS",
                 "total": { "count": 15 },
-                "passed": { "count": 10 }
+                "passed": { "count": 15 }
               }
             },
             "m2": {
@@ -75,6 +77,7 @@
               "approved": false,
               "approvedBy": { "nodes": [] },
               "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": false,
               "resolvableDiscussionsCount": 4,
               "resolvedDiscussionsCount": 0,
               "headPipeline": {
@@ -99,9 +102,9 @@
       "headers": {
         "Ratelimit-Limit": "500",
         "Ratelimit-Name": "throttle_unauthenticated_api",
-        "Ratelimit-Observed": "5",
-        "Ratelimit-Remaining": "495",
-        "Ratelimit-Reset": "1793799960"
+        "Ratelimit-Observed": "2",
+        "Ratelimit-Remaining": "498",
+        "Ratelimit-Reset": "1793806260"
       },
       "stderr": "",
       "body": {
@@ -122,6 +125,7 @@
               "approved": true,
               "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
               "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": false,
               "resolvableDiscussionsCount": 1,
               "resolvedDiscussionsCount": 1,
               "headPipeline": {
@@ -153,6 +157,7 @@
               "approved": true,
               "approvedBy": { "nodes": [] },
               "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": false,
               "resolvableDiscussionsCount": 3,
               "resolvedDiscussionsCount": 1,
               "headPipeline": null
@@ -173,9 +178,9 @@
       "headers": {
         "Ratelimit-Limit": "500",
         "Ratelimit-Name": "throttle_unauthenticated_api",
-        "Ratelimit-Observed": "7",
-        "Ratelimit-Remaining": "493",
-        "Ratelimit-Reset": "1793799960"
+        "Ratelimit-Observed": "3",
+        "Ratelimit-Remaining": "497",
+        "Ratelimit-Reset": "1793806260"
       },
       "stderr": "",
       "body": {
@@ -195,6 +200,7 @@
               "approved": true,
               "approvedBy": { "nodes": [] },
               "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": true,
               "resolvableDiscussionsCount": 0,
               "resolvedDiscussionsCount": 0,
               "headPipeline": null
@@ -219,6 +225,7 @@
               "approved": true,
               "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
               "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": false,
               "resolvableDiscussionsCount": 1,
               "resolvedDiscussionsCount": 1,
               "headPipeline": {
@@ -243,7 +250,8 @@
               },
               "approved": false,
               "approvedBy": { "nodes": [] },
-              "detailedMergeStatus": "UNCHECKED",
+              "detailedMergeStatus": "REQUESTED_CHANGES",
+              "conflicts": false,
               "resolvableDiscussionsCount": 5,
               "resolvedDiscussionsCount": 0,
               "headPipeline": {
@@ -262,9 +270,9 @@
       "headers": {
         "Ratelimit-Limit": "500",
         "Ratelimit-Name": "throttle_unauthenticated_api",
-        "Ratelimit-Observed": "9",
-        "Ratelimit-Remaining": "491",
-        "Ratelimit-Reset": "1793799960"
+        "Ratelimit-Observed": "1",
+        "Ratelimit-Remaining": "499",
+        "Ratelimit-Reset": "1793806260"
       },
       "stderr": "",
       "body": {
@@ -278,13 +286,36 @@
               "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4156",
               "mergedAt": null,
               "closedAt": null,
-              "updatedAt": "2026-11-04T13:40:17Z",
+              "updatedAt": "2026-11-04T13:58:08Z",
               "diffHeadSha": "7b6ff1d59a57f200e313a667e4ca946c90b967c6",
               "workItemRelations": { "nodes": [] },
               "approved": false,
-              "approvedBy": { "nodes": [] },
-              "detailedMergeStatus": "REQUESTED_CHANGES",
+              "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
+              "detailedMergeStatus": "DISCUSSIONS_NOT_RESOLVED",
+              "conflicts": false,
               "resolvableDiscussionsCount": 2,
+              "resolvedDiscussionsCount": 0,
+              "headPipeline": {
+                "status": "SUCCESS",
+                "total": { "count": 16 },
+                "passed": { "count": 16 }
+              }
+            },
+            "m1": {
+              "state": "opened",
+              "draft": true,
+              "title": "Draft: feat(df): reach registries through proxies set in package-manager config",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4282",
+              "mergedAt": null,
+              "closedAt": null,
+              "updatedAt": "2026-11-03T09:53:58Z",
+              "diffHeadSha": "5ceb547638c3aeca8a86f609a070f038eef5ae09",
+              "workItemRelations": { "nodes": [] },
+              "approved": true,
+              "approvedBy": { "nodes": [] },
+              "detailedMergeStatus": "DRAFT_STATUS",
+              "conflicts": true,
+              "resolvableDiscussionsCount": 0,
               "resolvedDiscussionsCount": 0,
               "headPipeline": {
                 "status": "SUCCESS",

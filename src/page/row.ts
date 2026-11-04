@@ -6,7 +6,9 @@ import type { Options } from '../config.js';
 import { type Ref, type RefReview, type RefState, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
+import { ciLook } from './checks.js';
 import { ICONS, refColor, refIcon } from './icons.js';
+import type { DetailLine } from './state.js';
 
 /** A run of text in one color on a row line. */
 export interface Segment {
@@ -30,8 +32,6 @@ export interface RowModel {
   /** Lines under the title, from {@link rowDetails}. */
   details: RowDetails;
   selected: boolean;
-  /** The session runs: the title takes the spinner's color, unless the row is selected. */
-  running: boolean;
   /** The first delete press turned this row into a confirmation. */
   deleting: boolean;
   /** The pointer is over one of the row's lines; a faint tint, below the selection's colors. */
@@ -46,6 +46,8 @@ export interface RefsInput {
   refs: SessionRefView | undefined;
   /** `refKey` of the ref a search matched, drawn with its title in the base text color. */
   matched?: string | undefined;
+  /** Join the issues on one line instead of one line each (the "Group issues" setting). */
+  groupIssues?: boolean;
 }
 
 /** Short relative age: `now`, `5m`, `3h`, `2d`, `4mo`, `1y`. */
@@ -85,24 +87,34 @@ export function findRef(view: SessionRefView | undefined, key: string): Ref | un
  *
  * - `pr`: the main PR's icon and number, its review and CI icons, its title, then a matched ref
  *   that is shown nowhere else, and `+N`.
- * - `issues`: one piece per tracked issue (with its title when it is the only one), fitted to
- *   the width when drawn; `extra` is the `+N`
- *   the issues line carries when there is no PR line.
+ * - `issues`: with `grouped`, one piece per tracked issue (with its title when it is the only
+ *   one), joined on one line and fitted to the width when drawn; `extra` is the `+N` that line
+ *   carries when there is no PR line. Otherwise one whole line per issue (icon, number and
+ *   title), at most {@link ISSUE_LINES}, then a muted `+N more` line; the first issue line
+ *   carries the `+N` instead, and `extra` stays 0.
  */
 export interface RowDetails {
   pr: Segment[];
   issues: Segment[][];
   extra: number;
+  grouped: boolean;
 }
 
 /** Details of a session without refs. */
-export const NO_DETAILS: RowDetails = { pr: [], issues: [], extra: 0 };
+export const NO_DETAILS: RowDetails = { pr: [], issues: [], extra: 0, grouped: false };
+
+/** Issue lines a row lists one per line before the rest fold into `+N more`. */
+export const ISSUE_LINES = 5;
 
 /** The detail lines a row has, in order, for laying out the list. */
-export function detailKinds(details: RowDetails): Array<'pr' | 'issues'> {
+export function detailKinds(details: RowDetails): DetailLine[] {
   return [
-    ...(details.pr.length > 0 ? (['pr'] as const) : []),
-    ...(details.issues.length > 0 ? (['issues'] as const) : [])
+    ...(details.pr.length > 0 ? [{ kind: 'pr' as const }] : []),
+    ...(details.issues.length === 0
+      ? []
+      : details.grouped
+        ? [{ kind: 'issues' as const }]
+        : details.issues.map((_, index) => ({ kind: 'issue' as const, index })))
   ];
 }
 
@@ -119,14 +131,18 @@ export function checkCounts(review: RefReview | undefined): string | undefined {
 
 /**
  * The review and CI icons drawn after an open pull request's number, in GitHub's colors: the
- * review verdict, the CI result with `passed/total` muted unless every check passed (see
- * {@link checkCounts}), then the unresolved threads in the
- * warning color. A part without data is left out. Each part starts with its separating space, so
- * the number and the state icon stay in the same column on every row, and each glyph keeps a
- * 2-cell slot like the ref icons because a space always follows it (the next part's or the
- * title's).
+ * review verdict, the CI result (see {@link ciLook}) with `passed/total` muted unless every check
+ * passed (see {@link checkCounts}) or `counts` is false, an alert in the error color when the
+ * branch has merge conflicts, then the unresolved threads in the warning color. A part without
+ * data is left out. Each part starts with its separating space, so the number and the state icon
+ * stay in the same column on every row, and each glyph keeps a 2-cell slot like the ref icons
+ * because a space always follows it (the next part's or the title's).
  */
-export function badgeSegments(review: RefReview | undefined, theme: ResolvedTheme): Segment[] {
+export function badgeSegments(
+  review: RefReview | undefined,
+  theme: ResolvedTheme,
+  counts = true
+): Segment[] {
   if (review === undefined) return [];
   const { feedback, muted } = theme.text;
   const parts: Segment[] = [];
@@ -138,15 +154,13 @@ export function badgeSegments(review: RefReview | undefined, theme: ResolvedThem
     parts.push({ text: ` ${ICONS.reviewRequired}`, fg: muted });
   }
   if (review.checks !== undefined) {
-    const [glyph, fg] =
-      review.checks === 'passing'
-        ? [ICONS.checksPassing, feedback.success.base]
-        : review.checks === 'failing'
-          ? [ICONS.checksFailing, feedback.error.base]
-          : [ICONS.checksPending, feedback.warning.base];
+    const [glyph, fg] = ciLook(review.checks, theme);
     parts.push({ text: ` ${glyph}`, fg });
-    const counts = checkCounts(review);
-    if (counts !== undefined) parts.push({ text: ` ${counts}`, fg: muted });
+    const text = counts ? checkCounts(review) : undefined;
+    if (text !== undefined) parts.push({ text: ` ${text}`, fg: muted });
+  }
+  if (review.conflicts === true) {
+    parts.push({ text: ` ${ICONS.conflicts}`, fg: feedback.error.base });
   }
   if (review.unresolved !== undefined && review.unresolved > 0) {
     parts.push({ text: ` ${ICONS.threads} ${review.unresolved}`, fg: feedback.warning.base });
@@ -155,9 +169,13 @@ export function badgeSegments(review: RefReview | undefined, theme: ResolvedThem
 }
 
 /** {@link badgeSegments} for a ref's state, or none unless it is an open or draft pull request. */
-export function stateBadges(state: RefState | undefined, theme: ResolvedTheme): Segment[] {
+export function stateBadges(
+  state: RefState | undefined,
+  theme: ResolvedTheme,
+  counts = true
+): Segment[] {
   const open = state?.status === 'open' || state?.status === 'draft';
-  return open ? badgeSegments(state.review, theme) : [];
+  return open ? badgeSegments(state.review, theme, counts) : [];
 }
 
 /**
@@ -202,12 +220,40 @@ export function rowDetails(input: RefsInput): RowDetails {
     ...piece(ref, ref === summary.pr || ref === extraHit, ref === summary.pr)
   ]);
   if (pr.length > 0 && extra > 0) pr.push({ text: `  +${extra}`, fg: muted });
+  if (input.groupIssues === true) {
+    return {
+      pr,
+      // A lone issue has the room for its title, like the PR line; several read as a number list.
+      issues: issues.map((ref) => piece(ref, issues.length === 1)),
+      extra: pr.length > 0 ? 0 : extra,
+      grouped: true
+    };
+  }
   return {
     pr,
-    // A lone issue has the room for its title, like the PR line; several read as a number list.
-    issues: issues.map((ref) => piece(ref, issues.length === 1)),
-    extra: pr.length > 0 ? 0 : extra
+    issues: issueLines(issues, input.matched, pr.length > 0 ? 0 : extra),
+    extra: 0,
+    grouped: false
   };
+
+  /**
+   * One line per issue with its title, at most {@link ISSUE_LINES} and then `+N more`. The issue
+   * a search matched is moved up into the shown lines; `extra` trails the first line.
+   */
+  function issueLines(refs: Ref[], matchedKey: string | undefined, trailing: number): Segment[][] {
+    const ordered = [...refs];
+    const hit = ordered.findIndex((ref) => refKey(ref) === matchedKey);
+    if (ordered.length > ISSUE_LINES && hit >= ISSUE_LINES) {
+      const [moved] = ordered.splice(hit, 1);
+      if (moved) ordered.splice(ISSUE_LINES - 1, 0, moved);
+    }
+    const shown = ordered.length > ISSUE_LINES ? ordered.slice(0, ISSUE_LINES) : ordered;
+    const lines = shown.map((ref) => piece(ref, true));
+    if (trailing > 0 && lines[0]) lines[0] = [...lines[0], { text: `  +${trailing}`, fg: muted }];
+    const hidden = ordered.length - shown.length;
+    if (hidden > 0) lines.push([{ text: `+${hidden} more`, fg: muted }]);
+    return lines;
+  }
 }
 
 /**
@@ -254,8 +300,9 @@ export interface RowEvents {
 }
 
 /**
- * Color of a running session's spinner and title. The warning feedback token, which reads as
- * yellow in gruvbox, because the muted text the spinner used before did not stand out.
+ * Color of a running session's spinner and of the Running group header. The warning feedback
+ * token, which reads as yellow in gruvbox, because the muted text the spinner used before did
+ * not stand out.
  */
 export function runningColor(theme: ResolvedTheme): RGBA {
   return theme.text.feedback.warning.base;
@@ -455,9 +502,8 @@ export function titleLine(
       get children() {
         const current = model();
         const room = titleRoom(current);
-        const color = current.running ? runningColor(theme()) : theme().text.base;
         return jsx('span', {
-          style: { fg: fg(color), bold: current.selected },
+          style: { fg: fg(theme().text.base), bold: current.selected },
           children: fitText(current.title[0] ?? '', room)
         });
       }
@@ -495,9 +541,11 @@ export function wrapLine(
       wrapMode: 'none',
       get children() {
         const current = model();
-        const color = current.running ? runningColor(theme()) : theme().text.base;
         return jsx('span', {
-          style: { fg: rowColors(theme(), current).fg ?? color, bold: current.selected },
+          style: {
+            fg: rowColors(theme(), current).fg ?? theme().text.base,
+            bold: current.selected
+          },
           children: current.title[index] ?? ''
         });
       }
@@ -576,17 +624,18 @@ function detailLine(
  * instead.
  */
 export function detailsLine(
-  kind: 'pr' | 'issues',
+  line: DetailLine,
   theme: () => ResolvedTheme,
   model: () => RowModel,
   events: RowEvents
 ): JSX.Element {
   return detailLine(theme, model, events, (room) => {
     const details = model().details;
-    if (kind === 'issues') {
+    if (line.kind === 'issues') {
       return issueSegments(details.issues, details.extra, room, theme().text.muted);
     }
-    return details[kind];
+    if (line.kind === 'issue') return details.issues[line.index] ?? [];
+    return details.pr;
   });
 }
 

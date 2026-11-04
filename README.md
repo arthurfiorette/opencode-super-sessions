@@ -75,18 +75,19 @@ A row is its title line and, when they apply, the lines under it:
 
 - The title line: a marker, the title and the age of the last update. In the Archived view the age reads `archived 3d · updated 5d`.
 - The PR line, when the session has a [main pull request](#main-pull-request): its icon and number in the state color, its [review and CI icons](#review-and-ci-icons) while it is open or a draft, then its title. A trailing `+N` counts the session's other pull requests and mentioned refs.
-- The issues line, when the session tracks issues: every issue number in its state color, joined as `#1230, #19083 and #8923`. The issues the main pull request closes come first. When they do not fit, the rest are counted in `+N`. A session that tracks one issue shows its title after the number, like the PR line.
+- One line per tracked issue: its icon and number in the state color, then its title, cut with `…`. The issues the main pull request closes come first, then the others newest first. After five issues the rest are counted on a `+N more` line. Without a PR line, the first issue line carries the `+N` for the other refs.
+- With the "Group issues" setting on, one issues line instead: every issue number in its state color, joined as `#1230, #19083 and #8923`, with `+N` for the ones that do not fit. A session that tracks one issue shows its title after the number.
 
 The marker column shows one of these, highest first:
 
-| Marker     | Meaning                                                         |
-| ---------- | --------------------------------------------------------------- |
-| `1` to `9` | The session's pin slot, used by the quick switch keys           |
-| `!`        | A permission request waits for you                              |
-| `?`        | A question waits for you                                        |
-| spinner    | The session is running. Its title also takes the warning color. |
-| `●`        | Unread: the session finished after you last viewed it           |
-| `-`        | None of the above; muted, so each session's start stands out    |
+| Marker     | Meaning                                                              |
+| ---------- | -------------------------------------------------------------------- |
+| `1` to `9` | The session's pin slot, used by the quick switch keys                |
+| `!`        | A permission request waits for you                                   |
+| `?`        | A question waits for you                                             |
+| spinner    | The session is running, in the warning color like the Running header |
+| `●`        | Unread: the session finished after you last viewed it                |
+| `-`        | None of the above; muted, so each session's start stands out         |
 
 With animations off in OpenCode, the spinner is a still `⋯`. Titles wrap onto as many lines as they need, so a row keeps its height when the selection or the mouse moves; the PR and issues lines are cut with `…`. The "PR and issue line" setting hides those lines.
 
@@ -94,11 +95,14 @@ With animations off in OpenCode, the spinner is a still `⋯`. Titles wrap onto 
 
 An open or draft pull request shows these Nerd Font icons in this order. On list rows and in the Pull requests view they follow its icon and number on the same line. In the preview's Work rows and in the sidebar they get their own line under the pull request, so the title keeps its room. A part without data is left out, so the icon and number always start in the same column.
 
-| Part    | Icons                                                                                                                         |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Review  | Changes requested (red), approved (green) or review required (muted)                                                          |
-| CI      | Passing (green check), failing (red x) or pending (yellow dot), then `passed/total` such as `91/93` unless every check passed |
-| Threads | A comment icon and the number of unresolved review threads, in yellow                                                         |
+| Part      | Icons                                                                                                                                                 |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Review    | Changes requested (red), approved (green) or review required (muted)                                                                                  |
+| CI        | Passing (green check), failing (red x), pending (yellow dot) or cancelled (muted stop), then `passed/total` such as `91/93` unless every check passed |
+| Conflicts | An alert icon in red when the branch conflicts with its base. Nothing while the forge has not checked yet                                             |
+| Threads   | A comment icon and the number of unresolved review threads, in yellow                                                                                 |
+
+The CI icon is the muted stop when the only checks that did not pass were cancelled: nothing failed and nothing still runs. GitHub's own rollup calls that a failure. Work rows and the sidebar leave `passed/total` out, since the checks that need a look are listed under the icons.
 
 On GitHub, successful, neutral and skipped check runs and successful statuses count as passed. github.com's own list leaves out a check run that a re-run replaced, so the totals here can be higher than there. On GitLab, the counts are the head pipeline's jobs: successful and skipped ones pass, and manual and retried jobs are not counted.
 
@@ -108,7 +112,7 @@ Each row is a pull request: a muted `-` in the marker column, its icon and numbe
 
 `enter` or a double click opens the newest session that tracks the selected pull request, `space` peeks it, `ctrl+g` opens the pull request in your web browser, and `f5` reloads it with its checks. The keys that change one session (archive, Done, rename, pin, delete, link) are off in this view. The footer reads `enter open  space peek  ctrl+g open PR  ctrl+/ keys`.
 
-The preview shows the title and state, `head -> base`, the author, the review verdict and unresolved threads, every CI check with its status, the issues the pull request closes and the ones its sessions track, the description, and the sessions that worked on it. A check is a link to its page, such as the job's log: hovering makes its name bold, a click opens it and a ctrl+click copies it. `right` moves the arrow keys to the sessions, `enter` opens one, and `left` or `esc` goes back. Author, branches, checks and description are fetched for the selected pull request only, and cached as long as its state.
+The preview shows the title and state, `head -> base`, the author, the review verdict, merge conflicts and unresolved threads, the checks, the issues the pull request closes and the ones its sessions track, the description, and the sessions that worked on it. The checks take one summary line of icons and counts, leaving out zeros: passed (green check), skipped (muted skip), cancelled (muted stop), pending (yellow dot) and failed (red x); when every check passed, only the green check and the count. Under it each check that failed or waits for an action is listed by name, failures first, at most ten and then `+N more`, which opens the pull request's checks page. Cancelled checks are counted, never listed. A listed check is a link to its page, such as the job's log: hovering makes its name bold, a click opens it and a ctrl+click copies it. `right` moves the arrow keys to the sessions, `enter` opens one, and `left` or `esc` goes back. Author, branches, checks and description are fetched for the selected pull request only, and cached as long as its state.
 
 ### Pins
 
@@ -139,7 +143,7 @@ The header holds the title and these sections:
 
 - Context: tokens in the context window and their share of the model's limit, the cost so far, and whether the session is running, idle, interrupted or failed.
 - Session: the project (only when it differs from the browser's), the worktree directory (only when it is not the project root) and the branch (only when it is not the default branch).
-- Work: every tracked pull request and issue, the main pull request first. A pull request's line holds its state icon, number and title. Under an open one, a line shows its [review and CI icons](#review-and-ci-icons) when it has any, followed by each failed check with a red x, at most five and then `+N more`; pending checks are not listed. A click on a failed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
+- Work: every tracked pull request and issue, the main pull request first. A pull request's line holds its state icon, number and title. Under an open one, a line shows its [review and CI icons](#review-and-ci-icons) when it has any, followed by each check that failed (red x) or waits for an action (yellow alert), failures first, at most five and then `+N more`; pending and cancelled checks are not listed. A click on a listed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
 
 The transcript below draws messages the way OpenCode's session view does and follows your `cli.json` session settings (scrollbar, thinking, markdown, verbosity, grouping). It starts at the latest message; scrolling up loads older ones.
 
@@ -258,7 +262,7 @@ The PR line shows one pull request: the branch's pull request, else the newest o
 
 ### Review and CI status
 
-For open and draft pull requests the plugin reads the review decision, how many review threads are resolved, and the combined CI result of the head commit with its passed and total counts. List rows show them as [icons](#review-and-ci-icons) on the PR line. The preview's Work rows and the sidebar show the icons on a line under the pull request and list the failed checks by name; those names come from the pull request's check list, which the plugin fetches only for failing pull requests of the session on screen.
+For open and draft pull requests the plugin reads the review decision, how many review threads are resolved, and the combined CI result of the head commit with its passed and total counts. List rows show them as [icons](#review-and-ci-icons) on the PR line. The preview's Work rows and the sidebar show the icons on a line under the pull request and list the checks that failed or wait for an action by name; those names come from the pull request's check list, which the plugin fetches only for pull requests of the session on screen that have such checks.
 
 States are cached: open and draft pull requests for 2 minutes, closed ones for 15 minutes, merged ones and closed issues for good, and errors for 30 seconds. While the browser is open it refreshes the visible rows every 60 seconds, and the sidebar refreshes its session every 60 seconds. `gh pr merge`, `gh pr close`, `gh issue close`, `glab mr merge`, `glab mr close` and `glab issue close` refresh the session's refs right away. When the forge reports its rate limit is spent, the plugin waits for the reset and keeps showing the last known state.
 
@@ -295,6 +299,7 @@ Open the settings with `ctrl+o` in the browser, `/super-sessions settings`, or "
 | ------------- | ------------------------------------ | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | List          | Default scope                        | this project, all projects             | Which sessions the browser lists. Changing it also drops an earlier `ctrl+a` choice                      |
 |               | PR and issue line                    | on, off                                | Whether rows show the PR and issues lines                                                                |
+|               | Group issues                         | off, on                                | Whether rows join their issues on one line instead of one line per issue with its title                  |
 |               | Title scrolling on hover             | follow animations, off, on             | Whether a cut title in the sidebar and preview Work rows scrolls while the mouse is over it              |
 | Preview       | Preview pane                         | on, off                                | Whether the browser shows the preview                                                                    |
 |               | Preview width                        | 40%; 30% to 60% in 5% steps            | The preview's share of the browser width                                                                 |
@@ -385,6 +390,7 @@ Options go in the plugin entry's `options`. Unknown options are rejected. With a
 | `preview`                 | `true`          | Show the preview                                                                           |
 | `scope`                   | `"project"`     | Default scope: `"project"` or `"all"`                                                      |
 | `rows.refs`               | `true`          | Show the PR and issues lines on rows                                                       |
+| `rows.groupIssues`        | `false`         | Join a row's issues on one line instead of one line per issue                              |
 | `titleScroll`             | `"auto"`        | Scroll cut titles on hover: `"auto"` follows OpenCode's `animations`, or `"on"` or `"off"` |
 | `untestedHosts`           | `false`         | Take over the session list on OpenCode versions newer than the tested one                  |
 | `autoArchiveDays`         | Unset (off)     | Auto-archive Done sessions after this many days, from `0` to `365`                         |

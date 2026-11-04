@@ -40,7 +40,9 @@ test('a batch with a missing number and a missing repository still resolves ever
     // Open draft with nine unresolved review threads and a failing head commit.
     candidate('cli/cli', 14921, 'pr'),
     // Neutral and skipped check runs and three statuses, one of them successful.
-    candidate('mastra-ai/mastra', 29382, 'pr')
+    candidate('mastra-ai/mastra', 29382, 'pr'),
+    // Open, no checks, and `mergeable: CONFLICTING`.
+    candidate('cli/cli', 10423, 'pr')
   ];
   const response = parseGraphQLOutput(asRun(fixture('snapshot.json')), NOW);
   assert.ok('data' in response, 'a non-zero exit with data must not fail the whole document');
@@ -63,15 +65,18 @@ test('a batch with a missing number and a missing repository still resolves ever
       'not-found',
       'pr 14815 merged',
       'pr 14921 draft',
-      'pr 29382 open'
+      'pr 29382 draft',
+      'pr 10423 open'
     ]
   );
 
   const [merged, issue] = entries;
-  const reviewed = entries.at(-2);
-  const counted = entries.at(-1);
+  const reviewed = entries.at(-3);
+  const counted = entries.at(-2);
+  const conflicting = entries.at(-1);
   assert.ok(merged && 'ref' in merged && issue && 'ref' in issue);
   assert.ok(reviewed && 'ref' in reviewed && counted && 'ref' in counted);
+  assert.ok(conflicting && 'ref' in conflicting);
   // 11 successful and 13 skipped runs pass; the failing one does not.
   assert.deepEqual(reviewed.state.review, {
     decision: 'review_required',
@@ -79,7 +84,18 @@ test('a batch with a missing number and a missing repository still resolves ever
     unresolved: 9,
     checks: 'failing',
     checksPassed: 24,
-    checksTotal: 25
+    checksTotal: 25,
+    checksSkipped: 13,
+    checksCancelled: 0,
+    checksPending: 0,
+    checksFailed: 1,
+    conflicts: false
+  });
+  assert.deepEqual(conflicting.state.review, {
+    decision: 'review_required',
+    threads: 0,
+    unresolved: 0,
+    conflicts: true
   });
   // 79 successful, 3 neutral and 10 skipped runs plus 1 successful status, of 93 runs and 3
   // statuses.
@@ -97,6 +113,30 @@ test('a batch with a missing number and a missing repository still resolves ever
   assert.deepEqual(merged.state.closes?.map(refKey), [refKey(issue.ref)]);
   assert.deepEqual(issue.state.closedBy?.map(refKey), [refKey(merged.ref)]);
   assert.equal(issue.state.closedAt, Date.UTC(2026, 9, 26, 18, 2, 49));
+});
+
+test('a rollup that failed only through cancelled runs reads as cancelled, not failing', () => {
+  const candidates = [candidate('mastra-ai/mastra', 29169, 'pr')];
+  const response = parseGraphQLOutput(asRun(fixture('snapshot-cancelled.json')), NOW);
+  assert.ok('data' in response);
+  const [entry] = parseSnapshotResponse(buildSnapshotQuery(candidates), candidates, response);
+  assert.ok(entry && 'ref' in entry);
+  const { checks, checksPassed, checksTotal, checksSkipped, checksCancelled, checksPending } =
+    entry.state.review ?? {};
+  // GitHub's rollup state is FAILURE; 23 successful, 2 neutral and 18 skipped runs and 3
+  // successful statuses pass, and the 2 cancelled runs are the rest.
+  assert.deepEqual(
+    { checks, checksPassed, checksTotal, checksSkipped, checksCancelled, checksPending },
+    {
+      checks: 'cancelled',
+      checksPassed: 46,
+      checksTotal: 48,
+      checksSkipped: 18,
+      checksCancelled: 2,
+      checksPending: 0
+    }
+  );
+  assert.equal(entry.state.review?.checksFailed, 0);
 });
 
 test('branch lookups pick the repository own pull request and ignore fork PRs with the same head', () => {
