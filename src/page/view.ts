@@ -617,7 +617,8 @@ export default function SessionPage(props: PageProps) {
       key();
       return untrack(() => {
         const value = line();
-        if (value.kind === 'blank') return jsx('box', { height: 1, flexShrink: 0 });
+        // A text node, because an empty box in this column collapses to zero height.
+        if (value.kind === 'blank') return jsx('text', { height: 1, flexShrink: 0, children: ' ' });
         if (value.kind === 'header') {
           return jsx('box', {
             height: 1,

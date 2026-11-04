@@ -87,6 +87,9 @@ export function Preview(props: PreviewProps): JSX.Element {
       flexShrink: 0,
       wrapMode: 'none',
       attributes,
+      get visible() {
+        return children().trim().length > 0;
+      },
       get fg() {
         return fg();
       },
