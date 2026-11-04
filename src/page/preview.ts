@@ -13,10 +13,11 @@ import {
   onCleanup
 } from 'solid-js';
 import { createStore } from 'solid-js/store';
+import { useCliSettings } from '../cli-settings.js';
 import type { Options } from '../config.js';
 import { createMarquee } from '../marquee.js';
 import type { SessionRefView } from '../rpc.js';
-import { PreviewHeader } from './preview-header.js';
+import { PreviewHeader, SPINNER } from './preview-header.js';
 import { Transcript } from './transcript.js';
 import { transcriptRows } from './transcript-model.js';
 
@@ -70,15 +71,18 @@ export function Preview(props: PreviewProps): JSX.Element {
     const id = shown();
     return id !== undefined && props.running(id);
   };
+  const settings = useCliSettings();
   // One spinner clock for the whole pane, ticking only while the shown session runs, so an idle
-  // preview or a closed pane keeps no timer.
+  // preview or a closed pane keeps no timer. With animations off it stops, and the spinner
+  // stands still as `⋯`, like the host's.
   const [frame, setFrame] = createSignal(0);
   createEffect(() => {
-    if (!running()) return;
+    if (!running() || !settings.animations) return;
     const timer = setInterval(() => setFrame((value) => value + 1), SPINNER_INTERVAL);
     onCleanup(() => clearInterval(timer));
   });
-  const marquee = createMarquee();
+  const spinner = () => (settings.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯');
+  const marquee = createMarquee({ animated: () => settings.animations });
   // The hovered line may be replaced without a mouse-out when the pane follows another row, so
   // a scroll in progress stops here instead of carrying over to the next session's title.
   createEffect(on(shown, () => marquee.leave(marquee.active() ?? '')));
@@ -98,7 +102,7 @@ export function Preview(props: PreviewProps): JSX.Element {
     },
     branch: (value: SessionInfo) => props.branch(value),
     running,
-    frame,
+    spinner,
     width: () => props.width(),
     marquee,
     agentColor: (value: SessionInfo, agent: string) => agentColor(context, theme(), value, agent)
@@ -114,7 +118,9 @@ export function Preview(props: PreviewProps): JSX.Element {
     )
   );
 
-  const rows = createMemo(() => transcriptRows(transcript.state.messages));
+  const rows = createMemo(() =>
+    transcriptRows(transcript.state.messages, settings.session.verbosity)
+  );
   const body = createComponent(Transcript, {
     context,
     theme,
@@ -122,7 +128,8 @@ export function Preview(props: PreviewProps): JSX.Element {
     syntax: () => syntax().markdown,
     thinking: () => syntax().thinking,
     width: () => props.width(),
-    frame,
+    spinner,
+    settings,
     agentColor: (agent: string) => {
       const current = session();
       return current ? agentColor(context, theme(), current, agent) : theme().text.muted;
@@ -177,7 +184,21 @@ export function Preview(props: PreviewProps): JSX.Element {
         flexGrow: 1,
         stickyScroll: true,
         stickyStart: 'bottom',
-        scrollbarOptions: { visible: false },
+        // The host's session transcript bar (routes/session/index.tsx), under the same setting.
+        get viewportOptions() {
+          return { paddingRight: settings.session.scrollbar ? 1 : 0 };
+        },
+        get verticalScrollbarOptions() {
+          return {
+            paddingLeft: 1,
+            visible: settings.session.scrollbar,
+            trackOptions: {
+              backgroundColor: theme().decrease(theme().background.raised.base),
+              foregroundColor: theme().border.base
+            }
+          };
+        },
+        horizontalScrollbarOptions: { visible: false },
         ref: (value: ScrollBoxRenderable) => {
           scroll = value;
         },

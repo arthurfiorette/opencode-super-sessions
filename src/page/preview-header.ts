@@ -48,8 +48,8 @@ export interface HeaderProps {
   refs(): SessionRefView | undefined;
   branch(session: SessionInfo): string | undefined;
   running(): boolean;
-  /** Spinner frame counter, ticking only while the session runs. */
-  frame(): number;
+  /** Current spinner glyph, ticking only while the session runs. */
+  spinner(): string;
   width(): number;
   marquee: Hover;
   agentColor(session: SessionInfo, agent: string): RGBA;
@@ -117,11 +117,7 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
     };
     if (props.running()) {
       const fg = theme().text.feedback.warning.base;
-      return [
-        { text: `${SPINNER[props.frame() % SPINNER.length]} `, fg },
-        { text: 'running', fg },
-        tail
-      ];
+      return [{ text: `${props.spinner()} `, fg }, { text: 'running', fg }, tail];
     }
     if (live.outcome === 'failed') {
       const fg = theme().text.feedback.error.base;

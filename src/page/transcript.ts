@@ -4,8 +4,10 @@ import type { ResolvedTheme } from '@opencode/theme/tui';
 import { RGBA, type SyntaxStyle, TextAttributes } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import { createComponent, createMemo, createSignal, For, type JSX, Show, untrack } from 'solid-js';
-import { SPINNER, titlecase } from './preview-header.js';
+import type { CliSettings } from '../cli-settings.js';
+import { titlecase } from './preview-header.js';
 import {
+  activitySummary,
   canonicalTool,
   collapseShellOutput,
   explorationLabel,
@@ -18,6 +20,7 @@ import {
   reasoningContent,
   reasoningTitle,
   stripAnsi,
+  type Thought,
   type TranscriptRow,
   todoMarker,
   toolInput,
@@ -40,8 +43,10 @@ export interface TranscriptProps {
   thinking(): SyntaxStyle;
   /** Cells available for the transcript. */
   width(): number;
-  /** Spinner frame counter. */
-  frame(): number;
+  /** Current spinner glyph, `⋯` while animations are off. */
+  spinner(): string;
+  /** The host's view settings: thinking, Markdown markers, verbosity and grouping. */
+  settings: Readonly<CliSettings>;
   agentColor(agent: string): RGBA;
   modelName(model: { providerID: string; id: string }): string;
   /** The session's agent, which colors the border of user messages. */
@@ -71,9 +76,19 @@ const SHELL_LINES = 10;
 
 /** Every row one blank line below the previous one, as in the host's `SessionRowView`. */
 export function Transcript(props: TranscriptProps): JSX.Element {
-  const byKey = createMemo(() => new Map(props.rows().map((row) => [row.key, row])));
-  // Rows keep their component across reloads: only a new key mounts a row.
-  const keys = createMemo(() => props.rows().map((row) => row.key), [], {
+  return keyedRows(props, props.rows, (view) =>
+    jsx('box', { marginTop: 1, flexShrink: 0, children: view })
+  );
+}
+
+/** One view per row, each in `wrap`. Rows keep their view across reloads: only a new key mounts. */
+function keyedRows(
+  props: TranscriptProps,
+  rows: () => TranscriptRow[],
+  wrap: (view: JSX.Element) => JSX.Element
+): JSX.Element {
+  const byKey = createMemo(() => new Map(rows().map((row) => [row.key, row])));
+  const keys = createMemo(() => rows().map((row) => row.key), [], {
     equals: (a, b) => a.length === b.length && a.every((key, index) => key === b[index])
   });
   return createComponent(For, {
@@ -88,9 +103,24 @@ export function Transcript(props: TranscriptProps): JSX.Element {
         last = byKey().get(key) ?? last;
         return last as TranscriptRow;
       };
-      return jsx('box', { marginTop: 1, flexShrink: 0, children: rowView(props, last.type, row) });
+      return wrap(rowView(props, last.type, row));
     }
   });
+}
+
+/**
+ * Whether a group is open: the user's last click on it, else `initial()`, which follows the
+ * verbosity setting until then (`useDisclosure` and `groupExpanded` in the host).
+ */
+function disclosure(initial: () => boolean) {
+  const [toggled, setToggled] = createSignal<boolean>();
+  const expanded = () => toggled() ?? initial();
+  return { expanded, toggle: () => setToggled(!expanded()) };
+}
+
+/** Whether Markdown markers are hidden, the host's `session.markdown: rendered`. */
+function concealed(props: TranscriptProps): boolean {
+  return props.settings.session.markdown === 'rendered';
 }
 
 /** The component for one row type. `row` keeps returning the same type for a key. */
@@ -127,14 +157,9 @@ function rowView(
     case 'compaction':
       return compaction(props, as<'compaction'>());
     case 'instructions':
-      return inlineRow(props, {
-        icon: () => '◈',
-        color: () => props.theme().text.muted,
-        text: () => {
-          const files = (row() as Row<'instructions'>).files.size;
-          return `Instructions: ${files} ${files === 1 ? 'file' : 'files'}`;
-        }
-      });
+      return instructions(props, as<'instructions'>());
+    case 'activity':
+      return activityGroup(props, as<'activity'>());
     case 'error':
       return padded(
         3,
@@ -256,7 +281,9 @@ function textPart(props: TranscriptProps, row: () => Row<'text'>): JSX.Element {
       },
       internalBlockMode: 'top-level',
       tableOptions: { style: 'grid', cellPaddingX: 1 },
-      conceal: true,
+      get conceal() {
+        return concealed(props);
+      },
       get fg() {
         return theme().markdown.text;
       },
@@ -273,12 +300,94 @@ function faded(color: RGBA): RGBA {
 }
 
 /**
- * A run of thoughts as one `Thought: title · N steps · 4.2s` line that opens on click, the
- * host's default "hide" thinking mode (`GroupContent` for reasoning, `ThoughtEntry`).
+ * A run of thoughts: every thought open under its own header with `session.thinking: show`,
+ * otherwise one folded line. Switching the setting rebuilds the row.
  */
 function thoughts(props: TranscriptProps, row: () => Row<'thoughts'>): JSX.Element {
+  return mount(
+    () => props.settings.session.thinking,
+    () =>
+      props.settings.session.thinking === 'show'
+        ? createComponent(For, {
+            get each() {
+              return row().items;
+            },
+            children: (item: Thought) => reasoningPart(props, item)
+          })
+        : foldedThoughts(props, row)
+  );
+}
+
+/**
+ * One open thought: a `Thought: 4.2s` header, or `Thinking` with the spinner while it runs, over
+ * its text, each behind a left bar (`ReasoningPart` and `ReasoningHeader` outside "hide" mode).
+ */
+function reasoningPart(props: TranscriptProps, item: Thought): JSX.Element {
   const theme = props.theme;
-  const [expanded, setExpanded] = createSignal(false);
+  const message = item.message;
+  const part = item.part;
+  const done = part.time?.completed !== undefined || message.time.completed !== undefined;
+  const end = part.time?.completed ?? message.time.completed;
+  const start = part.time?.created ?? message.time.created;
+  const duration = end === undefined ? 0 : Math.max(0, end - start);
+  const bar = (child: JSX.Element) =>
+    jsx('box', {
+      border: ['left'],
+      customBorderChars: SPLIT_BORDER,
+      get borderColor() {
+        return theme().decrease(theme().background.base);
+      },
+      paddingLeft: 1,
+      children: child
+    });
+  return jsx('box', {
+    paddingLeft: 3,
+    flexDirection: 'column',
+    flexShrink: 0,
+    children: [
+      bar(
+        jsx('text', {
+          wrapMode: 'none',
+          get fg() {
+            return faded(theme().text.feedback.warning.base);
+          },
+          get children() {
+            return done ? `Thought: ${formatDuration(duration)}` : `${props.spinner()} Thinking`;
+          }
+        })
+      ),
+      jsx('box', {
+        marginTop: 1,
+        children: bar(
+          jsx('code', {
+            filetype: 'markdown',
+            drawUnstyledText: false,
+            streaming: true,
+            get syntaxStyle() {
+              return props.thinking();
+            },
+            content: reasoningContent(part),
+            get conceal() {
+              return concealed(props);
+            },
+            get fg() {
+              return theme().text.muted;
+            }
+          })
+        )
+      })
+    ]
+  });
+}
+
+/**
+ * A run of thoughts as one `Thought: title · N steps · 4.2s` line that opens on click, the
+ * host's "hide" thinking mode (`GroupContent` for reasoning, `ThoughtEntry`).
+ */
+function foldedThoughts(props: TranscriptProps, row: () => Row<'thoughts'>): JSX.Element {
+  const theme = props.theme;
+  const open = disclosure(() => false);
+  const expanded = open.expanded;
   const [hover, setHover] = createSignal(false);
   const latest = () => {
     for (const item of [...row().items].reverse()) {
@@ -319,7 +428,7 @@ function thoughts(props: TranscriptProps, row: () => Row<'thoughts'>): JSX.Eleme
         text: label,
         onMouseOver: () => setHover(true),
         onMouseOut: () => setHover(false),
-        onMouseUp: () => setExpanded((value) => !value)
+        onMouseUp: open.toggle
       }),
       mount(expanded, () =>
         jsx('box', {
@@ -348,7 +457,9 @@ function thoughts(props: TranscriptProps, row: () => Row<'thoughts'>): JSX.Eleme
                     return props.thinking();
                   },
                   content: reasoningContent(item.part),
-                  conceal: true,
+                  get conceal() {
+                    return concealed(props);
+                  },
                   get fg() {
                     return theme().text.muted;
                   }
@@ -361,10 +472,35 @@ function thoughts(props: TranscriptProps, row: () => Row<'thoughts'>): JSX.Eleme
   });
 }
 
-/** Reads and searches as one `Explored: 2 reads, 1 search` line (`GroupContent`). */
+/**
+ * Reads and searches: each call on its own with `session.grouping: none`, otherwise one
+ * `Explored: 2 reads, 1 search` line that opens on click, open from the start at `high`
+ * verbosity (`GroupContent`).
+ */
 function exploration(props: TranscriptProps, row: () => Row<'exploration'>): JSX.Element {
+  return mount(
+    () => props.settings.session.grouping,
+    () =>
+      props.settings.session.grouping === 'none'
+        ? toolList(props, () => row().tools)
+        : groupedExploration(props, row)
+  );
+}
+
+/** Tool calls one after another, with no gap, as inside a host group. */
+function toolList(props: TranscriptProps, tools: () => Tool[]): JSX.Element {
+  return createComponent(For, {
+    get each() {
+      return tools();
+    },
+    children: (tool: Tool) => toolView(props, tool)
+  });
+}
+
+/** The folded `Explored` line and, once opened, its calls. */
+function groupedExploration(props: TranscriptProps, row: () => Row<'exploration'>): JSX.Element {
   const theme = props.theme;
-  const [expanded, setExpanded] = createSignal(false);
+  const open = disclosure(() => props.settings.session.verbosity === 'high');
   const [hover, setHover] = createSignal(false);
   const completed = () =>
     row().completed || row().tools.every((tool) => tool.time.completed !== undefined);
@@ -379,14 +515,86 @@ function exploration(props: TranscriptProps, row: () => Row<'exploration'>): JSX
         text: () => explorationLabel(row().tools, completed()),
         onMouseOver: () => setHover(true),
         onMouseOut: () => setHover(false),
-        onMouseUp: () => setExpanded((value) => !value)
+        onMouseUp: open.toggle
       }),
-      mount(expanded, () =>
+      mount(open.expanded, () => toolList(props, () => row().tools))
+    ]
+  });
+}
+
+/**
+ * `Instructions: 2 files`, opening on click to the notice of each load, open from the start at
+ * `high` verbosity (`InstructionsGroup`).
+ */
+function instructions(props: TranscriptProps, row: () => Row<'instructions'>): JSX.Element {
+  const theme = props.theme;
+  const open = disclosure(() => props.settings.session.verbosity === 'high');
+  const [hover, setHover] = createSignal(false);
+  return jsx('box', {
+    flexDirection: 'column',
+    flexShrink: 0,
+    children: [
+      inlineRow(props, {
+        icon: () => '◈',
+        color: () => (hover() ? theme().text.base : theme().text.muted),
+        text: () => {
+          const files = row().files.size;
+          return `Instructions: ${files} ${files === 1 ? 'file' : 'files'}`;
+        },
+        onMouseOver: () => setHover(true),
+        onMouseOut: () => setHover(false),
+        onMouseUp: open.toggle
+      }),
+      mount(open.expanded, () =>
         createComponent(For, {
           get each() {
-            return row().tools;
+            // The host leaves out instruction loads with no description.
+            return row().messages.filter((message) => message.description?.trim());
           },
-          children: (tool: Tool) => toolView(props, tool)
+          children: (message: Row<'instructions'>['messages'][number]) =>
+            completionNotice(props, message)
+        })
+      )
+    ]
+  });
+}
+
+/**
+ * At `low` verbosity, a run of tools, thoughts and instruction loads as one
+ * `+ 3 commands, 1 edit, 2 thoughts` line that opens on click to the groups and calls inside it
+ * (`ActivityGroup`).
+ */
+function activityGroup(props: TranscriptProps, row: () => Row<'activity'>): JSX.Element {
+  const theme = props.theme;
+  const open = disclosure(() => false);
+  const [hover, setHover] = createSignal(false);
+  const summary = createMemo(() => activitySummary(row()));
+  return jsx('box', {
+    flexDirection: 'column',
+    flexShrink: 0,
+    get visible() {
+      return summary().label !== '';
+    },
+    children: [
+      inlineRow(props, {
+        icon: () => (open.expanded() ? '−' : '+'),
+        color: () => (hover() ? theme().text.base : theme().text.muted),
+        spinner: () => !open.expanded() && summary().active,
+        text: () => summary().label,
+        onMouseOver: () => setHover(true),
+        onMouseOut: () => setHover(false),
+        onMouseUp: open.toggle
+      }),
+      mount(open.expanded, () =>
+        jsx('box', {
+          flexDirection: 'column',
+          gap: 1,
+          marginTop: 1,
+          children: keyedRows(
+            props,
+            () => row().children,
+            (view) => jsx('box', { flexShrink: 0, children: view })
+          )
         })
       )
     ]
@@ -436,7 +644,7 @@ function inlineRow(props: TranscriptProps, input: InlineRowInput): JSX.Element {
               return strike();
             },
             get children() {
-              return input.spinner?.() ? SPINNER[props.frame() % SPINNER.length] : input.icon();
+              return input.spinner?.() ? props.spinner() : input.icon();
             }
           }),
           jsx('text', {
@@ -740,10 +948,7 @@ function blockTool(props: TranscriptProps, input: BlockToolInput): JSX.Element {
   );
   // A spinning header drops the `# ` marker, as the host's Spinner label does.
   const label = input.path ? `${input.path.label} ${input.path.value}` : input.title;
-  const header = () =>
-    input.spinner
-      ? `${SPINNER[props.frame() % SPINNER.length]} ${label?.replace(/^# /, '')}`
-      : label;
+  const header = () => (input.spinner ? `${props.spinner()} ${label?.replace(/^# /, '')}` : label);
   return jsx('box', {
     border: ['left'],
     flexShrink: 0,
@@ -842,7 +1047,7 @@ function shellBlock(props: TranscriptProps, input: ShellInput): JSX.Element {
                     return theme().text.base;
                   },
                   get children() {
-                    return SPINNER[props.frame() % SPINNER.length];
+                    return props.spinner();
                   }
                 }),
                 commandLine
@@ -1467,7 +1672,7 @@ function compaction(props: TranscriptProps, row: () => Row<'compaction'>): JSX.E
     }
     const lead =
       current.status === 'running'
-        ? `${SPINNER[props.frame() % SPINNER.length]} `
+        ? `${props.spinner()} `
         : current.status === 'failed' && !cancelled()
           ? '✗ '
           : '';
@@ -1519,7 +1724,9 @@ function compaction(props: TranscriptProps, row: () => Row<'compaction'>): JSX.E
           },
           internalBlockMode: 'top-level',
           tableOptions: { style: 'grid', cellPaddingX: 1 },
-          conceal: true,
+          get conceal() {
+            return concealed(props);
+          },
           get fg() {
             return theme().markdown.text;
           },

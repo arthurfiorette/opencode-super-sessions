@@ -46,18 +46,33 @@ export type TranscriptRow =
     }
   | { type: 'thoughts'; key: string; items: Thought[]; completed: boolean }
   | { type: 'exploration'; key: string; tools: SessionMessageAssistantTool[]; completed: boolean }
-  | { type: 'instructions'; key: string; files: Set<string> }
+  | {
+      type: 'instructions';
+      key: string;
+      files: Set<string>;
+      messages: Message<'synthetic'>[];
+    }
+  | { type: 'activity'; key: string; children: TranscriptRow[]; completed: boolean }
   | { type: 'footer'; key: string; message: SessionMessageAssistant; duration: number };
+
+/** The host's `session.verbosity`. */
+export type Verbosity = 'low' | 'medium' | 'high';
 
 // Tools that the host folds into one "Explored" line (grouping/session.ts `explorationTools`).
 const EXPLORATION = new Set(['read', 'glob', 'grep', 'webfetch', 'websearch']);
 
 /**
- * Rows for messages in chronological order, following the host's default view settings: thinking
- * hidden behind one line per run of thoughts, reads and searches grouped, medium verbosity.
- * Ported from `reduceSessionRows` and `projectEntries` in packages/tui/src/routes/session (MIT).
+ * Rows for messages in chronological order: each run of thoughts, of reads and searches and of
+ * instruction loads becomes one group row. At `low` verbosity every run of tools, thoughts and
+ * instruction loads is also wrapped in one `activity` row; text, questions and other messages
+ * stand alone and end the run. Whether a group draws folded is the view's choice, as in the
+ * host. Ported from `reduceSessionRows`, `partPath`, `messagePath` and `projectEntries` in
+ * packages/tui/src/routes/session (MIT).
  */
-export function transcriptRows(messages: readonly SessionMessageInfo[]): TranscriptRow[] {
+export function transcriptRows(
+  messages: readonly SessionMessageInfo[],
+  verbosity: Verbosity = 'medium'
+): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
   // An idle failure that repeats the error the last step already showed is not drawn twice.
   let shownError: SessionMessageAssistant['error'];
@@ -68,7 +83,7 @@ export function transcriptRows(messages: readonly SessionMessageInfo[]): Transcr
     switch (message.type) {
       case 'assistant':
         shownError = message.error;
-        assistantRows(rows, message);
+        assistantRows(rows, message, verbosity === 'low');
         if (
           (message.finish && !NON_TERMINAL.has(message.finish)) ||
           message.error ||
@@ -108,14 +123,20 @@ export function transcriptRows(messages: readonly SessionMessageInfo[]): Transcr
       case 'synthetic': {
         const files = instructionPaths(message);
         if (files.length > 0) {
-          const last = rows.at(-1);
-          if (last?.type === 'instructions') for (const file of files) last.files.add(file);
-          else
-            rows.push({
+          const key = `instructions:${message.id}`;
+          const into = verbosity === 'low' ? activity(rows, key) : rows;
+          const last = into.at(-1);
+          if (last?.type === 'instructions') {
+            for (const file of files) last.files.add(file);
+            last.messages.push(message);
+          } else {
+            into.push({
               type: 'instructions',
-              key: `instructions:${message.id}`,
-              files: new Set(files)
+              key,
+              files: new Set(files),
+              messages: [message]
             });
+          }
           break;
         }
         if (message.description?.trim()) rows.push({ type: 'notice', key: message.id, message });
@@ -131,12 +152,14 @@ export function transcriptRows(messages: readonly SessionMessageInfo[]): Transcr
 
 const NON_TERMINAL = new Set(['tool-calls', 'unknown']);
 
-/** Appends a message's parts, merging thoughts and explorations into the row before them. */
-function assistantRows(rows: TranscriptRow[], message: SessionMessageAssistant) {
+/**
+ * Appends a message's parts, merging thoughts and explorations into the row before them. With
+ * `low`, every part but text and questions goes into the activity row at the end.
+ */
+function assistantRows(rows: TranscriptRow[], message: SessionMessageAssistant, low: boolean) {
   let text = 0;
   let reasoning = 0;
   for (const part of message.content) {
-    const last = rows.at(-1);
     if (part.type === 'text') {
       const ordinal = text++;
       if (!part.text.trim()) continue;
@@ -146,49 +169,147 @@ function assistantRows(rows: TranscriptRow[], message: SessionMessageAssistant) 
     if (part.type === 'reasoning') {
       const ordinal = reasoning++;
       if (!reasoningContent(part)) continue;
+      const key = `${message.id}:reasoning:${ordinal}`;
+      const into = low ? activity(rows, key) : rows;
+      const last = into.at(-1);
       const item = { message, part };
-      if (last?.type === 'thoughts') {
-        last.items.push(item);
-        continue;
-      }
-      rows.push({
-        type: 'thoughts',
-        key: `${message.id}:reasoning:${ordinal}`,
-        items: [item],
-        completed: false
-      });
+      if (last?.type === 'thoughts') last.items.push(item);
+      else into.push({ type: 'thoughts', key, items: [item], completed: false });
       continue;
     }
-    if (EXPLORATION.has(part.name.toLowerCase())) {
-      if (last?.type === 'exploration') last.tools.push(part);
-      else
-        rows.push({
-          type: 'exploration',
-          key: `${message.id}:${part.id}`,
-          tools: [part],
-          completed: false
-        });
+    const key = `${message.id}:${part.id}`;
+    // Questions always stand alone, so an answer is never folded away.
+    if (part.name.toLowerCase() === 'question') {
+      rows.push({ type: 'tool', key, message, part });
       continue;
     }
-    rows.push({ type: 'tool', key: `${message.id}:${part.id}`, message, part });
+    const into = low ? activity(rows, key) : rows;
+    const last = into.at(-1);
+    if (!EXPLORATION.has(part.name.toLowerCase())) {
+      into.push({ type: 'tool', key, message, part });
+      continue;
+    }
+    if (last?.type === 'exploration') last.tools.push(part);
+    else into.push({ type: 'exploration', key, tools: [part], completed: false });
   }
 }
 
+/** The children of the activity row at the end, which starts a new one keyed after `first`. */
+function activity(rows: TranscriptRow[], first: string): TranscriptRow[] {
+  const last = rows.at(-1);
+  if (last?.type === 'activity') return last.children;
+  const row: TranscriptRow = {
+    type: 'activity',
+    key: `activity:${first}`,
+    children: [],
+    completed: false
+  };
+  rows.push(row);
+  return row.children;
+}
+
 /**
- * A group is complete once anything follows it, or when every thought in it has finished
- * (packages/tui/src/routes/session/grouping/session.ts `projectEntries`, MIT).
+ * A group is complete once anything follows it, inside an activity row too, or when its parent
+ * is complete; a run of thoughts also once every thought has finished. Ported from
+ * `projectEntries` (grouping/session.ts) and the nested `Children` rule (group-view.tsx), MIT.
  */
-function markCompleted(rows: TranscriptRow[]) {
+function markCompleted(rows: TranscriptRow[], parent = false) {
   rows.forEach((row, position) => {
-    if (row.type !== 'thoughts' && row.type !== 'exploration') return;
-    if (position < rows.length - 1) {
-      row.completed = true;
-      return;
-    }
+    if (row.type !== 'thoughts' && row.type !== 'exploration' && row.type !== 'activity') return;
     row.completed =
-      row.type === 'thoughts'
-        ? row.items.every(({ part }) => part.time?.completed !== undefined)
-        : row.tools.every((tool) => tool.time.completed !== undefined);
+      parent ||
+      position < rows.length - 1 ||
+      (row.type === 'thoughts' &&
+        row.items.every(({ part }) => part.time?.completed !== undefined));
+    if (row.type === 'activity') markCompleted(row.children, row.completed);
+  });
+}
+
+type ActivityItem =
+  | { type: 'reasoning'; thought: Thought }
+  | { type: 'tool'; part: SessionMessageAssistantTool };
+
+/**
+ * The label of a `low` activity row, such as `3 commands, 1 edit, 2 thoughts, 4 reads`, counting
+ * finished work only; until something finishes, the first running item's status. `active` while
+ * anything still runs. Ported from `summarizeActivity` and `activitySummary` in
+ * packages/tui/src/routes/session/activity-summary.ts (MIT).
+ */
+export function activitySummary(row: Extract<TranscriptRow, { type: 'activity' }>) {
+  const closed = row.completed;
+  const items = row.children.flatMap((child): ActivityItem[] => {
+    if (child.type === 'thoughts')
+      return child.items.map((thought) => ({ type: 'reasoning', thought }));
+    if (child.type === 'exploration') return child.tools.map((part) => ({ type: 'tool', part }));
+    if (child.type === 'tool') return [{ type: 'tool', part: child.part }];
+    return [];
+  });
+  const files = new Set(
+    row.children.flatMap((child) => (child.type === 'instructions' ? [...child.files] : []))
+  );
+  const counts = { command: 0, edit: 0, thought: 0, read: 0, tool: 0, instruction: files.size };
+  for (const item of items) {
+    if (item.type === 'reasoning') {
+      if (!activeItem(item, closed)) counts.thought++;
+      continue;
+    }
+    const name = canonicalTool(item.part.name);
+    if (name === 'execute') {
+      // Code mode counts the nested calls it finished rather than itself.
+      const calls = executeCalls(toolMetadata(item.part).toolCalls).filter(
+        (call) => call.status !== 'running'
+      );
+      for (const call of calls) {
+        if (canonicalTool(call.tool) === 'read') counts.read++;
+        else counts.tool++;
+      }
+      if (calls.length === 0 && !activeItem(item, closed)) counts.tool++;
+      continue;
+    }
+    if (activeItem(item, closed)) continue;
+    if (name === 'shell') counts.command++;
+    else if (name === 'read') counts.read++;
+    else if (name === 'edit' || name === 'write' || name === 'patch') counts.edit++;
+    else counts.tool++;
+  }
+  const label = Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .map(([name, count]) => `${count} ${name}${count === 1 ? '' : 's'}`)
+    .join(', ');
+  const current = items.find((item) => activeItem(item, closed));
+  return {
+    label: label || (current ? busyLabel(current) : ''),
+    active: current !== undefined
+  };
+}
+
+/** Whether an activity item still runs. Thoughts count as done once the row is closed. */
+function activeItem(item: ActivityItem, closed: boolean): boolean {
+  if (item.type === 'reasoning') {
+    const { message, part } = item.thought;
+    return !closed && part.time?.completed === undefined && message.time.completed === undefined;
+  }
+  return item.part.state.status === 'streaming' || item.part.state.status === 'running';
+}
+
+/** Status of a running item, independent of its details so it does not flicker (`busyLabel`). */
+function busyLabel(item: ActivityItem): string {
+  if (item.type === 'reasoning') return 'Thinking…';
+  const name = canonicalTool(item.part.name);
+  const noun = name === 'shell' ? 'command' : name === 'execute' ? 'code' : name;
+  return `${item.part.state.status === 'streaming' ? 'Preparing' : 'Running'} ${noun}…`;
+}
+
+/** Nested calls of a code-mode `execute` (util/tool-display.ts `executeCalls`, MIT). */
+function executeCalls(value: unknown): { tool: string; status: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((call: unknown) => {
+    if (typeof call !== 'object' || call === null) return [];
+    const record = call as Record<string, unknown>;
+    const status = record.status;
+    if (typeof record.tool !== 'string') return [];
+    if (status !== 'running' && status !== 'completed' && status !== 'error') return [];
+    return [{ tool: record.tool, status }];
   });
 }
 
