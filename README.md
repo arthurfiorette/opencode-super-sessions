@@ -359,7 +359,7 @@ GitHub covers github.com, `*.ghe.com` and hosts with a `github` label, such as `
 
 | Data                                                                       | Location                                                                                           |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Linked and unlinked refs                                                   | Session metadata, under the `super-sessions` key                                                   |
+| Linked and unlinked refs, your Done mark                                   | Session metadata, under the `super-sessions` key                                                   |
 | Message search index                                                       | `$XDG_DATA_HOME/opencode/plugins/opencode-super-sessions/search.db` (default `~/.local/share/...`) |
 | TUI settings, pins, the `ctrl+a` choice                                    | OpenCode's plugin storage for the TUI                                                              |
 | Server settings, the cleanup confirmation, sessions kept from auto-archive | OpenCode's plugin storage for the server plugin                                                    |
@@ -371,7 +371,7 @@ The plugin reads OpenCode's `cli.json` (for `animations` and the session view se
 
 The plugin is tested with OpenCode 2.2.5, and any 2.2 patch release counts as tested. It relies on parts of the TUI that are not a documented plugin API, so on a newer minor or major release it stays out of the way: `/sessions`, `<leader>l` and the quick switch keys keep OpenCode's built-in behavior, the peek keys are off, and a toast says once per version that the browser opens with `/super-sessions`. Everything else works as usual. The "Use on untested OpenCode versions" setting turns the takeover back on.
 
-If the browser fails, it closes and opens the built-in list. If the sidebar section fails, it hides itself.
+If the browser fails, it closes and opens the built-in list. If the pull request and issue rows in the sidebar fail, they hide themselves and the rest of the sidebar stays.
 
 ## Limitations
 

@@ -33,7 +33,7 @@ SDK native parser addons may require Python and a C/C++ build toolchain. Their b
 
 | Layer       | Files                       | Runner       | Covers                                                                                                                                                                                                                                |
 | ----------- | --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit        | `test/unit`                 | `tsx --test` | Pure logic: detection, ref parsing, search ranking, Done, caches, `gh` and `glab` output from captured fixtures (`test/fixtures/github`, `test/fixtures/gitlab`), cleanup decisions, settings, the version guard                      |
+| Unit        | `test/unit`                 | `tsx --test` | Pure logic: detection, ref parsing, Done, caches, `gh` and `glab` output from captured fixtures (`test/fixtures/github`, `test/fixtures/gitlab`), cleanup decisions, the version guard                                                |
 | Integration | `test/integration`          | `tsx --test` | The built plugin in an `@opencode/sdk` host run from `test/fixtures` in a child process with a throwaway home: RPC per Location, links, detection against `test/fixtures/fake-gh.mjs`, and cleanup on a real temporary git repository |
 | Contract    | `test/contract`             | `tsx --test` | The host assumptions listed under [Compatibility](#compatibility), against a real host and, in `tui.test.ts`, the real TUI                                                                                                            |
 | Native TUI  | `test/tui`                  | `bun test`   | The compiled browser, settings dialog and sidebar mounted with OpenTUI's `testRender`, including the cold lazy load                                                                                                                   |
@@ -55,7 +55,7 @@ Each Location registers its own tools, shell hook, `context` hook for the agent 
 
 ### Metadata and the write queue
 
-Links live in session metadata under `super-sessions` (`src/refs/ref.ts`), as `{ v: 1, links, dismissed }`. The server plugin's `session.update({ metadata })` replaces the whole object, so every write goes through `src/server/queue.ts`: a per-session promise chain that reads the session, applies a pure mutation from `src/refs/store.ts` and writes only when it changed. Tools, the shell hook, events and RPC all share it, across Locations.
+Links live in session metadata under `super-sessions` (`src/refs/ref.ts`), as `{ v: 1, links, dismissed, done?, doneAt? }`. `done` is the user's Done mark from `done.set`, and `doneAt` is when it was set to `true`, which auto-archive counts days from. The server plugin's `session.update({ metadata })` replaces the whole object, so every write goes through `src/server/queue.ts`: a per-session promise chain that reads the session, applies a pure mutation from `src/refs/store.ts` and writes only when it changed. Tools, the shell hook, events and RPC all share it, across Locations.
 
 `mergeLinks` dedupes by `refKey`, keeps the earliest `linkedAt`, and only moves a link up the source ladder (`agent`, `created` and `manual` above `prompt`, above `closes`, above `mention`). Only `agent` and `manual` links lift a dismissal. `dismissLink` also drops the `closes` links derived from a dismissed pull request.
 
@@ -136,7 +136,7 @@ The layer factory is reactive: on an untested host (see [Compatibility](#compati
 
 The peek keys live in a separate global layer at priority 2 (`OVER_PROMPT`). The prompt's history layer registers at priority 1 on every cursor move, so a priority 1 layer lost `up` to it. `esc` is enabled while the peeked session is on screen and no host dialog is open; `up` and `down` only in the `base` mode, and they return `false` while the focused prompt holds text. The route follows the peek cursor after 150 ms. The banner renders in the `session.composer.top` slot for the peeked session only. A user item in `session.inbox.enqueued` or any route change ends the peek.
 
-A crash in the browser's render or key actions closes it and opens the built-in list (`fail` in `page.ts`); the sidebar has its own error boundary that hides the section.
+A crash in the browser's render or key actions closes it and opens the built-in list (`fail` in `page.ts`). A crash in the sidebar's Work rows hides those rows through their own error boundary (`installSidebar` in `src/sidebar.ts`), so it never reaches the host's slot boundary, which would toast it in the middle of the session.
 
 ### Settings stores and RPC
 
@@ -148,6 +148,7 @@ The dialog rows are in `src/settings/definitions.ts`. TUI settings live in `cont
 | `refs`, `refresh`                                    | Links, branch refs and states per session                |
 | `search`                                             | Ranked hits for a query, scope and archived flag         |
 | `link`, `unlink`                                     | Manual link and dismissal                                |
+| `done.set`                                           | The user's Done mark, or `null` to follow the refs again |
 | `settings.get`, `settings.set`                       | Server settings                                          |
 | `presence`                                           | A TUI's pins and open sessions                           |
 | `archive.claim`, `archive.report`, `archive.exclude` | Auto-archive hand-off and undo                           |
@@ -159,7 +160,7 @@ Events: `archive.due`, `cleanup.confirm` and `cleanup.removed`.
 
 `src/server/sweep.ts` runs one sweep at a time on the first live Location: 5 seconds after start, every 10 minutes, and 5 seconds after `session.deleted`, `session.execution.succeeded`, `failed` or `interrupted`, or a cached ref turning merged. The dry run and "Run cleanup now" queue behind it, so two removals never race.
 
-A sweep lists every session, works out roots and running families, lists each project's worktrees through `context.worktree.list` (projects from sessions, live Locations and the last sweep), and assigns each top-level session to the deepest worktree containing its resolved directory. Sessions a decision needs get a waited ref refresh in batches of 50, and Done candidates a permission check and their last user message from `session.context`; a context that starts at a compaction without a user message after it counts as unknown and keeps the session out of Done.
+A sweep lists every session, works out roots and running families, lists each project's worktrees through `context.worktree.list` (projects from sessions, live Locations and the last sweep), and assigns each top-level session to the deepest worktree containing its resolved directory. Sessions a decision needs get a waited ref refresh in batches of 50, and Done candidates a check for a waiting permission or question and their last user message from `session.context`; a context that starts at a compaction without a user message after it counts as unknown and keeps the session out of Done.
 
 Auto-archive (`src/server/auto-archive.ts`) decides on the server, where ref states live, but archives in a TUI: the server plugin's `session.update` ignores `archived`, and plugins get no HTTP credentials. TUIs report pins and open sessions through `presence` every 5 minutes and on change, and the server forgets a TUI after 15 minutes. A sweep queues due sessions and emits `archive.due`; a TUI claims up to 50 under a 2 minute lease, checks pins, running state, permissions and questions again, archives over HTTP and reports back (`src/settings/maintenance.ts`). Undo restores the sessions and adds them to the `archive-excluded` list (at most 5000).
 
@@ -218,4 +219,4 @@ Each assumption and what checks it:
 
 `.github/workflows/compat.yml` runs weekly and on demand against the latest `@opencode/*` release and the OpenTUI version its `@opencode/theme` pins. It installs those versions and the matching `@opencode/cli` in the runner without committing, runs the typecheck, unit, integration, contract and native TUI tests, and keeps going after a failure so the report lists every suite. A failure opens or comments on the issue "Compatibility with OpenCode <version>"; a pass writes the tested versions to the job summary.
 
-At runtime, `TESTED_UP_TO` is the pinned `@opencode/plugin` version, read from package.json, so a Dependabot bump that passes CI raises it. On a host newer by minor or major, the TUI keeps the built-in `/sessions`, `<leader>l` and quick switch keys, turns the peek keys off, and says once per version that the browser opens with `/super-sessions`. Patch releases, and versions that are not `major.minor.patch` such as `local` source builds, count as tested. The "Use on untested OpenCode versions" setting turns the takeover back on. A crash in the browser closes it and opens the built-in list; a crash in the Work section hides the section.
+At runtime, `TESTED_UP_TO` is the pinned `@opencode/plugin` version, read from package.json, so a Dependabot bump that passes CI raises it. On a host newer by minor or major, the TUI keeps the built-in `/sessions`, `<leader>l` and quick switch keys, turns the peek keys off, and says once per version that the browser opens with `/super-sessions`. Patch releases, and versions that are not `major.minor.patch` such as `local` source builds, count as tested. The "Use on untested OpenCode versions" setting turns the takeover back on. A crash in the browser closes it and opens the built-in list; a crash in the sidebar's Work rows hides them.
