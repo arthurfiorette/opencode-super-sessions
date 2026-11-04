@@ -22,8 +22,8 @@ import type { SidebarProps } from './sidebar.js';
 import { createSidebarState } from './sidebar-state.js';
 
 const REFRESH_INTERVAL = 60_000;
-// Rows sit under the header text, past the 2-cell arrow column.
-const INDENT = 2;
+// Cells taken by a ref glyph and its trailing space (see `ICONS`).
+const ICON = 2;
 
 /** The "Work" sidebar section: the session's tracked pull requests and issues. */
 export default function Sidebar(props: SidebarProps) {
@@ -108,16 +108,18 @@ export default function Sidebar(props: SidebarProps) {
     ]
   }));
 
-  /** One ref line. Built once per position, so polling updates properties, never the tree. */
+  /**
+   * One ref line: state icon in the triangle's column, like the native MCP dots, then the number
+   * and the title. Built once per position, so polling updates properties, never the tree.
+   */
   const row = (ref: () => Ref, index: number) => {
     const [hovered, setHovered] = createSignal(false);
     const id = `super-sessions-sidebar-ref-${index}`;
-    const label = () => `${refIcon(ref().kind, stateOf(ref())?.status)} ${refNumber(ref())}`;
+    const number = () => refNumber(ref());
     return jsx('box', {
       id,
       flexDirection: 'row',
       height: 1,
-      paddingLeft: INDENT,
       onMouseOver: () => setHovered(true),
       onMouseOut: () => setHovered(false),
       onMouseUp: (event: MouseEvent) => {
@@ -128,14 +130,25 @@ export default function Sidebar(props: SidebarProps) {
       },
       children: [
         jsx('text', {
-          id: `${id}-number`,
+          id: `${id}-icon`,
           flexShrink: 0,
           wrapMode: 'none',
           get fg() {
             return refColor(props.options, stateOf(ref())?.status, theme(), context.themeMode);
           },
           get children() {
-            return label();
+            return `${refIcon(ref().kind, stateOf(ref())?.status)} `;
+          }
+        }),
+        jsx('text', {
+          id: `${id}-number`,
+          flexShrink: 0,
+          wrapMode: 'none',
+          get fg() {
+            return theme().text.base;
+          },
+          get children() {
+            return number();
           }
         }),
         jsx('text', {
@@ -149,8 +162,8 @@ export default function Sidebar(props: SidebarProps) {
           },
           get children() {
             const title = stateOf(ref())?.title;
-            if (!title) return '';
-            return fitText(` ${title}`, Math.floor(width()) - INDENT - cells(label()));
+            const room = Math.floor(width()) - ICON - cells(number()) - 1;
+            return title && room > 0 ? ` ${fitText(title, room)}` : '';
           }
         })
       ]
@@ -217,7 +230,6 @@ export default function Sidebar(props: SidebarProps) {
             children: row
           }),
           jsx('box', {
-            paddingLeft: INDENT,
             get visible() {
               return listed().mentioned > 0;
             },
