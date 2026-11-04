@@ -243,18 +243,16 @@ export default function SessionBrowser(props: PageProps) {
   );
   const visible = createMemo(() => lines().slice(memory.scroll, memory.scroll + listHeight()));
 
-  // Rows change under the cursor when sessions are archived, deleted or classified as Done.
+  // Rows change under the cursor when sessions are archived, deleted or classified as Done. The
+  // selection is a source too: typing or switching views clears it, and when the rows stay the
+  // same (a keystroke that matches the same sessions) only this brings the first row back.
   createEffect(
-    on(rows, (next, previous) => {
+    on([rows, () => memory.selected], ([next, selected], previous) => {
       // An empty list means "still loading" as often as "nothing left"; keeping the id lets a
       // selection restored from memory survive until the sessions arrive.
       if (next.length === 0) return;
-      const keep = keepSelection(
-        previous ?? [],
-        next,
-        untrack(() => memory.selected)
-      );
-      if (keep !== untrack(() => memory.selected)) remember({ selected: keep });
+      const keep = keepSelection(previous?.[0] ?? [], next, selected);
+      if (keep !== selected) remember({ selected: keep });
     })
   );
   /**

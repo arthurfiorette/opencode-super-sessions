@@ -640,6 +640,8 @@ test('a new open starts with an empty search, and coming back from a peek keeps 
     options.findIndex((option) => option.title === 'Peek session');
   const rendered = await openBrowser(terminal);
   await eventually(rendered, (frame) => frame.includes('Mastra build'));
+  // The last keystrokes match the same sessions, so the rows stay the same while every keystroke
+  // clears the selection; the peek below needs the first row selected again without an arrow.
   await rendered.mockInput.typeText('worktrees');
   await eventually(rendered, (frame) => !frame.includes('Mastra build'));
   /** Runs one of the browser's own keys, past the peek keys that share them. */
@@ -649,7 +651,6 @@ test('a new open starts with an empty search, and coming back from a peek keeps 
       .flatMap((layer) => layer.commands)
       .find((command) => command.bind === bind)
       .run();
-  press('down');
   press('ctrl+/');
   await eventually(rendered, (frame) => !frame.includes('can you find all merged'));
   terminal.dispatch('super-sessions.peek.return');
