@@ -841,7 +841,8 @@ export default function SessionBrowser(props: PageProps) {
     refs: (sessionID) => data.refs[sessionID],
     branch: branchOf,
     running: model.running,
-    theme
+    // The session view's surface, not the dialog's, so the transcript looks as it does there.
+    theme: () => context.theme
   });
   // A full-height column beside the list, with `esc` on the line of the browser's header.
   const preview = jsx('box', {
@@ -849,6 +850,9 @@ export default function SessionBrowser(props: PageProps) {
     flexShrink: 0,
     paddingTop: 1,
     paddingBottom: 1,
+    get backgroundColor() {
+      return context.theme.background.base;
+    },
     get visible() {
       return wide();
     },
