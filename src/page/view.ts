@@ -318,20 +318,38 @@ export default function SessionBrowser(props: PageProps) {
   });
 
   // A pull request's state refreshes through its newest session.
-  const visibleIDs = () =>
-    untrack(() =>
-      visible().flatMap((line) =>
-        line.kind === 'title'
-          ? [line.session.id]
-          : line.kind === 'pull'
-            ? line.pull.sessions.slice(0, 1).map((session) => session.id)
-            : []
-      )
+  const idsOf = (lines: readonly Line[]) =>
+    lines.flatMap((line) =>
+      line.kind === 'title'
+        ? [line.session.id]
+        : line.kind === 'pull'
+          ? line.pull.sessions.slice(0, 1).map((session) => session.id)
+          : []
     );
+  const visibleIDs = () => untrack(() => idsOf(visible()));
+  // Sessions this open already asked the forge about. The server fetches only refs without a
+  // fresh snapshot, so asking once per row on screen costs one RPC per batch of new rows; the
+  // interval below asks again for rows that stay.
+  const requested = new Set<string>();
+  const refreshNew = (ids: string[]) => {
+    const fresh = ids.filter((id) => !requested.has(id));
+    for (const id of fresh) requested.add(id);
+    void controller.refresh(fresh);
+  };
   // Cached lists draw at once; a reload, when due, and the forge refresh run behind them.
-  const refreshVisible = () => void controller.refresh(visibleIDs());
+  const refreshVisible = () => refreshNew(visibleIDs());
   const sync = () => void model.sync().then(refreshVisible);
   sync();
+  // Switching views, toggling the scope, searching and scrolling put rows on screen the open-time
+  // refresh never saw; their refs would otherwise show a bare `#N` until the next interval tick.
+  // A listed row waits for its cached read: a cold load shows the lists before a slow `refs`
+  // answer, which would land over the fresher one. Search hits outside the lists get no read, so
+  // they go at once.
+  createEffect(() => {
+    const listed = new Set([...data.active, ...data.archived].map((session) => session.id));
+    const ids = idsOf(visible()).filter((id) => data.refs[id] !== undefined || !listed.has(id));
+    untrack(() => refreshNew(ids));
+  });
   // Pressing ctrl+a several times in a row loads only the scope it stops on, instead of one
   // reload, refs call and refresh per press.
   let scopeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -372,7 +390,8 @@ export default function SessionBrowser(props: PageProps) {
   const timers = [
     setInterval(() => {
       model.setNow(Date.now());
-      refreshVisible();
+      // Every row on screen, asked again: the server's TTLs decide which refs it refetches.
+      void controller.refresh(visibleIDs());
     }, REFRESH_INTERVAL),
     setInterval(() => {
       if (!untrack(() => cli.animations)) return;

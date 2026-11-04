@@ -58,7 +58,24 @@ const PROMPTS = [
 ];
 
 const issues = [1, 2, 3, 4, 5, 6].map((number) => ({ ...pr4930, kind: 'issue', number }));
+const pr4870 = { ...pr4930, number: 4870 };
+// States the server has not fetched yet: the cached `refs` read leaves them out, and only a
+// `refresh`, which waits for the forge, answers with them.
+const LIVE_STATES = {
+  archived: {
+    [key(pr4870)]: {
+      status: 'merged',
+      title: 'Drop the Rollup plugins',
+      url: 'https://github.com/mastra-ai/mastra/pull/4870'
+    }
+  }
+};
 const refViews = {
+  archived: {
+    links: [{ ref: pr4870, source: 'agent', linkedAt: 1 }],
+    branchRefs: [],
+    states: {}
+  },
   unread: {
     links: issues.map((ref, index) => ({ ref, source: 'prompt', linkedAt: 10 - index })),
     branchRefs: [],
@@ -141,20 +158,27 @@ async function host(
   let stalled = false;
   // `unlink` calls; later views leave their keys out, as the server's dismissal does.
   const unlinks = [];
-  /** A session's view without the links unlinked from it. */
-  const viewOf = (id) => {
+  // The session ids of each `refresh` call.
+  const refreshes = [];
+  /**
+   * A session's view without the links unlinked from it. `live` adds the states only the forge
+   * knows, as the waiting `refresh` does.
+   */
+  const viewOf = (id, live) => {
     const gone = new Set(unlinks.filter((item) => item.sessionID === id).map((item) => item.key));
+    const view = refViews[id];
     return {
-      ...refViews[id],
-      links: refViews[id].links.filter((link) => !gone.has(key(link.ref)))
+      ...view,
+      links: view.links.filter((link) => !gone.has(key(link.ref))),
+      states: live ? { ...view.states, ...LIVE_STATES[id] } : view.states
     };
   };
   // RPCs reach the server plugin through a Location, which a missing directory does not have.
-  const views = async ({ sessionIDs }, options) => {
+  const views = async ({ sessionIDs }, options, live = false) => {
     const directory = options?.location?.directory ?? '/repo';
     if (directory.startsWith(GONE)) throw missing(directory);
     return Object.fromEntries(
-      sessionIDs.filter((id) => refViews[id]).map((id) => [id, viewOf(id)])
+      sessionIDs.filter((id) => refViews[id]).map((id) => [id, viewOf(id, live)])
     );
   };
   const context = {
@@ -209,7 +233,10 @@ async function host(
         // Settings and maintenance listen for server events from setup on.
         events: { on: () => () => {} },
         refs: views,
-        refresh: views,
+        refresh: (input, options) => {
+          refreshes.push(input.sessionIDs);
+          return views(input, options, true);
+        },
         'pull.details': async () => ({
           body: 'Moves the build to Rspack.',
           checks: [
@@ -332,6 +359,7 @@ async function host(
     forks,
     selects,
     unlinks,
+    refreshes,
     stallLists() {
       stalled = true;
     },
@@ -669,6 +697,32 @@ test('reopening over a session in another worktree of the project draws the cach
   frames.push(rendered.captureCharFrame());
   assert.match(frames.at(-1), /Mastra build[\s\S]*#4930[\s\S]*Rspack config in a worktree/);
   assert.ok(frames.every((frame) => !frame.includes('Loading sessions')));
+});
+
+// Only the rows on screen at open and the 60 s tick asked the forge, so after `tab` a row whose
+// refs were never fetched showed a bare `#N` for up to a minute.
+test('switching views asks for the new rows at once, and once per row across switches', async () => {
+  const terminal = await host();
+  const rendered = await openBrowser(terminal);
+  await eventually(rendered, (frame) => frame.includes('Mastra build'));
+  const asked = () => terminal.refreshes.filter((ids) => ids.includes('archived')).length;
+  assert.equal(asked(), 0, 'A row in another view is not asked for at open.');
+  const press = (bind) =>
+    terminal.layers
+      .filter((layer) => layer.mode === 'super-sessions')
+      .flatMap((layer) => layer.commands)
+      .find((command) => command.bind === bind)
+      .run();
+
+  press('tab');
+  press('tab');
+  await eventually(rendered, (frame) => /\uf419 #4870 Drop the Rollup plugins/.test(frame));
+  assert.equal(asked(), 1);
+
+  // A full cycle back to Archived draws the row from the states already in hand.
+  for (let i = 0; i < 4; i++) press('tab');
+  await eventually(rendered, (frame) => frame.includes('Drop the Rollup plugins'));
+  assert.equal(asked(), 1);
 });
 
 // After a restart the host no longer resolves the directory of a worktree the cleanup removed,

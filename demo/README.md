@@ -65,7 +65,7 @@ Sessions in storefront:
 
 The Pull requests view of storefront lists eight pull requests. #482 has a markdown description with a list, a code block and a quote.
 
-States that are not on screen yet load with the browser's next refresh, up to 60 seconds after a view switch; `f5` loads the selected row at once.
+Rows that come on screen through a view switch, `ctrl+a`, a search or scrolling load their states right away; `f5` reloads the selected row past the caches.
 
 ## State
 
