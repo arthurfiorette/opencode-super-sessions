@@ -109,6 +109,13 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
       { sessions: [session({ pending: true })] },
       'keep'
     ],
+    // The inactive rule needs no Done, so a question left unanswered for days must still hold it.
+    [
+      'question waiting in an inactive session',
+      { cleanupInactiveDays: 3 },
+      { sessions: [session({ done: false, pending: true })] },
+      'keep:a session waits for a permission or an answer'
+    ],
     ['open in a TUI', { cleanupMerged: true }, { sessions: [session({ open: true })] }, 'keep'],
     ['pinned', { cleanupMerged: true }, { sessions: [session({ pinned: true })] }, 'keep'],
     // Deleted sessions: only once no session is left in the worktree.

@@ -54,7 +54,6 @@ import {
   wrapTitle
 } from './row.js';
 import {
-  anchorScroll,
   keepSelection,
   type Line,
   layoutLines,
@@ -95,6 +94,9 @@ const ESC_GAP = 2;
 // Footer layout: side padding and the blank cells between two hints.
 const FOOTER_PADDING = 2;
 const HINT_GAP = 2;
+// Free in the host's default keymap and in the search input's own bindings: ctrl+e and ctrl+k
+// edit the line there, ctrl+n moves through host dialogs, ctrl+x is the host's leader.
+const DONE_KEY = 'ctrl+q';
 
 /** Which optional pieces the header row shows. */
 interface HeaderFit {
@@ -182,11 +184,10 @@ export default function SessionBrowser(props: PageProps) {
       : `archived ${formatAge(now - archivedAt)} · updated ${formatAge(now - info.time.updated)}`;
   };
   /**
-   * The selected row's title wrapped at its column, or undefined for a row that keeps one cut
-   * line: every other row, and the selected one while it asks to confirm a delete.
+   * A row's title wrapped at its column. It reads no selection, hover or delete state, so moving
+   * the selection never changes a row's height.
    */
-  const wrappedOf = (session: SessionInfo): string[] | undefined => {
-    if (memory.selected !== session.id || deleting() === session.id) return undefined;
+  const titleOf = (session: SessionInfo): string[] => {
     const room = titleRoom({
       // The row box pads one cell on each side.
       width: listWidth() - 2,
@@ -199,7 +200,7 @@ export default function SessionBrowser(props: PageProps) {
     layoutLines(
       model.groups(),
       (session) => detailKinds(detailsOf(session)),
-      (session) => wrappedOf(session)?.length ?? 1
+      (session) => titleOf(session).length
     )
   );
   const visible = createMemo(() => lines().slice(memory.scroll, memory.scroll + listHeight()));
@@ -218,22 +219,13 @@ export default function SessionBrowser(props: PageProps) {
       if (keep !== untrack(() => memory.selected)) remember({ selected: keep });
     })
   );
-  // The selected title wraps, so rows change height as the selection moves. The selected row's
-  // title keeps its screen line where it can, then the whole row is scrolled into view.
-  // Another view, query or scope is a different list, where the old screen line means nothing.
-  let laidOut: { list: string; lines: Line[] } = { list: '', lines: [] };
   createEffect(() => {
-    const next = lines();
-    const selected = memory.selected;
-    const list = `${memory.view}\n${memory.query}\n${scope()}`;
-    const anchored = anchorScroll(
-      laidOut.list === list ? laidOut.lines : [],
-      next,
-      selected,
-      untrack(() => memory.scroll)
+    const scroll = scrollFor(
+      lines(),
+      memory.selected,
+      untrack(() => memory.scroll),
+      listHeight()
     );
-    laidOut = { list, lines: next };
-    const scroll = scrollFor(next, selected, anchored, listHeight());
     if (scroll !== untrack(() => memory.scroll)) remember({ scroll });
   });
   createEffect(
@@ -440,6 +432,25 @@ export default function SessionBrowser(props: PageProps) {
     }
     if (failed > 0) toast(`${failed} could not be archived.`, 'warning');
   };
+  /** Whether the session is in the Done view now, by the rule or the user's mark. */
+  const doneNow = (session: SessionInfo) =>
+    rowsOf(model.doneGroups()).some((row) => row.id === session.id);
+  /** Marks the selected session Done, or not Done when it is Done by any means. */
+  const toggleDone = async () => {
+    const session = selected();
+    if (!session) return;
+    const done = !doneNow(session);
+    try {
+      await model.rpc()['done.set']({ sessionID: session.id, done }, model.rpcOptions());
+    } catch {
+      toast(
+        done ? 'Could not mark the session done.' : 'Could not mark the session not done.',
+        'error'
+      );
+      return;
+    }
+    void controller.refresh([session.id]);
+  };
   const openRef = () => {
     const session = selected();
     const view = session ? data.refs[session.id] : undefined;
@@ -499,6 +510,121 @@ export default function SessionBrowser(props: PageProps) {
       toast('Could not open the browser.', 'error');
   };
 
+  const nextView = (step: number) =>
+    setView(VIEWS[(VIEWS.indexOf(memory.view) + VIEWS.length + step) % VIEWS.length] ?? 'active');
+  const peek = () => {
+    if (memory.selected !== undefined) props.peek(memory.selected);
+  };
+  const togglePin = () => {
+    const session = selected();
+    if (session)
+      void props.pins.toggle(session.id).catch(() => toast('Could not save pins.', 'error'));
+  };
+  /**
+   * Every browser action with the key that runs it, in the order the keys dialog lists them.
+   * Actions that do nothing in the current state, such as archiving all done sessions outside
+   * the Done view, are left out.
+   */
+  const keyActions = (): Array<{ title: string; key: string; run: () => unknown }> => {
+    const current = selected();
+    return [
+      { title: 'Open session', key: 'enter', run: () => open() },
+      { title: 'Peek session', key: 'space', run: peek },
+      {
+        title: memory.view === 'archived' ? 'Restore session' : 'Archive session',
+        key: 'ctrl+s',
+        run: archive
+      },
+      {
+        title: current && doneNow(current) ? 'Mark not done' : 'Mark done',
+        key: DONE_KEY,
+        run: toggleDone
+      },
+      { title: 'Next view', key: 'tab', run: () => nextView(1) },
+      { title: 'Previous view', key: 'shift+tab', run: () => nextView(-1) },
+      {
+        title: scope() === 'project' ? 'Show all projects' : 'Show this project',
+        key: 'ctrl+a',
+        run: () => model.toggleScope().catch(() => {})
+      },
+      {
+        title: 'Rename session',
+        key: shortcut(HOST_COMMANDS.rename, 'ctrl+r'),
+        run: rename
+      },
+      {
+        title: 'Regenerate title',
+        key: shortcut('super-sessions.retitle', 'ctrl+t'),
+        run: retitle
+      },
+      {
+        title: current && props.pins.has(current.id) ? 'Unpin session' : 'Pin session',
+        key: shortcut(HOST_COMMANDS.pin, 'ctrl+f'),
+        run: togglePin
+      },
+      {
+        title: 'Delete session',
+        key: shortcut(HOST_COMMANDS.delete, 'ctrl+d'),
+        run: remove
+      },
+      ...(memory.view === 'done' && !data.search
+        ? [
+            {
+              title: 'Archive all done sessions',
+              key: shortcut('super-sessions.archive.done', 'ctrl+y'),
+              run: archiveDone
+            }
+          ]
+        : []),
+      {
+        title: 'Link pull request or issue',
+        key: shortcut('super-sessions.link', 'ctrl+l'),
+        run: link
+      },
+      {
+        title: 'Open pull request in browser',
+        key: shortcut('super-sessions.open.ref', 'ctrl+g'),
+        run: openRef
+      },
+      ...(wide() && workRefs().length > 0
+        ? [{ title: 'Focus the preview links', key: 'right', run: focusWork }]
+        : []),
+      {
+        title: 'Show command palette',
+        key: 'ctrl+p',
+        run: () => context.keymap.dispatch(COMMAND_PALETTE)
+      },
+      {
+        title: 'Super Sessions settings',
+        key: 'ctrl+o',
+        run: () => context.keymap.dispatch('super-sessions.settings')
+      },
+      { title: 'Close', key: 'esc', run: props.close }
+    ];
+  };
+  /**
+   * The keys dialog: the browser's actions in the host's select dialog, key on the right like the
+   * command palette. Picking one closes the dialog and runs it on the selected session.
+   */
+  const showKeys = async () => {
+    const actions = keyActions();
+    const index = await context.ui.dialog.select({
+      title: 'Keys',
+      placeholder: 'Search actions',
+      options: actions.map((action, value) => ({
+        title: action.title,
+        value,
+        footer: action.key
+      }))
+    });
+    if (index === undefined) return;
+    // The host gives the focus back to the search field a tick after the dialog closes. An action
+    // that opens another dialog (rename, link) runs before that tick, and that dialog would
+    // remember no focus to return to on close.
+    if (input && !input.isDestroyed) input.focus();
+    void actions[index]?.run();
+  };
+
   // Host dialogs push the "modal" mode above this one, which turns this layer off while a rename
   // prompt or confirm is open and back on when it closes. Created inside the component, so the
   // layer goes away with the browser.
@@ -538,9 +664,21 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Peek session',
       run: () => {
         if (memory.query.length > 0) return false;
-        if (memory.selected !== undefined) props.peek(memory.selected);
+        peek();
       }
     },
+    // Terminals without the kitty protocol send ctrl+/ as 0x1F, which OpenTUI reads as ctrl+_;
+    // kitty sends ctrl+/. `?` arrives as `?`, or as shift+/ or shift+? under kitty, and types
+    // into a non-empty search like space.
+    ...['ctrl+/', 'ctrl+_'].map((bind) => ({ bind, title: 'Keys', run: () => void showKeys() })),
+    ...['?', 'shift+/', 'shift+?'].map((bind) => ({
+      bind,
+      title: 'Keys',
+      run: () => {
+        if (memory.query.length > 0) return false;
+        void showKeys();
+      }
+    })),
     {
       bind: 'escape',
       title: 'Close',
@@ -563,35 +701,23 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Show command palette',
       run: () => context.keymap.dispatch(COMMAND_PALETTE)
     },
-    {
-      bind: 'tab',
-      title: 'Next view',
-      run: () => setView(VIEWS[(VIEWS.indexOf(memory.view) + 1) % VIEWS.length] ?? 'active')
-    },
+    { bind: 'tab', title: 'Next view', run: () => nextView(1) },
     // The host binds shift+tab to agent.cycle; this layer's mode is on top while the browser is
     // open, so the key cycles views here and agents everywhere else.
-    {
-      bind: 'shift+tab',
-      title: 'Previous view',
-      run: () =>
-        setView(VIEWS[(VIEWS.indexOf(memory.view) + VIEWS.length - 1) % VIEWS.length] ?? 'active')
-    },
+    { bind: 'shift+tab', title: 'Previous view', run: () => nextView(-1) },
     {
       bind: 'ctrl+a',
       title: 'Toggle all projects',
       run: () => void model.toggleScope().catch(() => {})
     },
     { bind: 'ctrl+s', title: 'Archive or restore', run: () => void archive() },
+    { bind: DONE_KEY, title: 'Mark done or not done', run: () => void toggleDone() },
     { id: HOST_COMMANDS.rename, title: 'Rename session', run: () => void rename() },
     { id: HOST_COMMANDS.delete, title: 'Delete session', run: () => void remove() },
     {
       id: HOST_COMMANDS.pin,
       title: 'Pin or unpin session',
-      run: () => {
-        const session = selected();
-        if (session)
-          void props.pins.toggle(session.id).catch(() => toast('Could not save pins.', 'error'));
-      }
+      run: togglePin
     },
     {
       id: 'super-sessions.retitle',
@@ -653,8 +779,6 @@ export default function SessionBrowser(props: PageProps) {
     }, 1);
   });
 
-  // Hover selects, and the selected title wraps. The scroll anchor keeps the hovered row's first
-  // line where the pointer is while the row above shrinks back to one line.
   const hover = (session: SessionInfo) => select(session.id);
   const leave = () => {};
 
@@ -701,12 +825,17 @@ export default function SessionBrowser(props: PageProps) {
     return shade.equals(panel) ? theme().decrease(panel) : shade;
   };
 
+  /** The row's title lines; a delete confirmation takes the first and blanks the rest. */
+  const titleLines = (session: SessionInfo): string[] => {
+    const title = titleOf(session);
+    if (deleting() !== session.id) return title;
+    const confirm = `Press ${shortcut(HOST_COMMANDS.delete, 'ctrl+d')} again to delete`;
+    return [confirm, ...title.slice(1).map(() => '')];
+  };
+
   const rowModel = (session: SessionInfo): RowModel => ({
     marker: markerOf(session),
-    title:
-      deleting() === session.id
-        ? `Press ${shortcut(HOST_COMMANDS.delete, 'ctrl+d')} again to delete`
-        : live(session).title || 'Untitled session',
+    title: titleLines(session),
     label: matchLabel(reason(session), data.refs[session.id]),
     right: rightOf(session),
     // The row box pads one cell on each side.
@@ -716,7 +845,6 @@ export default function SessionBrowser(props: PageProps) {
     // Pinned rows show their slot instead of the spinner, but their title still says it runs.
     running: model.running(session.id),
     deleting: deleting() === session.id,
-    wrapped: wrappedOf(session),
     stripe: (stripes().get(session.id) ?? 0) % 2 === 1 ? stripe() : undefined
   });
 
@@ -1112,45 +1240,31 @@ export default function SessionBrowser(props: PageProps) {
     ]
   });
 
-  // Same shape as the host's dialog footer: "title key" pairs, actions on the selected session
-  // on the left and the list-wide scope toggle on the right.
+  // "key action" pairs like the host's prompt footer (`ctrl+p commands`), actions on the selected
+  // session on the left and the list-wide scope toggle on the right.
   const footerItems = createMemo((): Array<[string, string]> => {
     if (focus() === 'work')
       return [
         ['open', 'enter'],
-        ['back', '←/esc']
+        ['back', 'left']
       ];
-    const current = selected();
-    const items: Array<[string, string]> = [
+    // The same hints in the same places whatever the state, so the eye learns where each key is;
+    // the rest of the actions live in the keys dialog.
+    return [
       ['peek', 'space'],
-      [memory.view === 'archived' ? 'restore' : 'archive', keyLabel('ctrl+s')],
-      ['view', keyLabel('tab/shift+tab')],
-      ['rename', keyLabel(shortcut(HOST_COMMANDS.rename, 'ctrl+r'))],
-      ['retitle', keyLabel(shortcut('super-sessions.retitle', 'ctrl+t'))],
-      [
-        current && props.pins.has(current.id) ? 'unpin' : 'pin',
-        keyLabel(shortcut(HOST_COMMANDS.pin, 'ctrl+f'))
-      ],
-      ['delete', keyLabel(shortcut(HOST_COMMANDS.delete, 'ctrl+d'))]
+      ['archive', 'ctrl+s'],
+      ['done', DONE_KEY],
+      ['keys', 'ctrl+/']
     ];
-    if (memory.view === 'done' && !data.search)
-      items.push(['archive all', keyLabel(shortcut('super-sessions.archive.done', 'ctrl+y'))]);
-    items.push(
-      ['link', keyLabel(shortcut('super-sessions.link', 'ctrl+l'))],
-      ['open PR', keyLabel(shortcut('super-sessions.open.ref', 'ctrl+g'))],
-      ['commands', keyLabel('ctrl+p')],
-      ['settings', keyLabel('ctrl+o')]
-    );
-    return items;
   });
   const scopeHint = (): [string, string] => [
     scope() === 'project' ? 'all projects' : 'this project',
-    keyLabel('ctrl+a')
+    'ctrl+a'
   ];
   const hint = ([title, key]: [string, string], index: number) => [
     ...(index > 0 ? [span(' '.repeat(HINT_GAP), () => theme().text.muted)] : []),
-    span(title, () => theme().text.base),
-    span(` ${key}`, () => theme().text.muted)
+    span(key, () => theme().text.base),
+    span(` ${title}`, () => theme().text.muted)
   ];
   /**
    * The hints in rows across the whole panel, in order. A hint that does not fit starts the next
@@ -1337,43 +1451,26 @@ export function PeekBanner(props: PeekBannerProps) {
           (value) => value.text.feedback.warning.base,
           true
         ),
+        // Key first, then the action muted, like the host's prompt footer.
         span(
-          () => '   switch',
+          () => '   ↑↓',
           (value) => value.text.base
         ),
         span(
-          () => ' ↑↓',
+          () => ' switch',
           (value) => value.text.muted
         ),
         span(
-          () => '   back to list',
+          () => '   esc',
           (value) => value.text.base
         ),
         span(
-          () => ' esc',
+          () => ' back to list',
           (value) => value.text.muted
         )
       ]
     })
   });
-}
-
-/**
- * A key as the footer shows it, short enough that every hint fits one row at 200 columns: caret
- * notation for control letters (`ctrl+s` -> `^S`), `⇧` for shift and arrows for left and right.
- * Each alternative of `a/b` is shortened on its own; other keys stay as the host writes them.
- */
-function keyLabel(binding: string): string {
-  return binding
-    .split('/')
-    .map((key) => {
-      const control = /^ctrl\+([a-z])$/i.exec(key);
-      if (control) return `^${control[1]?.toUpperCase()}`;
-      if (key === 'left') return '←';
-      if (key === 'right') return '→';
-      return key.replace(/^shift\+/, '⇧');
-    })
-    .join('/');
 }
 
 /** A view tab's name, after its icon when `icons` is set. Active has no icon. */
@@ -1408,10 +1505,18 @@ function attached(root: Renderable, node: Renderable): boolean {
 
 /** Turns an RPC `link` failure into a short message. */
 function linkError(error: unknown): string {
-  const type =
-    typeof error === 'object' && error !== null && 'type' in error ? error.type : undefined;
+  // The host's RPC error carries the handler's `type` and `data` (RpcError in
+  // packages/protocol/src/errors.ts).
+  const failure = typeof error === 'object' && error !== null ? error : {};
+  const type = 'type' in failure ? failure.type : undefined;
   if (type === 'invalid_reference') return 'Not a pull request or issue reference.';
   if (type === 'not_found') return 'Pull request or issue not found.';
-  if (type === 'unavailable') return 'GitHub is unavailable. Run /super-sessions for details.';
+  if (type === 'unavailable') {
+    const data = 'data' in failure ? failure.data : undefined;
+    const provider =
+      typeof data === 'object' && data !== null && 'provider' in data ? data.provider : undefined;
+    const forge = provider === 'gitlab' ? 'GitLab' : provider === 'github' ? 'GitHub' : 'The forge';
+    return `${forge} is unavailable. Run /super-sessions status for details.`;
+  }
   return 'Could not link. Enable the opencode-super-sessions server plugin.';
 }

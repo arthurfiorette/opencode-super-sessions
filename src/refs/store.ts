@@ -75,7 +75,7 @@ export function mergeLinks(current: SessionRefs, incoming: RefLink[]): RefsUpdat
     }
   }
   return changed
-    ? { next: { v: 1, links, dismissed: [...dismissed] }, changed }
+    ? { next: { ...current, links, dismissed: [...dismissed] }, changed }
     : { next: current, changed };
 }
 
@@ -92,7 +92,18 @@ export function dismissLink(current: SessionRefs, key: string): RefsUpdate {
     return { next: current, changed: false };
   }
   const dismissed = alreadyDismissed ? current.dismissed : [...current.dismissed, key];
-  return { next: { v: 1, links, dismissed }, changed: true };
+  return { next: { ...current, links, dismissed }, changed: true };
+}
+
+/**
+ * Sets the user's Done override, or clears it with `null`. Marking Done records `now`, which
+ * auto-archive counts from; marking a session that is already marked keeps the first time.
+ */
+export function setDone(current: SessionRefs, done: boolean | null, now: number): RefsUpdate {
+  if ((current.done ?? null) === done) return { next: current, changed: false };
+  const { done: _done, doneAt: _doneAt, ...rest } = current;
+  if (done === null) return { next: rest, changed: true };
+  return { next: done ? { ...rest, done, doneAt: now } : { ...rest, done }, changed: true };
 }
 
 /** Removes a key from `dismissed` so detection may add it again. */

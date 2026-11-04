@@ -60,11 +60,11 @@ The browser remembers the search, view, selection and scroll position until you 
 
 `tab` and `shift+tab` cycle through the views, and a left click on a view name switches to it. Each name shows how many sessions it holds.
 
-| View     | Holds                                                           | Grouped by                                               |
-| -------- | --------------------------------------------------------------- | -------------------------------------------------------- |
-| Active   | Sessions that are not archived and not [Done](#done)            | Pinned, then Running, then the day of the last update    |
-| Done     | Sessions whose pull requests or issues are all merged or closed | The day of the last merge or close                       |
-| Archived | Archived sessions                                               | The day they were archived, newest update first in a day |
+| View     | Holds                                                                                         | Grouped by                                               |
+| -------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Active   | Sessions that are not archived and not [Done](#done)                                          | Pinned, then Running, then the day of the last update    |
+| Done     | Sessions whose pull requests or issues are all merged or closed, and sessions you marked Done | The day of the last merge or close, or of your mark      |
+| Archived | Archived sessions                                                                             | The day they were archived, newest update first in a day |
 
 Pinned sessions stay in the Pinned group of Active even when they are Done. `ctrl+a` switches between this project and all projects. The choice is kept across restarts until you change the "Default scope" setting.
 
@@ -75,7 +75,7 @@ A row is its title line and, when they apply, the lines under it:
 - The title line: a marker, the title and the age of the last update. In the Archived view the age reads `archived 3d · updated 5d`.
 - The PR line, when the session has a [main pull request](#main-pull-request): its icon and number in the state color, then its title. A trailing `+N` counts the session's other pull requests and mentioned refs.
 - The status line, when the main pull request is open or a draft and has something to act on: `changes requested`, `N unresolved`, `checks failing` or `checks pending`, and `approved`, in that order.
-- The issues line, when the session tracks issues: every issue number in its state color, joined as `#1230, #19083 and #8923`. The issues the main pull request closes come first. When they do not fit, the rest are counted in `+N`.
+- The issues line, when the session tracks issues: every issue number in its state color, joined as `#1230, #19083 and #8923`. The issues the main pull request closes come first. When they do not fit, the rest are counted in `+N`. A session that tracks one issue shows its title after the number, like the PR line.
 
 The marker column shows one of these, highest first:
 
@@ -87,7 +87,7 @@ The marker column shows one of these, highest first:
 | spinner    | The session is running. Its title also takes the warning color. |
 | `●`        | Unread: the session finished after you last viewed it           |
 
-With animations off in OpenCode, the spinner is a still `⋯`. The selected row's title wraps onto as many lines as it needs; other titles are cut with `…`. The "PR and issue line" setting hides the PR, status and issues lines.
+With animations off in OpenCode, the spinner is a still `⋯`. Titles wrap onto as many lines as they need, so a row keeps its height when the selection or the mouse moves; the PR, status and issues lines are cut with `…`. The "PR and issue line" setting hides those lines.
 
 ### Pins
 
@@ -124,7 +124,7 @@ The transcript below draws messages the way OpenCode's session view does and fol
 
 ### Peek
 
-`space`, while the search is empty, shows the selected session in place of the browser. A banner above the prompt reads `Peeking 3 of 12   switch ↑↓   back to list esc`.
+`space`, while the search is empty, shows the selected session in place of the browser. A banner above the prompt reads `Peeking 3 of 12   ↑↓ switch   esc back to list`.
 
 - `up` and `down` move to the previous or next session of the browser's list while the prompt is empty. With text in the prompt, the arrows edit the prompt as usual.
 - `esc` reopens the browser on the session you peeked last.
@@ -138,30 +138,36 @@ While you peek at a running session, `esc` returns to the list instead of interr
 
 ### Keys
 
-The footer writes control keys in caret notation (`^S` for `ctrl+s`) and shift as `⇧`. Keys marked "yours" belong to an OpenCode command the browser reuses, so the browser and its footer follow your own keybinds for that command.
+The footer always shows the same hints: `space peek`, `ctrl+s archive`, `ctrl+q done` and `ctrl+/ keys` on the left, `ctrl+a all projects` on the right. While the Work rows have the arrow keys it reads `enter open` and `left back`. Every other action is in the keys dialog: `ctrl+/`, or `?` while the search is empty, lists each browser action with its key, like OpenCode's command palette. Type to filter it, and `enter` runs the action on the selected session.
 
-| Key                           | Footer     | Action                                                                        |
-| ----------------------------- | ---------- | ----------------------------------------------------------------------------- |
-| `up` / `down`                 |            | Select the previous or next session                                           |
-| `pageup` / `pagedown`         |            | Move by the rows on screen                                                    |
-| `home` / `end`                |            | Select the first or last session                                              |
-| `enter`                       |            | Open the session                                                              |
-| `space`                       | `space`    | [Peek](#peek), while the search is empty                                      |
-| `right`                       |            | Move to the [Work links](#work-links)                                         |
-| `esc`                         | `esc`      | Close the browser                                                             |
-| `tab` / `shift+tab`           | `tab/⇧tab` | Next or previous view                                                         |
-| `ctrl+a`                      | `^A`       | Switch between this project and all projects                                  |
-| `ctrl+s`                      | `^S`       | Archive, or restore in the Archived view                                      |
-| `ctrl+r` (yours)              | `^R`       | Rename (`session.rename`)                                                     |
-| `ctrl+t`                      | `^T`       | Ask OpenCode's title agent for a new title                                    |
-| `ctrl+f` (yours)              | `^F`       | Pin or unpin (`session.pin.toggle`)                                           |
-| `ctrl+d` (yours)              | `^D`       | Delete; press twice (`session.delete`)                                        |
-| `ctrl+y`                      | `^Y`       | Archive every Done session after confirmation. Done view, not while searching |
-| `ctrl+l`                      | `^L`       | Link a pull request or issue: a URL, `owner/repo#N` or `#N`                   |
-| `ctrl+g`                      | `^G`       | Open the main pull request, or else the first issue, in your web browser      |
-| `ctrl+p`                      | `^P`       | OpenCode's command palette; `esc` returns to the browser                      |
-| `ctrl+o`                      | `^O`       | [Settings](#settings)                                                         |
-| `ctrl+c`, `<leader>q` (yours) |            | Clear the search, then close the browser (`app.exit`)                         |
+Keys are written the way OpenCode writes them. Keys marked "yours" belong to an OpenCode command the browser reuses, so the browser, its footer and the keys dialog follow your own keybinds for that command.
+
+| Key                           | Action                                                                        |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| `up` / `down`                 | Select the previous or next session                                           |
+| `pageup` / `pagedown`         | Move by the rows on screen                                                    |
+| `home` / `end`                | Select the first or last session                                              |
+| `enter`                       | Open the session                                                              |
+| `space`                       | [Peek](#peek), while the search is empty                                      |
+| `right`                       | Move to the [Work links](#work-links)                                         |
+| `esc`                         | Close the browser                                                             |
+| `ctrl+/`, `?`                 | The keys dialog. `?` types into a search that is not empty                    |
+| `tab` / `shift+tab`           | Next or previous view                                                         |
+| `ctrl+a`                      | Switch between this project and all projects                                  |
+| `ctrl+s`                      | Archive, or restore in the Archived view                                      |
+| `ctrl+q`                      | Mark Done, or not Done when the session is Done (see [Done](#done))           |
+| `ctrl+r` (yours)              | Rename (`session.rename`)                                                     |
+| `ctrl+t`                      | Ask OpenCode's title agent for a new title                                    |
+| `ctrl+f` (yours)              | Pin or unpin (`session.pin.toggle`)                                           |
+| `ctrl+d` (yours)              | Delete; press twice (`session.delete`)                                        |
+| `ctrl+y`                      | Archive every Done session after confirmation. Done view, not while searching |
+| `ctrl+l`                      | Link a pull request or issue: a URL, `owner/repo#N` or `#N`                   |
+| `ctrl+g`                      | Open the main pull request, or else the first issue, in your web browser      |
+| `ctrl+p`                      | OpenCode's command palette; `esc` returns to the browser                      |
+| `ctrl+o`                      | [Settings](#settings)                                                         |
+| `ctrl+c`, `<leader>q` (yours) | Clear the search, then close the browser (`app.exit`)                         |
+
+Most terminals send `ctrl+/` as `ctrl+_`; the browser takes both.
 
 The quit keys never exit OpenCode from the browser. With the default keys `ctrl+d` deletes there, because `session.delete` wins over `app.exit` inside the browser.
 
@@ -211,6 +217,8 @@ A session is Done when all of these hold:
 - The last of those merges or closes happened after your last message in the session.
 - The state of every tracked ref is known. A failed fetch keeps the session out of Done.
 
+`ctrl+q` in the browser overrides these rules for the selected session. On a session that is not Done it marks the session Done, whatever its refs, your last message or a waiting question say. On a Done session it marks it not Done, so it stays in Active even when its refs close. A running or archived session is never Done. The mark is stored in the session's metadata with the refs.
+
 ### Unlinking
 
 Ask the agent to unlink a ref; it calls `unlink_work`. Detection and the branch lookup never add an unlinked ref back, while linking it again with `link_work` or `ctrl+l` does. Unlinking a pull request also drops the issues that were linked only because it closes them. The browser has no unlink key.
@@ -256,7 +264,7 @@ The List, Preview, Compatibility and Archiving settings other than auto-archive 
 
 ## Auto-archive
 
-With "Auto-archive Done sessions" on, a Done session is archived that many days after its last pull request merged or issue closed. "Immediately" archives it at the next check. Pinned sessions, running sessions and sessions waiting on a permission or question are never archived.
+With "Auto-archive Done sessions" on, a Done session is archived that many days after its last pull request merged or issue closed, or after you marked it Done. "Immediately" archives it at the next check. Pinned sessions, running sessions and sessions waiting on a permission or question are never archived.
 
 The daemon checks 5 seconds after it starts, every 10 minutes, and shortly after a session finishes, a session is deleted or a tracked pull request merges. OpenCode does not let server plugins archive, so an open TUI does the archiving: nothing is archived while no terminal is open.
 
@@ -280,7 +288,7 @@ Squash and rebase merges put new commits on the default branch, so for those the
 
 Whatever the rules say, a worktree is kept when:
 
-- a session in it is running, waits for a permission, is open in a terminal or is pinned;
+- a session in it is running, waits for a permission or a question, is open in a terminal or is pinned;
 - `git status` cannot be read in it, or a fact a rule needs is unknown;
 - it has local changes that "Keep worktrees with local changes" protects: edited, staged or untracked files with "any local files"; edited or staged files with "uncommitted changes"; edited tracked files only with "edited tracked files".
 

@@ -36,7 +36,7 @@ export type Line =
   | { kind: 'blank' }
   | { kind: 'header'; title: string }
   | { kind: 'title' | DetailKind; session: SessionInfo }
-  /** The `index`th line (1 and up) of a title that wraps, only on the selected row. */
+  /** The `index`th line (1 and up) of a title that wraps. */
   | { kind: 'wrap'; session: SessionInfo; index: number };
 
 /** What the Done rule needs beyond refs. Fetched only for sessions that could be Done. */
@@ -216,25 +216,6 @@ export function layoutLines(
       ...details(session).map((kind) => ({ kind, session }))
     ])
   ]);
-}
-
-/**
- * The first visible line that keeps the selected row's title on the same screen line after the
- * list changed shape around it, such as the previous selection shrinking back to one line.
- * Returns `scroll` unchanged when the row is new to either layout.
- */
-export function anchorScroll(
-  previous: readonly Line[],
-  next: readonly Line[],
-  selected: string | undefined,
-  scroll: number
-): number {
-  const at = (lines: readonly Line[]) =>
-    lines.findIndex((line) => line.kind === 'title' && line.session.id === selected);
-  const before = at(previous);
-  const after = at(next);
-  if (before === -1 || after === -1) return scroll;
-  return Math.max(0, scroll + after - before);
 }
 
 /** Moves the selection by `delta` rows, clamped to the list. */

@@ -15,7 +15,11 @@ export const sessionRefViewSchema = z.strictObject({
   /** Pull requests whose head is `branch`. Recomputed, never stored. */
   branchRefs: z.array(refSchema),
   /** Live state by `refKey`. Missing entries are unknown (not fetched yet, or the fetch failed). */
-  states: z.record(z.string(), refStateSchema)
+  states: z.record(z.string(), refStateSchema),
+  /** The user's Done override (see `done.set`); absent follows the refs. */
+  done: z.boolean().optional(),
+  /** When the user marked the session Done. */
+  doneAt: z.number().int().optional()
 });
 
 export const searchScopeSchema = z.union([
@@ -126,12 +130,24 @@ export const SuperSessions = Rpc.define({
       errors: {
         invalid_reference: z.strictObject({}),
         not_found: z.strictObject({}),
-        unavailable: z.strictObject({ reason: z.string() })
+        /** `provider` names the forge that could not be asked, when the reference named one. */
+        unavailable: z.strictObject({
+          reason: z.string(),
+          provider: providerIdSchema.optional()
+        })
       }
     },
     /** Removes a link and records the key as dismissed so detection never re-adds it. */
     unlink: {
       input: z.strictObject({ sessionID: z.string(), key: z.string() }),
+      output: z.strictObject({})
+    },
+    /**
+     * Overrides whether the session is Done: `true` makes an idle, unarchived session Done
+     * whatever its refs say, `false` keeps it out of Done, `null` goes back to the refs.
+     */
+    'done.set': {
+      input: z.strictObject({ sessionID: z.string(), done: z.boolean().nullable() }),
       output: z.strictObject({})
     },
     'settings.get': {

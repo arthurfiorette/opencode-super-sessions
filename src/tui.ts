@@ -14,6 +14,7 @@ import {
 import { setArchived } from './host/session-api.js';
 import { installBrowser } from './page/page.js';
 import { createPins, type Pins } from './pins.js';
+import type { ProviderId } from './refs/ref.js';
 import { type Availability, SuperSessions } from './rpc.js';
 import { installSettings } from './settings/install.js';
 import type { TuiSettings } from './settings/store.js';
@@ -21,11 +22,21 @@ import { installSidebar } from './sidebar.js';
 
 const TITLE = 'Super Sessions';
 
-const availability: Record<Availability, string> = {
-  ok: 'ready',
-  'missing-tool': 'gh not found. Install the GitHub CLI or set ghPath.',
-  unauthenticated: 'gh is not logged in. Run gh auth login.'
+/** Each forge's name, CLI and the option that points at the CLI, for the status lines. */
+const FORGES: Record<ProviderId, { name: string; cli: string; option: string }> = {
+  github: { name: 'GitHub', cli: 'gh', option: 'ghPath' },
+  gitlab: { name: 'GitLab', cli: 'glab', option: 'glabPath' }
 };
+
+/** One status line: the forge and whether its CLI is ready. */
+function availability(provider: ProviderId, state: Availability): string {
+  const forge = FORGES[provider];
+  if (state === 'missing-tool')
+    return `${forge.name}: ${forge.cli} not found. Install the ${forge.name} CLI or set ${forge.option}.`;
+  if (state === 'unauthenticated')
+    return `${forge.name}: ${forge.cli} is not logged in. Run ${forge.cli} auth login.`;
+  return `${forge.name}: ready`;
+}
 
 /**
  * TUI plugin loaded by each OpenCode terminal client. It takes over the session list command,
@@ -258,9 +269,8 @@ async function showStatus(context: Plugin.Context) {
   try {
     const location = context.location ?? context.data.location.default();
     const status = await context.client.rpc(SuperSessions).status({}, { location });
-    const lines = Object.entries(status.providers).map(
-      ([provider, state]) =>
-        `${provider === 'github' ? 'GitHub' : provider}: ${availability[state]}`
+    const lines = (Object.entries(status.providers) as Array<[ProviderId, Availability]>).map(
+      ([provider, state]) => availability(provider, state)
     );
     message = lines.length > 0 ? lines.join('\n') : 'No forge providers are enabled.';
   } catch {

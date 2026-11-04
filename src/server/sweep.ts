@@ -319,11 +319,20 @@ function createSweeper(runtime: Runtime): Sweeper {
           merged && !worktree.root && git.contained !== true
             ? await readPullHead(worktree.directory, mergedHeads(views))
             : undefined;
+        // Read for every session here, not only the Done candidates `doneFacts` checked: the
+        // inactive rule removes worktrees of sessions that are not Done.
+        const waiting = worktree.root
+          ? []
+          : await Promise.all(
+              ids.map(
+                async (id) => done.get(id)?.pending || (await hasPending(runtime, context, id))
+              )
+            );
         const fact: WorktreeFacts = {
           directory: worktree.directory,
           root: worktree.root,
           deleted: cleanup.orphaned.includes(worktree.directory),
-          sessions: ids.map((id): WorktreeSession => {
+          sessions: ids.map((id, index): WorktreeSession => {
             const info = byID.get(id);
             const session = done.get(id);
             return {
@@ -333,7 +342,7 @@ function createSweeper(runtime: Runtime): Sweeper {
               doneAt: session?.doneAt,
               updated: info?.time.updated ?? now,
               running: running.has(id),
-              pending: session?.pending ?? false,
+              pending: waiting[index] ?? false,
               open: open.has(id),
               pinned: pinned.has(id)
             };
@@ -367,7 +376,7 @@ function createSweeper(runtime: Runtime): Sweeper {
           result.set(id, { view, done: false, pending: false });
           continue;
         }
-        const pending = await hasPending(context, id);
+        const pending = await hasPending(runtime, context, id);
         const last = await lastUserMessageAt(context, id);
         const done =
           last !== null &&
@@ -695,8 +704,16 @@ function mergedHeads(views: SessionRefView[]): string[] {
   return [...new Set(heads)];
 }
 
-/** Whether a permission request waits on the session. A failed read counts as waiting. */
-async function hasPending(context: Plugin.Context, sessionID: string): Promise<boolean> {
+/**
+ * Whether a permission request or a question waits on the session, like the TUI's recheck before
+ * it archives. A failed permission read counts as waiting.
+ */
+async function hasPending(
+  runtime: Runtime,
+  context: Plugin.Context,
+  sessionID: string
+): Promise<boolean> {
+  if (runtime.forms.has(sessionID)) return true;
   try {
     return (await context.permission.list({ sessionID })).length > 0;
   } catch {

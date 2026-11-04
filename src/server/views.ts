@@ -94,7 +94,9 @@ export async function buildViews(
         ? {}
         : { defaultBranch: entry.repo.defaultBranch }),
       branchRefs: entry.branchRefs,
-      states: {}
+      states: {},
+      ...(refs.done === undefined ? {} : { done: refs.done }),
+      ...(refs.doneAt === undefined ? {} : { doneAt: refs.doneAt })
     };
   }
   // Issues recorded just now from `closes` have no snapshot yet; only the missing ones are fetched.

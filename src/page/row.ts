@@ -18,7 +18,8 @@ export interface Segment {
 /** Everything a session row draws. Built by the view for each visible row. */
 export interface RowModel {
   marker: Segment | undefined;
-  title: string;
+  /** The title word-wrapped at the title column (see {@link wrapTitle}), one entry per line. */
+  title: string[];
   /** Muted note before the age, such as why a search matched. Empty for none. */
   label: string;
   /** Age, or archive and update ages in the Archived view, right-aligned on the title line. */
@@ -32,11 +33,6 @@ export interface RowModel {
   running: boolean;
   /** The first delete press turned this row into a confirmation. */
   deleting: boolean;
-  /**
-   * The selected row's title wrapped at the title column (see {@link wrapTitle}); undefined for
-   * other rows, which cut the title to one line.
-   */
-  wrapped: string[] | undefined;
   /** Background of every line of the row when not selected; undefined keeps the panel's. */
   stripe: RGBA | undefined;
 }
@@ -88,7 +84,8 @@ export function findRef(view: SessionRefView | undefined, key: string): Ref | un
  *
  * - `pr`: the main PR with its title, a matched ref that is shown nowhere else, and `+N`.
  * - `status`: review and CI parts of the main PR worth acting on.
- * - `issues`: one piece per tracked issue, fitted to the width when drawn; `extra` is the `+N`
+ * - `issues`: one piece per tracked issue (with its title when it is the only one), fitted to
+ *   the width when drawn; `extra` is the `+N`
  *   the issues line carries when there is no PR line.
  */
 export interface RowDetails {
@@ -178,7 +175,8 @@ export function rowDetails(input: RefsInput): RowDetails {
   return {
     pr,
     status: open ? statusSegments(mainState?.review, input.theme) : [],
-    issues: issues.map((ref) => piece(ref, false)),
+    // A lone issue has the room for its title, like the PR line; several read as a number list.
+    issues: issues.map((ref) => piece(ref, issues.length === 1)),
     extra: pr.length > 0 ? 0 : extra
   };
 }
@@ -324,7 +322,7 @@ export function titleLine(
         const color = current.running ? runningColor(theme()) : theme().text.base;
         return jsx('span', {
           style: { fg: fg(color), bold: current.selected },
-          children: current.wrapped?.[0] ?? fitText(current.title, room)
+          children: fitText(current.title[0] ?? '', room)
         });
       }
     }),
@@ -343,8 +341,8 @@ export function titleLine(
 }
 
 /**
- * A later line of the selected row's wrapped title, starting in the title's column. The age
- * stays on the first line.
+ * A later line of a row's wrapped title, starting in the title's column. The age stays on the
+ * first line.
  */
 export function wrapLine(
   index: number,
@@ -364,7 +362,7 @@ export function wrapLine(
         const color = current.running ? runningColor(theme()) : theme().text.base;
         return jsx('span', {
           style: { fg: rowColors(theme(), current).fg ?? color, bold: current.selected },
-          children: current.wrapped?.[index] ?? ''
+          children: current.title[index] ?? ''
         });
       }
     })

@@ -50,7 +50,11 @@ export const sessionRefsSchema = z.strictObject({
   v: z.literal(1),
   links: z.array(refLinkSchema),
   // Keys the user or agent unlinked. Detection must never add these back.
-  dismissed: z.array(z.string())
+  dismissed: z.array(z.string()),
+  // The user's Done override: `true` is Done whatever the refs say, `false` never Done, unset
+  // follows the rule. `doneAt` is when `true` was set, which auto-archive counts days from.
+  done: z.boolean().optional(),
+  doneAt: z.number().int().nonnegative().optional()
 });
 
 /**

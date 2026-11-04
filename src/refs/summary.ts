@@ -159,11 +159,15 @@ function latestClose(view: SessionRefView, refs: Ref[]): number | undefined {
 /**
  * Whether a session belongs in the Done view: idle, not archived, every deciding ref merged or
  * closed after the user's last message, and every tracked ref's state known. Unknown state is
- * treated as not Done so a failed fetch never hides a session.
+ * treated as not Done so a failed fetch never hides a session. The user's override (`view.done`)
+ * wins over the refs, the last message and a pending question, but never over running or
+ * archived.
  */
 export function isDone(input: DoneInput): boolean {
   const { view } = input;
-  if (input.running || input.pending || input.archived) return false;
+  if (input.running || input.archived) return false;
+  if (view.done !== undefined) return view.done;
+  if (input.pending) return false;
   const refs = deciding(view);
   if (refs.length === 0) return false;
   if (!trackedRefs(view).every((ref) => view.states[refKey(ref)] !== undefined)) return false;
@@ -177,7 +181,11 @@ export function isDone(input: DoneInput): boolean {
   return latest !== undefined && latest > input.lastUserMessageAt;
 }
 
-/** When the session's deciding refs last merged or closed, for grouping the Done view by day. */
+/**
+ * When the session became Done, for grouping the Done view by day and for auto-archive: when the
+ * user marked it, else when its deciding refs last merged or closed.
+ */
 export function doneAt(view: SessionRefView): number | undefined {
+  if (view.done === true && view.doneAt !== undefined) return view.doneAt;
   return latestClose(view, deciding(view));
 }
