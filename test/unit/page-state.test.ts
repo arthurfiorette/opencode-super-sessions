@@ -173,3 +173,27 @@ test('search falls back to the title search when the server plugin does not answ
     ['title-hit']
   );
 });
+
+test('refs of a superseded load never overwrite the newer load', async () => {
+  // Toggling the scope twice: the first load's refs answer last, as a cold server would.
+  let answerFirst: (refs: Record<string, SessionRefView>) => void = () => {};
+  const first = new Promise<Record<string, SessionRefView>>((resolve) => {
+    answerFirst = resolve;
+  });
+  const answers = [first, Promise.resolve({ a: merged(NOW) })];
+  const controller = createPageController(
+    deps({
+      list: async ({ archived }) => (archived ? [] : [session('a')]),
+      refs: () => answers.shift() ?? Promise.resolve({})
+    }),
+    () => {}
+  );
+  const older = controller.load('project');
+  // Lets the first load's lists arrive so its refs call is in flight.
+  await new Promise((resolve) => setImmediate(resolve));
+  await controller.load('all');
+  answerFirst({ a: { links: [], branchRefs: [], states: {} } });
+  await older;
+  assert.deepEqual(controller.snapshot().refs, { a: merged(NOW) });
+  controller.dispose();
+});
