@@ -1,4 +1,4 @@
-import { type BoxRenderable, MouseButton, type MouseEvent } from '@opentui/core';
+import { type BoxRenderable, MouseButton, type MouseEvent, TextAttributes } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import {
   createComponent,
@@ -13,6 +13,7 @@ import {
 } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { openUrl, refUrl } from './browser.js';
+import { createMarquee, marqueeText } from './marquee.js';
 import { refColor, refIcon, STATE_WORDS } from './page/icons.js';
 import { cells, fitText } from './page/row.js';
 import { type Ref, type RefStatus, refKey, refNumber } from './refs/ref.js';
@@ -32,6 +33,8 @@ export default function Sidebar(props: SidebarProps) {
   const [prefs, setPrefs] = context.storage.store('sidebar', { initial: { expanded: true } });
   const [data, setData] = createStore<{ view: SessionRefView | undefined }>({ view: undefined });
   const [width, setWidth] = createSignal(0);
+  // One timer for every row: only the hovered title scrolls, and unmounting clears it.
+  const marquee = createMarquee();
   let box: BoxRenderable | undefined;
 
   const rpc = context.client.rpc(SuperSessions);
@@ -116,12 +119,20 @@ export default function Sidebar(props: SidebarProps) {
     const [hovered, setHovered] = createSignal(false);
     const id = `super-sessions-sidebar-ref-${index}`;
     const number = () => refNumber(ref());
+    const title = () => stateOf(ref())?.title ?? '';
+    const room = () => Math.floor(width()) - ICON - cells(number()) - 1;
     return jsx('box', {
       id,
       flexDirection: 'row',
       height: 1,
-      onMouseOver: () => setHovered(true),
-      onMouseOut: () => setHovered(false),
+      onMouseOver: () => {
+        setHovered(true);
+        marquee.enter(refKey(ref()), title(), room());
+      },
+      onMouseOut: () => {
+        setHovered(false);
+        marquee.leave(refKey(ref()));
+      },
       onMouseUp: (event: MouseEvent) => {
         if (event.button !== MouseButton.LEFT) return;
         event.stopPropagation();
@@ -147,6 +158,10 @@ export default function Sidebar(props: SidebarProps) {
           get fg() {
             return theme().text.base;
           },
+          // The number is already `text.base`, so hover brightens it with weight, like host toasts.
+          get attributes() {
+            return hovered() ? TextAttributes.BOLD : TextAttributes.NONE;
+          },
           get children() {
             return number();
           }
@@ -161,9 +176,10 @@ export default function Sidebar(props: SidebarProps) {
             return hovered() ? theme().text.base : theme().text.muted;
           },
           get children() {
-            const title = stateOf(ref())?.title;
-            const room = Math.floor(width()) - ICON - cells(number()) - 1;
-            return title && room > 0 ? ` ${fitText(title, room)}` : '';
+            if (!title() || room() <= 0) return '';
+            return marquee.active() === refKey(ref())
+              ? ` ${marqueeText(title(), room(), marquee.offset())}`
+              : ` ${fitText(title(), room())}`;
           }
         })
       ]
