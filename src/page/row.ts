@@ -17,7 +17,8 @@ export interface Segment {
 
 /** Everything a session row draws. Built by the view for each visible row. */
 export interface RowModel {
-  marker: Segment | undefined;
+  /** Pin slot, attention, spinner, unread dot, or a muted `-`; drawn on the title line only. */
+  marker: Segment;
   /** The title word-wrapped at the title column (see {@link wrapTitle}), one entry per line. */
   title: string[];
   /** Muted note before the age, such as why a search matched. Empty for none. */
@@ -33,8 +34,6 @@ export interface RowModel {
   running: boolean;
   /** The first delete press turned this row into a confirmation. */
   deleting: boolean;
-  /** Background of every line of the row when not selected; undefined keeps the panel's. */
-  stripe: RGBA | undefined;
 }
 
 /** Input of {@link refSegments}. */
@@ -249,7 +248,7 @@ export function runningColor(theme: ResolvedTheme): RGBA {
 }
 
 /** What a row's colors depend on. */
-type RowLook = Pick<RowModel, 'deleting' | 'selected' | 'stripe'>;
+type RowLook = Pick<RowModel, 'deleting' | 'selected'>;
 
 /** Everything a row of the Pull requests view draws. */
 export interface PullRowModel extends RowLook {
@@ -288,6 +287,18 @@ export function pullLine(
   const fg = (fallback: string | RGBA) => rowColors(theme(), model()).fg ?? fallback;
   const lead = () => model().lead.reduce((sum, segment) => sum + cells(segment.text), 0);
   return lineBox(theme, model, events, [
+    // The same muted mark as a session row without a marker, so the icons line up with titles.
+    jsx('box', {
+      width: MARKER_WIDTH,
+      flexShrink: 0,
+      children: jsx('text', {
+        wrapMode: 'none',
+        get fg() {
+          return fg(theme().text.muted);
+        },
+        children: '-'
+      })
+    }),
     jsx('text', {
       flexShrink: 0,
       wrapMode: 'none',
@@ -307,7 +318,7 @@ export function pullLine(
       wrapMode: 'none',
       get children() {
         const current = model();
-        const room = current.width - lead() - 1 - RIGHT_GAP - cells(current.right);
+        const room = current.width - MARKER_WIDTH - lead() - 1 - RIGHT_GAP - cells(current.right);
         return jsx('span', {
           style: { fg: fg(theme().text.base), bold: current.selected },
           children: ` ${fitText(current.title, room)}`
@@ -338,7 +349,7 @@ function rowColors(theme: ResolvedTheme, model: RowLook) {
   if (model.selected) {
     return { bg: theme.background.action.primary.focused, fg: theme.text.action.primary.focused };
   }
-  return { bg: model.stripe, fg: undefined };
+  return { bg: undefined, fg: undefined };
 }
 
 /** A row line's outer box: height, padding, colors and pointer handlers. */
@@ -400,11 +411,11 @@ export function titleLine(
           return jsx('span', {
             get style() {
               return {
-                fg: rowColors(theme(), model()).fg ?? marker?.fg ?? theme().text.muted,
-                bold: marker?.bold ?? false
+                fg: rowColors(theme(), model()).fg ?? marker.fg,
+                bold: marker.bold ?? false
               };
             },
-            children: marker?.text ?? ''
+            children: marker.text
           });
         }
       })
@@ -503,7 +514,7 @@ export function wrapTitle(text: string, width: number): string[] {
 
 /**
  * A line under the title, indented past the title column, cut to the row width. The indent sits
- * inside the line box, so the stripe and the selection still fill the whole row.
+ * inside the line box, so the selection still fills the whole row.
  */
 function detailLine(
   theme: () => ResolvedTheme,

@@ -1038,7 +1038,7 @@ export default function SessionBrowser(props: PageProps) {
   const hover = (session: SessionInfo) => select(session.id);
   const leave = () => {};
 
-  const markerOf = (session: SessionInfo): Segment | undefined => {
+  const markerOf = (session: SessionInfo): Segment => {
     const slot = slots().get(session.id);
     if (slot !== undefined) return { text: String(slot), fg: theme().hue.accent[200] };
     const permission = context.data.session.permission.list(session.id)?.length ?? 0;
@@ -1056,25 +1056,9 @@ export default function SessionBrowser(props: PageProps) {
       const text = cli.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯';
       return { text, fg: runningColor(theme()) };
     }
-    return isUnread(live(session)) ? { text: '●', fg: theme().text.feedback.info.base } : undefined;
-  };
-
-  // Zebra rows: every second session of a group, all of its lines, on the session view's
-  // background, the others on the panel's. Each group starts over, so a day reads the same
-  // whatever came before it. When a theme gives both the same color, the stripe goes one step
-  // darker than the panel instead.
-  const stripes = createMemo(
-    () =>
-      new Map(
-        model
-          .groups()
-          .flatMap((group) => group.sessions.map((session, index) => [session.id, index]))
-      )
-  );
-  const stripe = () => {
-    const shade = sessionBackground(context.theme);
-    const panel = theme().background.base;
-    return shade.equals(panel) ? theme().decrease(panel) : shade;
+    if (isUnread(live(session))) return { text: '●', fg: theme().text.feedback.info.base };
+    // Every title line starts with a mark, so each session's start shows at a glance.
+    return { text: '-', fg: theme().text.muted };
   };
 
   /** The row's title lines; a delete confirmation takes the first and blanks the rest. */
@@ -1096,17 +1080,9 @@ export default function SessionBrowser(props: PageProps) {
     selected: memory.selected === session.id,
     // Pinned rows show their slot instead of the spinner, but their title still says it runs.
     running: model.running(session.id),
-    deleting: deleting() === session.id,
-    stripe: (stripes().get(session.id) ?? 0) % 2 === 1 ? stripe() : undefined
+    deleting: deleting() === session.id
   });
 
-  // Pull requests stripe like sessions: every second row of a day.
-  const pullStripes = createMemo(
-    () =>
-      new Map(
-        model.pullGroups().flatMap((group) => group.pulls.map((pull, index) => [pull.key, index]))
-      )
-  );
   /** Everything a Pull requests view row draws. */
   const pullModel = (pull: PullRow): PullRowModel => {
     const count = pull.sessions.length;
@@ -1121,8 +1097,7 @@ export default function SessionBrowser(props: PageProps) {
       // The row box pads one cell on each side.
       width: listWidth() - 2,
       selected: memory.pull === pull.key,
-      deleting: false,
-      stripe: (pullStripes().get(pull.key) ?? 0) % 2 === 1 ? stripe() : undefined
+      deleting: false
     };
   };
   /** A Pull requests view line; `enter` and a click open its newest session. */

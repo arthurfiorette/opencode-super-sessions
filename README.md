@@ -86,6 +86,7 @@ The marker column shows one of these, highest first:
 | `?`        | A question waits for you                                        |
 | spinner    | The session is running. Its title also takes the warning color. |
 | `●`        | Unread: the session finished after you last viewed it           |
+| `-`        | None of the above; muted, so each session's start stands out    |
 
 With animations off in OpenCode, the spinner is a still `⋯`. Titles wrap onto as many lines as they need, so a row keeps its height when the selection or the mouse moves; the PR and issues lines are cut with `…`. The "PR and issue line" setting hides those lines.
 
