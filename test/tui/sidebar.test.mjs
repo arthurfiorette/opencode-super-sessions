@@ -61,7 +61,10 @@ const views = {
     ],
     branchRefs: [branchPr],
     states: {
-      [key(branchPr)]: state(branchPr, 'open', 'Migrate build to Rspack'),
+      [key(branchPr)]: {
+        ...state(branchPr, 'open', 'Migrate build to Rspack'),
+        review: { decision: 'approved', threads: 3, unresolved: 1, checks: 'passing' }
+      },
       [key(linkedPr)]: state(linkedPr, 'merged', 'Rollup plugin order'),
       [key(issue)]: state(issue, 'open', 'Windows 8.3 short path bug in the deployer')
     }
@@ -69,7 +72,7 @@ const views = {
   idle: { links: [], branchRefs: [], states: {} }
 };
 
-test('the Work section lists tracked refs, collapses, opens refs and hides without refs', async () => {
+test('the Work rows list tracked refs at the top of the sidebar, open refs and hide without refs', async () => {
   let claim;
   const theme = resolveThemeDocument(migrateV1(themeSource), 'dark');
   const answer = async ({ sessionIDs }) =>
@@ -104,7 +107,7 @@ test('the Work section lists tracked refs, collapses, opens refs and hides witho
   // The plugin entry creates these before the sidebar; the view reads them for title scrolling.
   createTuiSettings(context, options);
   const unregister = installSidebar(context, options);
-  assert.equal(claim.append, 'sidebar.content');
+  assert.equal(claim.prepend, 'sidebar.content');
   const [sessionID, setSessionID] = createSignal('work');
   const rendered = await testRender(
     () =>
@@ -124,31 +127,30 @@ test('the Work section lists tracked refs, collapses, opens refs and hides witho
   try {
     // Mount cold first, then wait for the lazy module; renderer idle does not mean it loaded.
     await import('../../dist/sidebar-view.js');
-    await rendered.waitForFrame((frame) => frame.includes('Work') && frame.includes('Windows'));
+    await rendered.waitForFrame((frame) => frame.includes('Windows'));
     const lines = () => rendered.captureCharFrame().split('\n');
     const row = (text) => lines().findIndex((line) => line.includes(text));
-    const order = ['#4930 Migrate build', '#4871 Rollup', '#28957 Windows', '+2 mentioned'].map(
-      row
-    );
+    const order = [
+      '#4930 Migrate build',
+      'approved · 2/3 threads resolved · checks passing',
+      '#4871 Rollup',
+      '#28957 Windows',
+      '+2 mentioned'
+    ].map(row);
     assert.ok(
       order.every((index, position) => index > (order[position - 1] ?? -1)),
       `rows: ${order}\n${rendered.captureCharFrame()}`
     );
-    // Rows start in the triangle's column, like the native MCP dots.
-    const arrow = lines()[row('Work')].indexOf('▼');
-    for (const index of order) assert.equal(lines()[index].search(/\S/), arrow, lines()[index]);
+    assert.equal(order[0], 0, 'No heading above the rows.');
+    assert.ok(lines()[order[0]].trimEnd().endsWith('branch'), 'The branch PR is marked.');
+    // Ref rows start in the column of the section headings, like the native MCP dots under theirs.
+    for (const index of [order[0], order[2], order[3], order[4]]) {
+      assert.equal(lines()[index].search(/\S/), 0, lines()[index]);
+    }
     const branchRow = (part) =>
       rendered.renderer.root.findDescendantById(`super-sessions-sidebar-ref-0-${part}`);
     assert.ok(branchRow('icon').fg.equals(RGBA.fromHex(openColor)), 'The icon shows the state.');
     assert.ok(branchRow('number').fg.equals(theme.text.base), 'The number reads as plain text.');
-
-    const header = rendered.renderer.root.findDescendantById('super-sessions-sidebar-header');
-    await rendered.mockMouse.click(header.x + 2, header.y);
-    await rendered.waitForFrame((frame) => frame.includes('Work (2 open, 1 merged)'));
-    assert.ok(!rendered.captureCharFrame().includes('#4930'), 'Collapsed hides the rows.');
-    await rendered.mockMouse.click(header.x + 2, header.y);
-    await rendered.waitForFrame((frame) => frame.includes('#4930'));
-    assert.ok(!rendered.captureCharFrame().includes('(2 open'), 'Expanded hides the summary.');
 
     const linked = rendered.renderer.root.findDescendantById('super-sessions-sidebar-ref-1');
     await rendered.mockMouse.click(linked.x + 4, linked.y);
@@ -164,8 +166,8 @@ test('the Work section lists tracked refs, collapses, opens refs and hides witho
     assert.ok(!rendered.captureCharFrame().includes('deployer'));
 
     setSessionID('idle');
-    await rendered.waitForFrame((frame) => !frame.includes('Work'));
-    assert.ok(!rendered.captureCharFrame().includes('#'), 'A session without refs shows nothing.');
+    await rendered.waitForFrame((frame) => !frame.includes('#'));
+    assert.equal(rendered.captureCharFrame().trim(), '', 'A session without refs shows nothing.');
   } finally {
     unregister();
     rendered.renderer.destroy();

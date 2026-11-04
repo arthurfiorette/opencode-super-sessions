@@ -14,10 +14,16 @@ export interface SidebarProps {
 // first renders inside the TUI.
 const Sidebar = lazy(() => import('./sidebar-view.js'));
 
-/** Adds the "Work" section to the session sidebar. Returns the slot's unregister function. */
+/**
+ * Adds the Work rows to the session sidebar. Returns the slot's unregister function.
+ *
+ * Every built-in section (Context, MCP, LSP, Todo) appends to `sidebar.content` in plugin enable
+ * order, so a plugin can only sit at the top or the bottom of that slot, never between two of
+ * them. The rows go first, right under the session title.
+ */
 export function installSidebar(context: Plugin.Context, options: Options): () => void {
   return context.ui.slot({
-    append: 'sidebar.content',
+    prepend: 'sidebar.content',
     // A failing section hides itself instead of reaching the host's slot boundary, which would
     // toast a crash in the middle of the user's session (packages/tui/src/plugin/render.tsx:27 in
     // OpenCode v2.2.5).
