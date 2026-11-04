@@ -1,6 +1,7 @@
 import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { migrateV1, resolveThemeDocument } from '@opencode/theme/tui';
+import { CliRenderEvents, InputRenderable } from '@opentui/core';
 import { testRender } from '@opentui/solid';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import { createSignal } from 'solid-js';
@@ -92,6 +93,10 @@ test('the settings dialog loads cold and writes a server setting changed with ri
     // Mounted cold: the view module loads only now.
     await import('../../dist/settings/dialog-view.js');
     await rendered.waitForFrame((frame) => frame.includes('Super Sessions settings'));
+    // The dialog focuses its search field from a 1 ms timer, like the host's dialogs, and on
+    // Windows that timer can fire after this point. waitForFrame gives up once nothing is
+    // scheduled, so the keys would reach nothing.
+    await focusOn(rendered.renderer, InputRenderable);
 
     await rendered.mockInput.typeText('merged');
     await rendered.waitForFrame(
@@ -105,3 +110,16 @@ test('the settings dialog loads cold and writes a server setting changed with ri
     rendered.renderer.destroy();
   }
 });
+
+/** Resolves once a `type` renderable has the focus, listening for the renderer's focus event. */
+function focusOn(renderer, type) {
+  return new Promise((resolve) => {
+    const check = () => {
+      if (!(renderer.currentFocusedRenderable instanceof type)) return false;
+      renderer.off(CliRenderEvents.FOCUSED_RENDERABLE, check);
+      resolve();
+      return true;
+    };
+    if (!check()) renderer.on(CliRenderEvents.FOCUSED_RENDERABLE, check);
+  });
+}
