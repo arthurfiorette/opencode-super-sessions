@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { type ChildProcess, spawn } from 'node:child_process';
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import path from 'node:path';
@@ -148,7 +148,7 @@ async function launch(baseURL: string): Promise<Tui> {
   try {
     socket = await connect(`ws://127.0.0.1:${port}`, child, () => stderr);
   } catch (error) {
-    child.kill();
+    stop(child);
     throw error;
   }
   let next = 1;
@@ -204,10 +204,22 @@ async function launch(baseURL: string): Promise<Tui> {
       socket.close();
       if (child.exitCode !== null || child.signalCode !== null) return;
       const exited = new Promise((resolve) => child.once('exit', resolve));
-      child.kill();
+      stop(child);
       await exited;
     }
   };
+}
+
+/**
+ * Stops the TUI and the `opencode serve` child it starts. Windows has no SIGTERM: `kill()` ends
+ * only the TUI process, and the server child keeps files in the test root open.
+ */
+function stop(child: ChildProcess) {
+  if (process.platform === 'win32' && child.pid !== undefined) {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore' });
+  } else {
+    child.kill();
+  }
 }
 
 /** Opens the Drive socket, retrying while the TUI starts, and fails early if the TUI exits. */

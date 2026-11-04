@@ -232,7 +232,9 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
 });
 
 test('a session belongs to the deepest worktree that contains its resolved directory', async (t) => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'super-sessions-owners-')));
+  // Unresolved, the temp path is an 8.3 short name on Windows (RUNNER~1) and /var on macOS.
+  const created = await mkdtemp(join(tmpdir(), 'super-sessions-owners-'));
+  const root = await realpath(created);
   t.after(() => rm(root, { recursive: true, force: true }));
   const main = join(root, 'repo');
   const nested = join(main, '.worktrees', 'a');
@@ -249,6 +251,7 @@ test('a session belongs to the deepest worktree that contains its resolved direc
       { id: 'in-a', directory: join(nested, 'src') },
       { id: 'in-ab', directory: sibling },
       { id: 'through-alias', directory: join(alias, '.worktrees', 'a') },
+      { id: 'through-temp-path', directory: join(created, 'repo', '.worktrees', 'a') },
       { id: 'elsewhere', directory: root }
     ],
     // `ab` is a plain directory of the main checkout, not a worktree, so `a` must not claim it.
@@ -256,7 +259,7 @@ test('a session belongs to the deepest worktree that contains its resolved direc
   );
   assert.deepEqual(Object.fromEntries(owners), {
     [main]: ['in-main', 'in-ab'],
-    [nested]: ['in-a', 'through-alias']
+    [nested]: ['in-a', 'through-alias', 'through-temp-path']
   });
 });
 

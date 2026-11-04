@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -12,7 +12,11 @@ import type { Plugin } from '@opencode/plugin';
  * the environment is replaced here, before the SDK is imported, and nothing reads or writes the
  * developer's real OpenCode config, credentials, database or sessions.
  */
-export const root = mkdtempSync(path.join(tmpdir(), 'opencode-super-sessions-contract-'));
+// The native realpath, because the host reports long resolved paths: Windows can hand out an 8.3
+// temp path (C:\Users\RUNNER~1\...), and macOS reaches /private/var through /var.
+export const root = mkdtempSync(
+  path.join(realpathSync.native(tmpdir()), 'opencode-super-sessions-contract-')
+);
 /** The `opencode` binary the TUI test starts, read before the scrub below drops the variable. */
 export const OPENCODE_BIN = process.env.OPENCODE_BIN ?? 'opencode';
 // Upper case, because Windows lists names as stored (`Path`, `ComSpec`).
@@ -34,7 +38,10 @@ Object.assign(process.env, {
   XDG_STATE_HOME: path.join(root, 'state'),
   XDG_CACHE_HOME: path.join(root, 'cache')
 });
-process.on('exit', () => rmSync(root, { recursive: true, force: true, maxRetries: 5 }));
+// Windows refuses to delete a file a process still holds; the retries cover one still exiting.
+process.on('exit', () =>
+  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+);
 
 /** Model id the scripted provider serves; the host config selects it as the default model. */
 export const MODEL = 'contract/scripted';
@@ -187,7 +194,13 @@ export async function createHost(baseURL: string, plugins: Plugin.Plugin[]) {
     plugins: [
       {
         package: fileURLToPath(new URL('../../', import.meta.url)),
-        options: { ghPath: 'gh-contract-missing', glabPath: 'glab-contract-missing' }
+        options: {
+          ghPath: 'gh-contract-missing',
+          glabPath: 'glab-contract-missing',
+          // The index keeps search.db open for the life of the process, and Windows cannot
+          // delete the test root under an open file. No contract test reads the index.
+          search: { body: false }
+        }
       }
     ]
   };

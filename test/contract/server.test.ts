@@ -355,17 +355,18 @@ test('worktree list marks the main checkout, and remove without force keeps a di
   git(repo, 'commit', '-q', '--allow-empty', '-m', 'cleanup init');
   const { project } = await host.location.get({ location: { directory: repo } });
   const created = await host.worktree.create({ projectID: project.id, name: 'contract' });
-  // Temp paths reach the host through symlinks on macOS (/var is /private/var).
+  // Compared resolved, the way cleanup's assignSessions compares them: a path can reach the host
+  // through a symlink (macOS /var) or an 8.3 short name (Windows).
   const listed = async () =>
     (await projectWorktrees(probe as Plugin.Context, project.id)).map((entry) => ({
-      directory: realpathSync(entry.directory),
+      directory: realpathSync.native(entry.directory),
       main: entry.main
     }));
-  const worktree = realpathSync(created.directory);
+  const worktree = realpathSync.native(created.directory);
   assert.deepEqual(
     (await listed()).sort((a, b) => Number(b.main) - Number(a.main)),
     [
-      { directory: realpathSync(repo), main: true },
+      { directory: realpathSync.native(repo), main: true },
       { directory: worktree, main: false }
     ]
   );
@@ -378,7 +379,7 @@ test('worktree list marks the main checkout, and remove without force keeps a di
   await removeWorktree(probe, project.id, created.directory);
   assert.deepEqual(
     (await listed()).map((entry) => entry.directory),
-    [realpathSync(repo)]
+    [realpathSync.native(repo)]
   );
   assert.equal(existsSync(worktree), false);
 });
