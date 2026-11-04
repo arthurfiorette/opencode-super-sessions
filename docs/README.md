@@ -1,6 +1,6 @@
 # Developer guide
 
-User documentation is in the [root README](../README.md). Releases are described in [releasing.md](releasing.md), and contribution rules in [AGENTS.md](../AGENTS.md).
+User documentation is in the [root README](../README.md), and contribution rules in [AGENTS.md](../AGENTS.md). A GitHub release tagged `v<package.json version>` publishes to npm through `publish.yml`.
 
 ## Development
 

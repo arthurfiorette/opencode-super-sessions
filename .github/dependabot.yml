@@ -10,8 +10,8 @@ updates:
           - '@opencode/*'
     ignore:
       # OpenTUI must match the exact version @opencode/theme depends on, or the theme's types and
-      # native scene stop lining up. Bump it by hand with the @opencode/* group (docs/releasing.md);
-      # compat.yml already tests the pairing the latest OpenCode release ships.
+      # native scene stop lining up. Bump it by hand with the @opencode/* group, to the version
+      # `npm view @opencode/theme@<version> dependencies` lists; compat.yml tests that pairing.
       - dependency-name: '@opentui/*'
       # Node types must not get ahead of the Node versions in `engines`.
       - dependency-name: '@types/node'
