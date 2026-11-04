@@ -26,9 +26,15 @@ const FRESH_FOR = 30_000;
 /**
  * Sessions, refs and browser state shared by the overlay and the peek keys. It lives as long as
  * the plugin, so reopening the browser draws the cached lists at once and refreshes them in the
- * background.
+ * background. `onError` gets errors from the shared list memos, which live in a root of their own
+ * and so outside the view's error boundary.
  */
-export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: () => boolean) {
+export function createBrowserModel(
+  context: Plugin.Context,
+  pins: Pins,
+  isOpen: () => boolean,
+  onError: (error: unknown) => void
+) {
   const client = context.client;
   const [memory, setMemory] = context.storage.memory<PageMemory>('page', {
     initial: { query: '', view: 'active', selected: undefined, scroll: 0 }
@@ -130,16 +136,23 @@ export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: 
   );
   const [data, setData] = createStore<PageData>(structuredClone(controller.snapshot()));
 
-  const groupsFor = (view: PageView) =>
-    groupSessions({
-      view,
-      sessions: view === 'archived' ? data.archived : data.active,
-      refs: data.refs,
-      extra: data.extra,
-      running,
-      pins: pins.ids(),
-      now: now()
-    });
+  /** Groups of one view. Reads the host's run state, so a host change can throw here. */
+  const groupsFor = (view: PageView): Group[] => {
+    try {
+      return groupSessions({
+        view,
+        sessions: view === 'archived' ? data.archived : data.active,
+        refs: data.refs,
+        extra: data.extra,
+        running,
+        pins: pins.ids(),
+        now: now()
+      });
+    } catch (error) {
+      onError(error);
+      return [];
+    }
+  };
   // The memos get a root of their own. Only they live in it: the host resolves keymap, slot and
   // storage providers from the owner the plugin's setup runs under, which a root would hide.
   const lists = createRoot((dispose) => {

@@ -34,7 +34,7 @@ import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import { ICONS, titleGradient } from './icons.js';
-import { type PageProps, type PeekBannerProps, routeKey } from './page.js';
+import { guardActions, type PageProps, type PeekBannerProps, routeKey } from './page.js';
 import { Preview } from './preview.js';
 import { workLines } from './preview-header.js';
 import {
@@ -579,7 +579,11 @@ export default function SessionBrowser(props: PageProps) {
       }
     }
   ];
-  context.keymap.layer(() => ({ mode: MODE, priority: OVER_HOST, commands }));
+  context.keymap.layer(() => ({
+    mode: MODE,
+    priority: OVER_HOST,
+    commands: guardActions(props.fail, commands)
+  }));
 
   // The mode turns off the prompt and every other base-mode layer while the browser is open.
   onCleanup(context.keymap.mode.push(MODE));
