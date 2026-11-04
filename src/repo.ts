@@ -13,14 +13,23 @@ export interface RepoInfo {
   branch?: string;
   /** Whether `branch` has an upstream, i.e. was pushed or tracks a remote branch. */
   upstream?: boolean;
+  /**
+   * Repository of the upstream's remote, when a definition recognizes it. In a fork checkout
+   * `repo` is the original (`upstream`) and this is the fork (`origin`) the branch was pushed to.
+   */
+  headRepo?: RepoRef;
 }
 
 export interface RepoResolver {
   resolve(directory: string): Promise<RepoInfo>;
 }
 
-type RemoteInfo = Pick<RepoInfo, 'repo' | 'remote' | 'defaultBranch'>;
-type BranchInfo = Pick<RepoInfo, 'branch' | 'upstream'>;
+type RemoteInfo = Pick<RepoInfo, 'repo' | 'remote' | 'defaultBranch'> & {
+  /** Every recognized remote by name, to map the branch's upstream to its repository. */
+  remotes?: Map<string, RepoRef>;
+};
+/** `upstreamRef` is the short upstream name, such as `origin/fix/login`. */
+type BranchInfo = Pick<RepoInfo, 'branch'> & { upstreamRef?: string };
 
 const REMOTE_TTL_MS = 15 * 60_000;
 // Short: the agent switches branches inside sessions and the row should follow soon after.
@@ -95,14 +104,15 @@ export function createRepoResolver(options: {
   /** Repository, remote and default branch of a directory. */
   const remoteInfo = memo(REMOTE_TTL_MS, async (directory): Promise<RemoteInfo> => {
     const output = await git(directory, ['remote', '-v']);
-    const chosen = output ? chooseRemote(recognize(output)) : undefined;
+    const remotes = output ? recognize(output) : new Map<string, RepoRef>();
+    const chosen = chooseRemote(remotes);
     if (!chosen) return {};
     const [remote, repo] = chosen;
     const head = await git(directory, ['symbolic-ref', '--short', `refs/remotes/${remote}/HEAD`]);
     const defaultBranch = head?.startsWith(`${remote}/`)
       ? head.slice(remote.length + 1)
       : undefined;
-    return { repo, remote, ...(defaultBranch ? { defaultBranch } : {}) };
+    return { repo, remote, remotes, ...(defaultBranch ? { defaultBranch } : {}) };
   });
 
   /** Current branch of a directory and whether it has an upstream. */
@@ -116,15 +126,38 @@ export function createRepoResolver(options: {
       '--symbolic-full-name',
       '@{u}'
     ]);
-    return { branch, upstream: upstream !== undefined };
+    return upstream ? { branch, upstreamRef: upstream } : { branch };
   });
 
   return {
     /** Resolves a directory; a non-git directory resolves to an empty object. */
     async resolve(directory) {
       const key = path.resolve(directory);
-      const [remote, branch] = await Promise.all([remoteInfo(key), branchInfo(key)]);
-      return { ...remote, ...branch };
+      const [{ remotes, ...remote }, { upstreamRef, ...branch }] = await Promise.all([
+        remoteInfo(key),
+        branchInfo(key)
+      ]);
+      if (branch.branch === undefined) return remote;
+      const headRepo = upstreamRef && remotes ? upstreamRepo(remotes, upstreamRef) : undefined;
+      return {
+        ...remote,
+        ...branch,
+        upstream: upstreamRef !== undefined,
+        ...(headRepo ? { headRepo } : {})
+      };
     }
   };
+}
+
+/**
+ * Finds the repository of the remote an upstream such as `origin/fix/login` belongs to. Remote
+ * and branch names may both contain slashes, so the longest remote name that prefixes it wins.
+ */
+function upstreamRepo(remotes: Map<string, RepoRef>, upstreamRef: string): RepoRef | undefined {
+  let best: [string, RepoRef] | undefined;
+  for (const [name, repo] of remotes) {
+    if (!upstreamRef.startsWith(`${name}/`)) continue;
+    if (best === undefined || name.length > best[0].length) best = [name, repo];
+  }
+  return best?.[1];
 }

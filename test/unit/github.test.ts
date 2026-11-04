@@ -97,28 +97,32 @@ test('a batch with a missing number and a missing repository still resolves ever
 });
 
 test('branch lookups pick the repository own pull request and ignore fork PRs with the same head', () => {
-  const cases: Array<[string, number[] | string]> = [
+  const cases: Array<[string, number[] | string, string?]> = [
     // Newer fork PRs and deleted forks (null head repository) come first in the response.
     ['axios/axios@dev', [4225]],
     // Every `patch-1` PR comes from a fork, including the open one.
     ['cli/cli@patch-1', []],
+    // The same response seen from a fork checkout whose branch was pushed to acoulton/cli: the
+    // newer closed PRs from other forks are skipped and the PR is numbered in cli/cli.
+    ['cli/cli@patch-1', [14373], 'acoulton/cli'],
     ['cli/cli@babakks/auth-status-expired-hint', [14815]],
     ['arthurfiorette/does-not-exist-zz@x', 'not-found']
   ];
   const outputs = fixture<Record<string, CapturedOutput>>('branches.json');
 
-  for (const [name, expected] of cases) {
+  for (const [name, expected, head] of cases) {
     const [repoName = ''] = name.split('@');
     const repo: RepoRef = { provider: 'github', host: 'github.com', repo: repoName };
+    const headRepo = head === undefined ? undefined : { ...repo, repo: head };
     const output = outputs[name];
     assert.ok(output, name);
     const response = parseGraphQLOutput(asRun(output), NOW);
     assert.ok('data' in response, name);
 
-    const result = parseBranchResponse(repo, response);
+    const result = parseBranchResponse(repo, response, headRepo);
     assert.deepEqual(
-      Array.isArray(result) ? result.map((ref) => ref.number) : result.reason,
-      expected,
+      Array.isArray(result) ? result.map((ref) => `${ref.repo}#${ref.number}`) : result.reason,
+      Array.isArray(expected) ? expected.map((number) => `${repoName}#${number}`) : expected,
       name
     );
   }

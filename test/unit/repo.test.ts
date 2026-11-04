@@ -49,7 +49,7 @@ async function repository(setup: (directory: string) => void): Promise<string> {
 test('resolve picks the forge remote and reads default branch, branch and upstream', async (t) => {
   const cases: Array<[string, (directory: string) => void, RepoInfo]> = [
     [
-      'fork checkout: upstream wins over origin, local and foreign remotes are skipped',
+      'fork checkout: upstream names the repo, origin the fork the branch was pushed to; local and foreign remotes are skipped',
       (directory) => {
         git(directory, 'remote', 'add', 'aaa', join(tmpdir(), 'elsewhere'));
         git(directory, 'remote', 'add', 'gitlab', 'https://gitlab.com/acme/app.git');
@@ -66,7 +66,8 @@ test('resolve picks the forge remote and reads default branch, branch and upstre
         remote: 'upstream',
         defaultBranch: 'trunk',
         branch: 'fix/login',
-        upstream: true
+        upstream: true,
+        headRepo: { provider: 'github', host: 'github.com', repo: 'me/app' }
       }
     ],
     [

@@ -64,8 +64,15 @@ export type Availability = 'ok' | 'missing-tool' | 'unauthenticated';
 export interface ForgeProvider {
   definition: ForgeDefinition;
   available(host: string): Promise<Availability>;
-  /** Pull requests whose head is `branch`, newest first. */
-  branchPullRequests(repo: RepoRef, branch: string): Promise<Ref[] | ForgeError>;
+  /**
+   * Pull requests in `repo` whose head is `branch` of `headRepo`, newest first. `headRepo`
+   * defaults to `repo`; pass the fork when the branch was pushed to one.
+   */
+  branchPullRequests(
+    repo: RepoRef,
+    branch: string,
+    headRepo?: RepoRef
+  ): Promise<Ref[] | ForgeError>;
   /**
    * Resolves candidates (filling in `kind`) and returns their live state in input order.
    * Batched; one missing number fails only its own entry with `not-found`.

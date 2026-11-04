@@ -86,10 +86,10 @@ export function createGitHubProvider(options: {
      * Callers skip the default branch and branches without an upstream: both match unrelated
      * PRs (old merged ones, or forks that reused the name) and cost a request for nothing.
      */
-    async branchPullRequests(repo, branch) {
+    async branchPullRequests(repo, branch, headRepo) {
       const document = buildBranchQuery(repo, branch);
       const response = await query(repo.host.toLowerCase(), document.query, document.variables);
-      return 'data' in response ? parseBranchResponse(repo, response) : response;
+      return 'data' in response ? parseBranchResponse(repo, response, headRepo) : response;
     },
 
     /**

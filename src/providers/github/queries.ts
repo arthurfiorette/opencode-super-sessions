@@ -208,13 +208,20 @@ export function buildBranchQuery(
 
 /**
  * Picks the pull request for a branch, following t3code: the newest open one, otherwise the
- * newest of any state. Only PRs whose head lives in `repo` itself count; GitHub also returns fork
- * PRs that happen to use the same branch name, and a deleted fork reports no head repository.
- * Returns at most one ref.
+ * newest of any state. Only PRs whose head lives in `headRepo` count (the user's fork when the
+ * branch was pushed there, else `repo` itself); GitHub also returns PRs from other forks that
+ * happen to use the same branch name, and a deleted fork reports no head repository. Returns at
+ * most one ref, always numbered in `repo`, where the pull request lives.
  */
-export function parseBranchResponse(repo: RepoRef, response: GraphQLResponse): Ref[] | ForgeError {
+export function parseBranchResponse(
+  repo: RepoRef,
+  response: GraphQLResponse,
+  headRepo: RepoRef = repo
+): Ref[] | ForgeError {
   const repository = response.data.repository;
   if (!isRecord(repository)) return reasonOf(response.errors[0]);
+  // A fork on another host can never be the head of a PR here.
+  if (headRepo.host.toLowerCase() !== repo.host.toLowerCase()) return [];
   const connection = repository.pullRequests;
   const nodes = isRecord(connection) && Array.isArray(connection.nodes) ? connection.nodes : [];
   const own = nodes.flatMap((node) => {
@@ -222,7 +229,7 @@ export function parseBranchResponse(repo: RepoRef, response: GraphQLResponse): R
       return [];
     }
     const head = node.headRepository.nameWithOwner;
-    if (typeof head !== 'string' || head.toLowerCase() !== repo.repo.toLowerCase()) return [];
+    if (typeof head !== 'string' || head.toLowerCase() !== headRepo.repo.toLowerCase()) return [];
     return [{ number: node.number, open: node.state === 'OPEN' }];
   });
   // Nodes arrive newest first, so the first match in each pass is the newest.
