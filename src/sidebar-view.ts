@@ -15,7 +15,7 @@ import { createStore, reconcile } from 'solid-js/store';
 import { openUrl, refUrl } from './browser.js';
 import { refColor, refIcon, STATE_WORDS } from './page/icons.js';
 import { cells, fitText } from './page/row.js';
-import { type Ref, type RefStatus, refKey } from './refs/ref.js';
+import { type Ref, type RefStatus, refKey, refNumber } from './refs/ref.js';
 import { sidebarRefs } from './refs/summary.js';
 import { type SessionRefView, SuperSessions } from './rpc.js';
 import type { SidebarProps } from './sidebar.js';
@@ -112,7 +112,7 @@ export default function Sidebar(props: SidebarProps) {
   const row = (ref: () => Ref, index: number) => {
     const [hovered, setHovered] = createSignal(false);
     const id = `super-sessions-sidebar-ref-${index}`;
-    const label = () => `${refIcon(ref().kind, stateOf(ref())?.status)} #${ref().number}`;
+    const label = () => `${refIcon(ref().kind, stateOf(ref())?.status)} ${refNumber(ref())}`;
     return jsx('box', {
       id,
       flexDirection: 'row',

@@ -22,7 +22,7 @@ import {
 } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import type { Options } from '../config.js';
-import { type Ref, refKey } from '../refs/ref.js';
+import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { trackedRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { refColor, refIcon, STATE_WORDS } from './icons.js';
@@ -145,7 +145,7 @@ export function Preview(props: PreviewProps): JSX.Element {
           }
           const fg = refColor(props.options, entry.status, theme(), context.themeMode);
           const indent = entry.nested ? '    ' : '  ';
-          const number = `${refIcon(entry.ref.kind, entry.status)} #${entry.ref.number}`;
+          const number = `${refIcon(entry.ref.kind, entry.status)} ${refNumber(entry.ref)}`;
           const rest = `  ${entry.status ? STATE_WORDS[entry.status] : 'unknown'}  ${entry.title}`;
           return [
             jsx('span', { style: { fg: muted() }, children: indent }),

@@ -11,6 +11,7 @@ import {
   type RefSource,
   type RefState,
   refKey,
+  refNumber,
   type SessionRefs,
   TRACKED_SOURCES
 } from '../refs/ref.js';
@@ -181,7 +182,7 @@ export function reasonText(reason: UnverifiedReason): string {
   return texts[reason];
 }
 
-/** `owner/repo#N`, the form agents and users type. */
+/** `owner/repo#N` (or `group/project!N` for GitLab merge requests), the form agents and users type. */
 export function refLabel(ref: RefCandidate): string {
-  return `${ref.repo}#${ref.number}`;
+  return `${ref.repo}${refNumber(ref)}`;
 }

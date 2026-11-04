@@ -22,7 +22,7 @@ import {
 } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { openUrl, refUrl } from '../browser.js';
-import { refKey } from '../refs/ref.js';
+import { refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import { type SearchScope, SuperSessions } from '../rpc.js';
 import { ICONS } from './icons.js';
@@ -452,7 +452,10 @@ export default function SessionPage(props: PageProps) {
         { sessionID: session.id, reference: reference.trim() },
         rpcOptions()
       );
-      toast(`Linked ${linked.ref.kind === 'pr' ? 'PR' : 'issue'} #${linked.ref.number}`, 'success');
+      toast(
+        `Linked ${linked.ref.kind === 'pr' ? 'PR' : 'issue'} ${refNumber(linked.ref)}`,
+        'success'
+      );
       void controller.refresh([session.id]);
     } catch (error) {
       toast(linkError(error), 'error');

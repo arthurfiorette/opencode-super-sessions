@@ -104,6 +104,14 @@ export function refKey(ref: Ref): string {
   return `${ref.provider}:${ref.host}/${ref.repo}/${ref.kind}/${ref.number}`.toLowerCase();
 }
 
+/**
+ * The short number a forge shows for a ref: `!12` for GitLab merge requests, `#12` otherwise.
+ * GitLab numbers merge requests and issues separately, so `#12` there always means an issue.
+ */
+export function refNumber(ref: Pick<Ref, 'provider' | 'number'> & { kind?: RefKind }): string {
+  return `${ref.provider === 'gitlab' && ref.kind === 'pr' ? '!' : '#'}${ref.number}`;
+}
+
 /** Empty metadata value for sessions that have no links yet. */
 export function emptySessionRefs(): SessionRefs {
   return { v: 1, links: [], dismissed: [] };

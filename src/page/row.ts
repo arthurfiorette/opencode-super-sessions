@@ -3,7 +3,7 @@ import { MouseButton, type MouseEvent, type RGBA } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import type { JSX } from 'solid-js';
 import type { Options } from '../config.js';
-import { refKey } from '../refs/ref.js';
+import { refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { ICONS, refColor, refIcon } from './icons.js';
@@ -87,7 +87,9 @@ export function detailSegments(input: DetailInput): Segment[] {
     if (ref === undefined) continue;
     const state = input.refs?.states[refKey(ref)];
     const fg = refColor(input.options, state?.status, input.theme, input.mode);
-    const piece: Segment[] = [{ text: `${refIcon(ref.kind, state?.status)} #${ref.number}`, fg }];
+    const piece: Segment[] = [
+      { text: `${refIcon(ref.kind, state?.status)} ${refNumber(ref)}`, fg }
+    ];
     if (ref === summary.primary && state?.title) piece.push({ text: ` ${state.title}`, fg: muted });
     pieces.push(piece);
   }
