@@ -1546,7 +1546,8 @@ export default function SessionBrowser(props: PageProps) {
     },
     // The session view's surface, not the dialog's, so the transcript looks as it does there.
     theme: () => context.theme,
-    onLoaded: (sessionID, page) => props.history.preview(sessionID, page)
+    onLoaded: (sessionID, page) => props.history.preview(sessionID, page),
+    pullDetails: (ref) => model.rpc()['pull.details']({ ref }, model.rpcOptions())
   });
   // A full-height column beside the list, with `esc` on the line of the browser's header.
   const preview = jsx('box', {

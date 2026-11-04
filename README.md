@@ -138,7 +138,7 @@ The header holds the title and these sections:
 
 - Context: tokens in the context window and their share of the model's limit, the cost so far, and whether the session is running, idle, interrupted or failed.
 - Session: the project (only when it differs from the browser's), the worktree directory (only when it is not the project root) and the branch (only when it is not the default branch).
-- Work: every tracked pull request and issue, the main pull request first with a `branch` note when it is the branch's pull request. Open pull requests show their [review and CI icons](#review-and-ci-icons) after the number, and a muted line under each gives the full status, such as `approved · 2/3 threads resolved · 12/12 checks passing`. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
+- Work: every tracked pull request and issue, the main pull request first with a `branch` note when it is the branch's pull request. Open pull requests show their [review and CI icons](#review-and-ci-icons) after the number, and lines under each give the review (`changes requested` in red, `approved` in green, `review required` muted), the unresolved threads in yellow, and each failed check with a red x, at most five and then `+N more`. A failed check opens its log and `+N more` the pull request's checks page. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
 
 The transcript below draws messages the way OpenCode's session view does and follows your `cli.json` session settings (scrollbar, thinking, markdown, verbosity, grouping). It starts at the latest message; scrolling up loads older ones.
 
@@ -210,7 +210,7 @@ A left click on a row opens the session, hovering selects it, and a click outsid
 
 ## Sidebar
 
-The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first with a `branch` note, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests show their [review and CI icons](#review-and-ci-icons) between the number and the title, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), a click opens it in your web browser, and a ctrl+click copies its URL (see [Copying links](#copying-links)). A session without pull requests, issues or mentions shows nothing there.
+The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first with a `branch` note, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests show their [review and CI icons](#review-and-ci-icons) between the number and the title and the same review, thread and failed check lines as the preview, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), a click opens it in your web browser, and a ctrl+click copies its URL (see [Copying links](#copying-links)). A session without pull requests, issues or mentions shows nothing there.
 
 ## Pull request and issue tracking
 

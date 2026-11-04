@@ -39,19 +39,43 @@ const view = {
       [4871, 'Rollup plugin order']
     ].map(([number, title]) => [
       `github:github.com/mastra-ai/mastra/pr/${number}`,
-      { status: 'open', title, url: `https://github.com/mastra-ai/mastra/pull/${number}` }
+      {
+        status: 'open',
+        title,
+        url: `https://github.com/mastra-ai/mastra/pull/${number}`,
+        ...(number === 4930
+          ? {
+              review: {
+                decision: 'changes_requested',
+                checks: 'failing',
+                checksPassed: 1,
+                checksTotal: 2
+              }
+            }
+          : {})
+      }
     ])
   )
 };
 
-test('the Work rows load cold and clicking one opens its own URL', async () => {
+test('the Work rows load cold, list failed checks, and a click on a row opens its own URL', async () => {
   let claim;
   const answer = async ({ sessionIDs }) => Object.fromEntries(sessionIDs.map((id) => [id, view]));
+  const details = async ({ ref }) => ({
+    body: '',
+    checks:
+      ref.number === 4930
+        ? [
+            { name: 'Lint', status: 'failure', url: 'https://ci.example/lint' },
+            { name: 'Build', status: 'success' }
+          ]
+        : []
+  });
   const context = {
     location: { directory: '/repo' },
     theme: resolveThemeDocument(migrateV1(themeSource), 'dark'),
     themeMode: 'dark',
-    client: { rpc: () => ({ refs: answer, refresh: answer }) },
+    client: { rpc: () => ({ refs: answer, refresh: answer, 'pull.details': details }) },
     data: {
       on: () => () => {},
       session: { get: () => undefined },
@@ -84,7 +108,14 @@ test('the Work rows load cold and clicking one opens its own URL', async () => {
   try {
     // Mount cold first, then wait for the lazy module; renderer idle does not mean it loaded.
     await import('../../dist/sidebar-view.js');
-    await rendered.waitForFrame((frame) => frame.includes('#4930') && frame.includes('#4871'));
+    await rendered.waitForFrame(
+      (frame) =>
+        frame.includes('#4930') &&
+        frame.includes('#4871') &&
+        frame.includes('changes requested') &&
+        frame.includes('Lint') &&
+        !frame.includes('Build')
+    );
     const second = rendered.renderer.root.findDescendantById('super-sessions-sidebar-ref-1');
     await rendered.mockMouse.click(second.x + 4, second.y);
     assert.deepEqual(opened, ['https://github.com/mastra-ai/mastra/pull/4871']);
