@@ -220,7 +220,8 @@ async function host() {
           info: () => ({ branch: { current: 'main', default: 'main' } }),
           sync: async () => {}
         },
-        model: { list: () => [] }
+        model: { list: () => [] },
+        agent: { list: () => [] }
       }
     },
     keymap: {
