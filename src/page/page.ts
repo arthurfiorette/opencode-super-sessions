@@ -164,15 +164,18 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
     if (event.data.sessionID === peeked() && event.data.item.type === 'user') endPeek();
   });
 
-  // Global with priority 1, so it wins over the host's `session.interrupt` and
-  // `prompt.autocomplete.hide` on esc, and over prompt history and `session.parent` on the
-  // arrows, while peeking. Tradeoff: esc in a running peeked session returns to the list
-  // instead of interrupting it; sending a message or opening the session with enter ends the
-  // peek and gives esc back to the host. Every run stays synchronous, because the keymap
-  // treats a returned Promise as handled.
+  // Wins over the host's `session.interrupt` and `prompt.autocomplete.hide` on esc, and over
+  // prompt history and `session.parent` on the arrows, while peeking. The keymap tries layers by
+  // priority, then the most recently registered first, and the prompt's history layers sit at
+  // priority 1 and register again on every cursor move, so a priority-1 layer here always lost
+  // `up` to `prompt.history.previous`. Priority 2 puts this layer first; with text in the prompt
+  // the arrows return false and fall through to the prompt. Tradeoff: esc in a running peeked
+  // session returns to the list instead of interrupting it; sending a message or opening the
+  // session with enter ends the peek and gives esc back to the host. Every run stays
+  // synchronous, because the keymap treats a returned Promise as handled.
   context.keymap.layer(() => ({
     mode: 'global',
-    priority: 1,
+    priority: 2,
     commands: [
       {
         id: 'super-sessions.peek.return',
