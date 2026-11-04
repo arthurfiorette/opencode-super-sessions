@@ -532,71 +532,71 @@ export default function SessionBrowser(props: PageProps) {
       { title: 'Peek session', key: 'space', run: peek },
       {
         title: memory.view === 'archived' ? 'Restore session' : 'Archive session',
-        key: keyLabel('ctrl+s'),
+        key: 'ctrl+s',
         run: archive
       },
       {
         title: current && doneNow(current) ? 'Mark not done' : 'Mark done',
-        key: keyLabel(DONE_KEY),
+        key: DONE_KEY,
         run: toggleDone
       },
       { title: 'Next view', key: 'tab', run: () => nextView(1) },
-      { title: 'Previous view', key: keyLabel('shift+tab'), run: () => nextView(-1) },
+      { title: 'Previous view', key: 'shift+tab', run: () => nextView(-1) },
       {
         title: scope() === 'project' ? 'Show all projects' : 'Show this project',
-        key: keyLabel('ctrl+a'),
+        key: 'ctrl+a',
         run: () => model.toggleScope().catch(() => {})
       },
       {
         title: 'Rename session',
-        key: keyLabel(shortcut(HOST_COMMANDS.rename, 'ctrl+r')),
+        key: shortcut(HOST_COMMANDS.rename, 'ctrl+r'),
         run: rename
       },
       {
         title: 'Regenerate title',
-        key: keyLabel(shortcut('super-sessions.retitle', 'ctrl+t')),
+        key: shortcut('super-sessions.retitle', 'ctrl+t'),
         run: retitle
       },
       {
         title: current && props.pins.has(current.id) ? 'Unpin session' : 'Pin session',
-        key: keyLabel(shortcut(HOST_COMMANDS.pin, 'ctrl+f')),
+        key: shortcut(HOST_COMMANDS.pin, 'ctrl+f'),
         run: togglePin
       },
       {
         title: 'Delete session',
-        key: keyLabel(shortcut(HOST_COMMANDS.delete, 'ctrl+d')),
+        key: shortcut(HOST_COMMANDS.delete, 'ctrl+d'),
         run: remove
       },
       ...(memory.view === 'done' && !data.search
         ? [
             {
               title: 'Archive all done sessions',
-              key: keyLabel(shortcut('super-sessions.archive.done', 'ctrl+y')),
+              key: shortcut('super-sessions.archive.done', 'ctrl+y'),
               run: archiveDone
             }
           ]
         : []),
       {
         title: 'Link pull request or issue',
-        key: keyLabel(shortcut('super-sessions.link', 'ctrl+l')),
+        key: shortcut('super-sessions.link', 'ctrl+l'),
         run: link
       },
       {
         title: 'Open pull request in browser',
-        key: keyLabel(shortcut('super-sessions.open.ref', 'ctrl+g')),
+        key: shortcut('super-sessions.open.ref', 'ctrl+g'),
         run: openRef
       },
       ...(wide() && workRefs().length > 0
-        ? [{ title: 'Focus the preview links', key: keyLabel('right'), run: focusWork }]
+        ? [{ title: 'Focus the preview links', key: 'right', run: focusWork }]
         : []),
       {
         title: 'Show command palette',
-        key: keyLabel('ctrl+p'),
+        key: 'ctrl+p',
         run: () => context.keymap.dispatch(COMMAND_PALETTE)
       },
       {
         title: 'Super Sessions settings',
-        key: keyLabel('ctrl+o'),
+        key: 'ctrl+o',
         run: () => context.keymap.dispatch('super-sessions.settings')
       },
       { title: 'Close', key: 'esc', run: props.close }
@@ -1240,31 +1240,31 @@ export default function SessionBrowser(props: PageProps) {
     ]
   });
 
-  // Same shape as the host's dialog footer: "title key" pairs, actions on the selected session
-  // on the left and the list-wide scope toggle on the right.
+  // "key action" pairs like the host's prompt footer (`ctrl+p commands`), actions on the selected
+  // session on the left and the list-wide scope toggle on the right.
   const footerItems = createMemo((): Array<[string, string]> => {
     if (focus() === 'work')
       return [
         ['open', 'enter'],
-        ['back', '←/esc']
+        ['back', 'left']
       ];
     // The same hints in the same places whatever the state, so the eye learns where each key is;
     // the rest of the actions live in the keys dialog.
     return [
       ['peek', 'space'],
-      ['archive', keyLabel('ctrl+s')],
-      ['done', keyLabel(DONE_KEY)],
-      ['keys', '^/']
+      ['archive', 'ctrl+s'],
+      ['done', DONE_KEY],
+      ['keys', 'ctrl+/']
     ];
   });
   const scopeHint = (): [string, string] => [
     scope() === 'project' ? 'all projects' : 'this project',
-    keyLabel('ctrl+a')
+    'ctrl+a'
   ];
   const hint = ([title, key]: [string, string], index: number) => [
     ...(index > 0 ? [span(' '.repeat(HINT_GAP), () => theme().text.muted)] : []),
-    span(title, () => theme().text.base),
-    span(` ${key}`, () => theme().text.muted)
+    span(key, () => theme().text.base),
+    span(` ${title}`, () => theme().text.muted)
   ];
   /**
    * The hints in rows across the whole panel, in order. A hint that does not fit starts the next
@@ -1451,43 +1451,26 @@ export function PeekBanner(props: PeekBannerProps) {
           (value) => value.text.feedback.warning.base,
           true
         ),
+        // Key first, then the action muted, like the host's prompt footer.
         span(
-          () => '   switch',
+          () => '   ↑↓',
           (value) => value.text.base
         ),
         span(
-          () => ' ↑↓',
+          () => ' switch',
           (value) => value.text.muted
         ),
         span(
-          () => '   back to list',
+          () => '   esc',
           (value) => value.text.base
         ),
         span(
-          () => ' esc',
+          () => ' back to list',
           (value) => value.text.muted
         )
       ]
     })
   });
-}
-
-/**
- * A key as the footer shows it, short enough that every hint fits one row at 200 columns: caret
- * notation for control letters (`ctrl+s` -> `^S`), `⇧` for shift and arrows for left and right.
- * Each alternative of `a/b` is shortened on its own; other keys stay as the host writes them.
- */
-function keyLabel(binding: string): string {
-  return binding
-    .split('/')
-    .map((key) => {
-      const control = /^ctrl\+([a-z])$/i.exec(key);
-      if (control) return `^${control[1]?.toUpperCase()}`;
-      if (key === 'left') return '←';
-      if (key === 'right') return '→';
-      return key.replace(/^shift\+/, '⇧');
-    })
-    .join('/');
 }
 
 /** A view tab's name, after its icon when `icons` is set. Active has no icon. */

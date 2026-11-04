@@ -345,6 +345,8 @@ export default function SettingsDialog(props: SettingsDialogProps) {
     ]
   });
 
+  // Key first in the base color, then the action muted, like the host's prompt footer
+  // (`ctrl+p commands`).
   const hint = (title: () => string, key: () => string) =>
     jsx('text', {
       wrapMode: 'none',
@@ -354,7 +356,7 @@ export default function SettingsDialog(props: SettingsDialogProps) {
             return { fg: theme().text.base };
           },
           get children() {
-            return title();
+            return key();
           }
         }),
         jsx('span', {
@@ -362,7 +364,7 @@ export default function SettingsDialog(props: SettingsDialogProps) {
             return { fg: theme().text.muted };
           },
           get children() {
-            return ` ${key()}`;
+            return ` ${title()}`;
           }
         })
       ]
@@ -376,7 +378,7 @@ export default function SettingsDialog(props: SettingsDialogProps) {
     children: [
       hint(
         () => 'change',
-        () => '←/→'
+        () => 'left/right'
       ),
       jsx('box', {
         get visible() {
