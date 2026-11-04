@@ -1,5 +1,5 @@
 import type { ResolvedTheme } from '@opencode/theme/tui';
-import type { RGBA } from '@opentui/core';
+import { RGBA } from '@opentui/core';
 import { type Options, stateColor } from '../config.js';
 import type { RefKind, RefStatus } from '../refs/ref.js';
 
@@ -40,6 +40,25 @@ export function refIcon(kind: RefKind, status: RefStatus | undefined): string {
   if (status === 'completed' || status === 'closed') return ICONS.issueCompleted;
   if (status === 'not_planned') return ICONS.issueNotPlanned;
   return ICONS.issueOpen;
+}
+
+// The theme has no orange token (`SemanticHue` is accent, interactive and neutral), so the title
+// fade ends on the gruvbox oranges, which read on both kinds of background.
+const TITLE_ORANGE = { dark: '#fe8019', light: '#af3a03' } as const;
+
+/**
+ * One color per character of `text`, fading left to right from the theme's warning yellow to
+ * orange, interpolated in RGB. A single character takes the yellow end.
+ */
+export function titleGradient(text: string, theme: ResolvedTheme, mode: 'dark' | 'light'): RGBA[] {
+  const from = theme.text.feedback.warning.base;
+  const to = RGBA.fromHex(TITLE_ORANGE[mode]);
+  const count = Array.from(text).length;
+  return Array.from({ length: count }, (_, index) => {
+    const t = count > 1 ? index / (count - 1) : 0;
+    const mix = (a: number, b: number) => a + (b - a) * t;
+    return RGBA.fromValues(mix(from.r, to.r), mix(from.g, to.g), mix(from.b, to.b), 1);
+  });
 }
 
 /** Color of a ref's glyph and number. Unknown state is muted so it never reads as open. */

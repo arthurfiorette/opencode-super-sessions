@@ -29,6 +29,8 @@ export interface RowModel {
   /** The refs line. Empty when the session has no refs. */
   refs: Segment[];
   selected: boolean;
+  /** The session runs: the title takes the spinner's color, unless the row is selected. */
+  running: boolean;
   /** The first delete press turned this row into a confirmation. */
   deleting: boolean;
   /** Marquee offset while the pointer hovers a title that does not fit. */
@@ -137,6 +139,14 @@ export interface RowEvents {
   open(): void;
 }
 
+/**
+ * Color of a running session's spinner and title. The warning feedback token, which reads as
+ * yellow in gruvbox, because the muted text the spinner used before did not stand out.
+ */
+export function runningColor(theme: ResolvedTheme): RGBA {
+  return theme.text.feedback.warning.base;
+}
+
 /** Background and foreground of a row for its selection and delete state. */
 function rowColors(theme: ResolvedTheme, model: RowModel) {
   if (model.deleting) {
@@ -227,8 +237,9 @@ export function titleLine(
       get children() {
         const current = model();
         const room = titleRoom(current);
+        const color = current.running ? runningColor(theme()) : theme().text.base;
         return jsx('span', {
-          style: { fg: fg(theme().text.base), bold: current.selected },
+          style: { fg: fg(color), bold: current.selected },
           children:
             current.scroll !== undefined && current.scroll > 0
               ? marqueeText(current.title, room, current.scroll)
