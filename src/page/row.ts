@@ -1,5 +1,5 @@
 import type { ResolvedTheme } from '@opencode/theme/tui';
-import { MouseButton, type MouseEvent, type RGBA } from '@opentui/core';
+import { MouseButton, type MouseEvent, RGBA } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import type { JSX } from 'solid-js';
 import type { Options } from '../config.js';
@@ -35,6 +35,19 @@ export interface RowModel {
   deleting: boolean;
   /** Marquee offset while the pointer hovers a title that does not fit. */
   scroll: number | undefined;
+  /** Background of every line of the row when not selected; undefined keeps the panel's. */
+  stripe: RGBA | undefined;
+}
+
+/**
+ * The background the host's session view shows: the theme's `background.base`, or the terminal's
+ * own background when that token is not opaque (themes such as `gruvbox-transparent` leave it
+ * `transparent`). Painting a see-through color over the browser's backdrop would show the dimmed
+ * route instead.
+ */
+export function sessionBackground(theme: ResolvedTheme): RGBA {
+  const base = theme.background.base;
+  return base.a >= 1 ? base : RGBA.defaultBackground();
 }
 
 /** Input of {@link refSegments}. */
@@ -137,7 +150,7 @@ function rowColors(theme: ResolvedTheme, model: RowModel) {
   if (model.selected) {
     return { bg: theme.background.action.primary.focused, fg: theme.text.action.primary.focused };
   }
-  return { bg: undefined, fg: undefined };
+  return { bg: model.stripe, fg: undefined };
 }
 
 /** A row line's outer box: height, padding, colors and pointer handlers. */

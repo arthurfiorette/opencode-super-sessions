@@ -41,6 +41,7 @@ import {
   refSegments,
   refsLine,
   type Segment,
+  sessionBackground,
   titleLine,
   titleRoom
 } from './row.js';
@@ -516,6 +517,24 @@ export default function SessionBrowser(props: PageProps) {
     return unread ? { text: '●', fg: theme().text.feedback.info.base } : undefined;
   };
 
+  // Zebra rows: every second session of a group, all of its lines, on the session view's
+  // background, the others on the panel's. Each group starts over, so a day reads the same
+  // whatever came before it. When a theme gives both the same color, the stripe goes one step
+  // darker than the panel instead.
+  const stripes = createMemo(
+    () =>
+      new Map(
+        model
+          .groups()
+          .flatMap((group) => group.sessions.map((session, index) => [session.id, index]))
+      )
+  );
+  const stripe = () => {
+    const shade = sessionBackground(context.theme);
+    const panel = theme().background.base;
+    return shade.equals(panel) ? theme().decrease(panel) : shade;
+  };
+
   const rowModel = (session: SessionInfo): RowModel => {
     const info = live(session);
     const now = model.now();
@@ -541,7 +560,8 @@ export default function SessionBrowser(props: PageProps) {
       refs: refsOf(session),
       selected: memory.selected === session.id,
       deleting: deleting() === session.id,
-      scroll: marquee.active() === session.id ? marquee.offset() : undefined
+      scroll: marquee.active() === session.id ? marquee.offset() : undefined,
+      stripe: (stripes().get(session.id) ?? 0) % 2 === 1 ? stripe() : undefined
     };
   };
 
@@ -852,7 +872,7 @@ export default function SessionBrowser(props: PageProps) {
     paddingTop: 1,
     paddingBottom: 1,
     get backgroundColor() {
-      return context.theme.background.base;
+      return sessionBackground(context.theme);
     },
     get visible() {
       return wide();
