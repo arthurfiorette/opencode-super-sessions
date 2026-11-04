@@ -16,7 +16,8 @@ test('session.list toggles the browser synchronously and falls through for the c
     keymap: {
       layer(factory: () => KeymapLayer) {
         layers.push(factory());
-      }
+      },
+      mode: { current: () => 'base' }
     },
     ui: {
       slot: () => () => {},

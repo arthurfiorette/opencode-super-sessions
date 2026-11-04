@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { LocationPublicInfo, LocationRef } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import type { Route } from '@opencode/plugin/tui/context';
-import { createMemo, createSignal } from 'solid-js';
+import { createMemo, createRoot, createSignal } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import type { Pins } from '../pins.js';
 import { type SearchScope, SuperSessions } from '../rpc.js';
@@ -25,7 +25,7 @@ const FRESH_FOR = 30_000;
 /**
  * Sessions, refs and browser state shared by the overlay and the peek keys. It lives as long as
  * the plugin, so reopening the browser draws the cached lists at once and refreshes them in the
- * background. Must be created under a Solid owner, because its lists are memos.
+ * background.
  */
 export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: () => boolean) {
   const client = context.client;
@@ -146,23 +146,32 @@ export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: 
       pins: pins.ids(),
       now: now()
     });
-  const activeGroups = createMemo(() => groupsFor('active'));
-  const doneGroups = createMemo(() => groupsFor('done'));
-  const archivedGroups = createMemo(() => groupsFor('archived'));
-  const counts = createMemo(() => ({
-    active: rowsOf(activeGroups()).length,
-    done: rowsOf(doneGroups()).length,
-    archived: rowsOf(archivedGroups()).length
-  }));
-  /** Groups of the list on screen: the search results, or the current view. */
-  const groups = createMemo((): Group[] => {
-    if (data.search)
-      return data.search.sessions.length > 0 ? [{ sessions: data.search.sessions }] : [];
-    if (memory.view === 'done') return doneGroups();
-    if (memory.view === 'archived') return archivedGroups();
-    return activeGroups();
+  // The memos get a root of their own. Only they live in it: the host resolves keymap, slot and
+  // storage providers from the owner the plugin's setup runs under, which a root would hide.
+  const lists = createRoot((dispose) => {
+    const activeGroups = createMemo(() => groupsFor('active'));
+    const doneGroups = createMemo(() => groupsFor('done'));
+    const archivedGroups = createMemo(() => groupsFor('archived'));
+    /** Groups of the list on screen: the search results, or the current view. */
+    const groups = createMemo((): Group[] => {
+      if (data.search)
+        return data.search.sessions.length > 0 ? [{ sessions: data.search.sessions }] : [];
+      if (memory.view === 'done') return doneGroups();
+      if (memory.view === 'archived') return archivedGroups();
+      return activeGroups();
+    });
+    return {
+      dispose,
+      doneGroups,
+      groups,
+      rows: createMemo(() => rowsOf(groups())),
+      counts: createMemo(() => ({
+        active: rowsOf(activeGroups()).length,
+        done: rowsOf(doneGroups()).length,
+        archived: rowsOf(archivedGroups()).length
+      }))
+    };
   });
-  const rows = createMemo(() => rowsOf(groups()));
 
   // What the cached lists were loaded for, and when.
   let loadedFor: string | undefined;
@@ -227,10 +236,10 @@ export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: 
     running,
     controller,
     data,
-    counts,
-    doneGroups,
-    groups,
-    rows,
+    counts: lists.counts,
+    doneGroups: lists.doneGroups,
+    groups: lists.groups,
+    rows: lists.rows,
     /** Merges a patch into the remembered browser state. */
     remember(patch: Partial<PageMemory>) {
       setMemory((draft) => {
@@ -255,6 +264,7 @@ export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: 
       clearTimeout(reloadTimer);
       for (const off of offs) off();
       controller.dispose();
+      lists.dispose();
     }
   };
 }

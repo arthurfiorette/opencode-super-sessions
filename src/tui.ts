@@ -43,8 +43,9 @@ export default Plugin.define({
     // Must stay synchronous: the keymap only falls through to the built-in dialog when `run`
     // returns a literal `false`, and a Promise counts as handled.
     const toggleBrowser = () => {
-      // The palette and other host dialogs would otherwise stay open above the browser.
-      context.ui.dialog.clear();
+      // The palette and other host dialogs would otherwise stay open above the browser. Only
+      // when one is open: clearing also refocuses whatever the last dialog took focus from.
+      if (context.keymap.mode.current() === 'modal') context.ui.dialog.clear();
       browser.toggle();
     };
 

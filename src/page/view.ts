@@ -184,6 +184,12 @@ export default function SessionBrowser(props: PageProps) {
   createEffect(() => controller.search(memory.query, memory.view === 'archived', scope()));
   onMount(() => {
     input?.focus();
+    // Closing a host dialog refocuses what it took focus from one tick later, which can land
+    // after this mount and leave typing in the prompt underneath. Claim the focus back once.
+    const refocus = setTimeout(() => {
+      if (input && !input.isDestroyed && !input.focused) input.focus();
+    }, 10);
+    onCleanup(() => clearTimeout(refocus));
     void model
       .resolveLocation()
       .then((info) => {
@@ -507,7 +513,8 @@ export default function SessionBrowser(props: PageProps) {
       label: matchLabel(reason(session), data.refs[session.id]),
       right:
         archivedAt === undefined
-          ? formatAge(now - info.time.updated)
+          ? // Padded to the widest age (`11mo`), so labels before it line up down the list.
+            formatAge(now - info.time.updated).padStart(4)
           : `archived ${formatAge(now - archivedAt)} · updated ${formatAge(now - info.time.updated)}`,
       // The row box pads one cell on each side.
       width: listWidth() - 2,
