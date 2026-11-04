@@ -30,6 +30,10 @@ test('the real TUI hands session.list, the peek arrows and its dialogs to the pl
     // priority layer wins the command over the built-in dialog.
     await tui.leader('l');
     await tui.waitFor(BROWSER);
+    // The placeholder draws at mount, while the first list load is still in flight and nothing is
+    // selected, so space has nothing to peek. The count comes from the same rows as the
+    // selection, which is set in the same update.
+    await tui.waitFor(/Active 2\s/);
 
     // The banner renders in the `session.composer.top` slot of the peeked session.
     await tui.press(' ');
