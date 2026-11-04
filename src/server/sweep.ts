@@ -52,6 +52,8 @@ interface CleanupState {
   orphaned: string[];
   /** Sessions last seen in a worktree, so a deletion can be traced to its worktree. */
   sessions: Record<string, string>;
+  /** Projects that had linked worktrees at the last sweep. */
+  projects: string[];
 }
 
 /** Process-wide auto-archive and cleanup scheduler. */
@@ -235,7 +237,17 @@ function createSweeper(runtime: Runtime): Sweeper {
     const pinned = new Set(clients.flatMap((entry) => entry.pinned));
     const open = new Set(clients.flatMap((entry) => entry.open.map(rootOf)));
 
-    const worktrees = want.cleaning ? await listWorktrees(runtime, context, roots) : [];
+    // The plugin cannot list projects. Sessions name most of them; open Locations and projects
+    // seen before cover those whose sessions were all deleted.
+    const remembered = want.cleaning ? (await loadState(context)).projects : [];
+    const projects = [
+      ...new Set([
+        ...roots.map((info) => info.projectID),
+        ...live.map((entry) => entry.context.location.project.id),
+        ...remembered
+      ])
+    ].filter((id) => id !== 'global');
+    const worktrees = want.cleaning ? await listWorktrees(runtime, context, projects) : [];
     const owners = await assignSessions(roots, worktrees);
 
     // Done needs forge state; only sessions a decision reads pay for it. The main checkout is
@@ -285,6 +297,10 @@ function createSweeper(runtime: Runtime): Sweeper {
       const known = new Set(worktrees.map((entry) => entry.directory));
       cleanup.sessions = seen;
       cleanup.orphaned = cleanup.orphaned.filter((directory) => known.has(directory));
+      // Only projects that still have linked worktrees need remembering.
+      cleanup.projects = [
+        ...new Set(worktrees.filter((entry) => !entry.root).map((entry) => entry.projectID))
+      ];
       await saveState(context);
 
       for (const worktree of worktrees) {
@@ -544,12 +560,13 @@ function readCleanupState(value: unknown): CleanupState {
           )
         )
       : {};
+  const strings = (list: unknown) =>
+    Array.isArray(list) ? list.filter((item): item is string => typeof item === 'string') : [];
   return {
     confirmed: record.confirmed === true,
-    orphaned: Array.isArray(record.orphaned)
-      ? record.orphaned.filter((item): item is string => typeof item === 'string')
-      : [],
-    sessions
+    orphaned: strings(record.orphaned),
+    sessions,
+    projects: strings(record.projects)
   };
 }
 
@@ -587,15 +604,12 @@ interface KnownWorktree {
   base?: string;
 }
 
-/** Lists the worktrees of every project that has a session. */
+/** Lists the worktrees of every project in `projects`. The global project has none. */
 async function listWorktrees(
   runtime: Runtime,
   context: Plugin.Context,
-  roots: SessionInfo[]
+  projects: readonly string[]
 ): Promise<KnownWorktree[]> {
-  const projects = [...new Set(roots.map((info) => info.projectID))].filter(
-    (id) => id !== 'global'
-  );
   const result: KnownWorktree[] = [];
   for (const projectID of projects) {
     const entries = await context.worktree.list({ projectID }).catch((error: unknown) => {

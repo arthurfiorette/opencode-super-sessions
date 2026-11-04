@@ -62,7 +62,7 @@ export default function SettingsDialog(props: SettingsDialogProps) {
   const rows = createMemo(() => filterRows(SETTINGS, query()));
   const lines = createMemo(() => layout(rows()));
   // The host's list height: half the terminal minus the dialog chrome.
-  const height = () => Math.max(3, Math.min(lines().length, Math.floor(terminalHeight() / 2) - 6));
+  const height = () => Math.max(1, Math.min(lines().length, Math.floor(terminalHeight() / 2) - 6));
   const current = () => rows().find((row) => row.key === selected()) ?? rows()[0];
 
   // A search that hides the selected row moves the selection to the first match, like the host.
