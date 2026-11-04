@@ -85,11 +85,15 @@ export const refStatusSchema = z.enum([
  *
  * - `decision`: the forge's review verdict; absent when nobody reviewed and none is required.
  * - `unresolved` / `threads`: resolvable review threads still open, and all of them.
- * - `checks`: the head commit's combined CI result; absent when nothing ran.
+ * - `checks`: the head commit's combined CI result; absent when nothing ran. `cancelled` when
+ *   the only checks that did not pass were cancelled: nothing failed and nothing still runs.
  * - `checksPassed` / `checksTotal`: how many checks passed out of all of them, drawn as `91/93`
  *   unless every check passed.
  *   GitHub counts successful, neutral and skipped check runs and successful statuses as passed;
  *   GitLab counts successful and skipped jobs of the head pipeline, without retried or manual ones.
+ * - `checksSkipped` / `checksCancelled` / `checksPending` / `checksFailed`: the rest of the
+ *   breakdown (see `tallyOf` in `src/page/checks.ts`); skipped checks are part of
+ *   `checksPassed`. GitHub only, where the counts cost nothing; GitLab's come from the details.
  * - `conflicts`: whether the branch conflicts with its base; absent while the forge has not
  *   computed it, which the snapshot cache then fills with the last known answer.
  */
@@ -97,9 +101,13 @@ export const refReviewSchema = z.strictObject({
   decision: z.enum(['approved', 'changes_requested', 'review_required']).optional(),
   unresolved: z.number().int().nonnegative().optional(),
   threads: z.number().int().nonnegative().optional(),
-  checks: z.enum(['passing', 'failing', 'pending']).optional(),
+  checks: z.enum(['passing', 'failing', 'pending', 'cancelled']).optional(),
   checksPassed: z.number().int().nonnegative().optional(),
   checksTotal: z.number().int().nonnegative().optional(),
+  checksSkipped: z.number().int().nonnegative().optional(),
+  checksCancelled: z.number().int().nonnegative().optional(),
+  checksPending: z.number().int().nonnegative().optional(),
+  checksFailed: z.number().int().nonnegative().optional(),
   conflicts: z.boolean().optional()
 });
 

@@ -85,6 +85,10 @@ test('a batch with a missing number and a missing repository still resolves ever
     checks: 'failing',
     checksPassed: 24,
     checksTotal: 25,
+    checksSkipped: 13,
+    checksCancelled: 0,
+    checksPending: 0,
+    checksFailed: 1,
     conflicts: false
   });
   assert.deepEqual(conflicting.state.review, {
@@ -109,6 +113,30 @@ test('a batch with a missing number and a missing repository still resolves ever
   assert.deepEqual(merged.state.closes?.map(refKey), [refKey(issue.ref)]);
   assert.deepEqual(issue.state.closedBy?.map(refKey), [refKey(merged.ref)]);
   assert.equal(issue.state.closedAt, Date.UTC(2026, 9, 26, 18, 2, 49));
+});
+
+test('a rollup that failed only through cancelled runs reads as cancelled, not failing', () => {
+  const candidates = [candidate('mastra-ai/mastra', 29169, 'pr')];
+  const response = parseGraphQLOutput(asRun(fixture('snapshot-cancelled.json')), NOW);
+  assert.ok('data' in response);
+  const [entry] = parseSnapshotResponse(buildSnapshotQuery(candidates), candidates, response);
+  assert.ok(entry && 'ref' in entry);
+  const { checks, checksPassed, checksTotal, checksSkipped, checksCancelled, checksPending } =
+    entry.state.review ?? {};
+  // GitHub's rollup state is FAILURE; 23 successful, 2 neutral and 18 skipped runs and 3
+  // successful statuses pass, and the 2 cancelled runs are the rest.
+  assert.deepEqual(
+    { checks, checksPassed, checksTotal, checksSkipped, checksCancelled, checksPending },
+    {
+      checks: 'cancelled',
+      checksPassed: 46,
+      checksTotal: 48,
+      checksSkipped: 18,
+      checksCancelled: 2,
+      checksPending: 0
+    }
+  );
+  assert.equal(entry.state.review?.checksFailed, 0);
 });
 
 test('branch lookups pick the repository own pull request and ignore fork PRs with the same head', () => {

@@ -29,17 +29,17 @@ function candidate(repo: string, number: number, kind?: 'pr' | 'issue'): RefCand
   return { provider: 'gitlab', host: 'gitlab.com', repo, number, ...(kind ? { kind } : {}) };
 }
 
-test('details link each job to its page on the host', () => {
+test('details link each job to its page on the host and leave manual jobs out', () => {
   const response = parseGraphQLOutput(asRun(fixture('details.json')), NOW);
   assert.ok('data' in response);
   const details = parseDetailsResponse(response, 'gitlab.com');
   assert.ok('checks' in details);
+  // The manual govulncheck job is not counted, as in the snapshot's job counts.
   assert.deepEqual(
     details.checks.map((check) => [check.name, check.url]),
     [
       ['lint_commit', 'https://gitlab.com/gitlab-org/cli/-/jobs/17737982341'],
-      ['tests:unit', 'https://gitlab.com/gitlab-org/cli/-/jobs/17737982349'],
-      ['govulncheck', 'https://gitlab.com/gitlab-org/cli/-/jobs/17737982338']
+      ['tests:unit', 'https://gitlab.com/gitlab-org/cli/-/jobs/17737982349']
     ]
   );
 });

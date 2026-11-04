@@ -6,6 +6,7 @@ import type { Options } from '../config.js';
 import { type Ref, type RefReview, type RefState, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
+import { ciLook } from './checks.js';
 import { ICONS, refColor, refIcon } from './icons.js';
 import type { DetailLine } from './state.js';
 
@@ -130,14 +131,18 @@ export function checkCounts(review: RefReview | undefined): string | undefined {
 
 /**
  * The review and CI icons drawn after an open pull request's number, in GitHub's colors: the
- * review verdict, the CI result with `passed/total` muted unless every check passed (see
- * {@link checkCounts}), an alert in the error color when the branch has merge conflicts, then the
- * unresolved threads in the warning color. A part without data is left out. Each part starts with its separating space, so
- * the number and the state icon stay in the same column on every row, and each glyph keeps a
- * 2-cell slot like the ref icons because a space always follows it (the next part's or the
- * title's).
+ * review verdict, the CI result (see {@link ciLook}) with `passed/total` muted unless every check
+ * passed (see {@link checkCounts}) or `counts` is false, an alert in the error color when the
+ * branch has merge conflicts, then the unresolved threads in the warning color. A part without
+ * data is left out. Each part starts with its separating space, so the number and the state icon
+ * stay in the same column on every row, and each glyph keeps a 2-cell slot like the ref icons
+ * because a space always follows it (the next part's or the title's).
  */
-export function badgeSegments(review: RefReview | undefined, theme: ResolvedTheme): Segment[] {
+export function badgeSegments(
+  review: RefReview | undefined,
+  theme: ResolvedTheme,
+  counts = true
+): Segment[] {
   if (review === undefined) return [];
   const { feedback, muted } = theme.text;
   const parts: Segment[] = [];
@@ -149,15 +154,10 @@ export function badgeSegments(review: RefReview | undefined, theme: ResolvedThem
     parts.push({ text: ` ${ICONS.reviewRequired}`, fg: muted });
   }
   if (review.checks !== undefined) {
-    const [glyph, fg] =
-      review.checks === 'passing'
-        ? [ICONS.checksPassing, feedback.success.base]
-        : review.checks === 'failing'
-          ? [ICONS.checksFailing, feedback.error.base]
-          : [ICONS.checksPending, feedback.warning.base];
+    const [glyph, fg] = ciLook(review.checks, theme);
     parts.push({ text: ` ${glyph}`, fg });
-    const counts = checkCounts(review);
-    if (counts !== undefined) parts.push({ text: ` ${counts}`, fg: muted });
+    const text = counts ? checkCounts(review) : undefined;
+    if (text !== undefined) parts.push({ text: ` ${text}`, fg: muted });
   }
   if (review.conflicts === true) {
     parts.push({ text: ` ${ICONS.conflicts}`, fg: feedback.error.base });
@@ -169,9 +169,13 @@ export function badgeSegments(review: RefReview | undefined, theme: ResolvedThem
 }
 
 /** {@link badgeSegments} for a ref's state, or none unless it is an open or draft pull request. */
-export function stateBadges(state: RefState | undefined, theme: ResolvedTheme): Segment[] {
+export function stateBadges(
+  state: RefState | undefined,
+  theme: ResolvedTheme,
+  counts = true
+): Segment[] {
   const open = state?.status === 'open' || state?.status === 'draft';
-  return open ? badgeSegments(state.review, theme) : [];
+  return open ? badgeSegments(state.review, theme, counts) : [];
 }
 
 /**

@@ -167,40 +167,74 @@ function headRollup(commits: unknown): Record<string, unknown> | undefined {
   return isRecord(rollup) ? rollup : undefined;
 }
 
+type Outcome = 'passed' | 'skipped' | 'cancelled' | 'pending' | 'failed';
+
 // What github.com's pull request list counts as passed in its `92/95 checks passing` (compared
 // live on 2026-11-04): successful, neutral and skipped check runs, and successful statuses.
-const PASSED_RUNS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
-const PASSED_STATUSES = new Set(['SUCCESS']);
+// Skipped runs are passed too, but counted apart for the preview's summary. A stale run, or one
+// that completed without a conclusion, ended without telling anything: it counts with the
+// cancelled ones, which are counted but never listed. States not named here failed.
+const RUN_OUTCOMES: Record<string, Outcome> = {
+  SUCCESS: 'passed',
+  NEUTRAL: 'passed',
+  SKIPPED: 'skipped',
+  CANCELLED: 'cancelled',
+  STALE: 'cancelled',
+  COMPLETED: 'cancelled',
+  IN_PROGRESS: 'pending',
+  PENDING: 'pending',
+  QUEUED: 'pending',
+  WAITING: 'pending'
+};
+const STATUS_OUTCOMES: Record<string, Outcome> = {
+  SUCCESS: 'passed',
+  PENDING: 'pending',
+  EXPECTED: 'pending'
+};
 
-/** Sums a `{ state count }` list: every entry, and the ones whose state is in `passed`. */
-function countStates(value: unknown, passed: ReadonlySet<string>): [number, number] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  let total = 0;
-  let ok = 0;
+/** Adds a `{ state count }` list into `tally` by outcome; false when it is not such a list. */
+function countStates(
+  value: unknown,
+  outcomes: Record<string, Outcome>,
+  tally: Record<Outcome, number>
+): boolean {
+  if (!Array.isArray(value)) return false;
   for (const entry of value) {
     if (!isRecord(entry) || typeof entry.state !== 'string') continue;
     const count = Number.isSafeInteger(entry.count) ? (entry.count as number) : 0;
-    total += count;
-    if (passed.has(entry.state)) ok += count;
+    tally[outcomes[entry.state] ?? 'failed'] += count;
   }
-  return [ok, total];
+  return true;
 }
 
 /**
- * Passed and total checks of the rollup. GitHub's own list leaves out runs a re-run of the same
- * check replaced, which these counts include, so the numbers can be higher than github.com's.
+ * The rollup's checks by outcome, from per-state counts that read no context. GitHub's own list
+ * leaves out runs a re-run of the same check replaced, which these counts include, so the
+ * numbers can be higher than github.com's.
  */
-function checkCounts(
-  rollup: Record<string, unknown> | undefined
-): { checksPassed: number; checksTotal: number } | undefined {
+function checkCounts(rollup: Record<string, unknown> | undefined): RefReview | undefined {
   const contexts = rollup?.contexts;
   if (!isRecord(contexts)) return undefined;
-  const runs = countStates(contexts.checkRunCountsByState, PASSED_RUNS);
-  const statuses = countStates(contexts.statusContextCountsByState, PASSED_STATUSES);
-  if (runs === undefined && statuses === undefined) return undefined;
-  const total = (runs?.[1] ?? 0) + (statuses?.[1] ?? 0);
+  const tally: Record<Outcome, number> = {
+    passed: 0,
+    skipped: 0,
+    cancelled: 0,
+    pending: 0,
+    failed: 0
+  };
+  const runs = countStates(contexts.checkRunCountsByState, RUN_OUTCOMES, tally);
+  const statuses = countStates(contexts.statusContextCountsByState, STATUS_OUTCOMES, tally);
+  if (!runs && !statuses) return undefined;
+  const total = Object.values(tally).reduce((sum, count) => sum + count, 0);
   if (total === 0) return undefined;
-  return { checksPassed: (runs?.[0] ?? 0) + (statuses?.[0] ?? 0), checksTotal: total };
+  return {
+    checksPassed: tally.passed + tally.skipped,
+    checksTotal: total,
+    checksSkipped: tally.skipped,
+    checksCancelled: tally.cancelled,
+    checksPending: tally.pending,
+    checksFailed: tally.failed
+  };
 }
 
 /**
@@ -224,6 +258,16 @@ function reviewOf(node: Record<string, unknown>, status: RefStatus): RefReview |
   const checks = typeof rollup?.state === 'string' ? CHECKS[rollup.state] : undefined;
   if (checks) review.checks = checks;
   Object.assign(review, checkCounts(rollup));
+  // The rollup says FAILURE when runs were only cancelled (mastra-ai/mastra#29169 on
+  // 2026-11-04), which drew a red x with no failed check to show.
+  if (
+    review.checks === 'failing' &&
+    review.checksFailed === 0 &&
+    review.checksPending === 0 &&
+    (review.checksCancelled ?? 0) > 0
+  ) {
+    review.checks = 'cancelled';
+  }
   // GitHub computes mergeability lazily and answers UNKNOWN until it has, which stays undefined.
   if (node.mergeable === 'CONFLICTING') review.conflicts = true;
   else if (node.mergeable === 'MERGEABLE') review.conflicts = false;

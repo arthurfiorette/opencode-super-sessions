@@ -95,12 +95,14 @@ With animations off in OpenCode, the spinner is a still `⋯`. Titles wrap onto 
 
 An open or draft pull request shows these Nerd Font icons in this order. On list rows and in the Pull requests view they follow its icon and number on the same line. In the preview's Work rows and in the sidebar they get their own line under the pull request, so the title keeps its room. A part without data is left out, so the icon and number always start in the same column.
 
-| Part      | Icons                                                                                                                         |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Review    | Changes requested (red), approved (green) or review required (muted)                                                          |
-| CI        | Passing (green check), failing (red x) or pending (yellow dot), then `passed/total` such as `91/93` unless every check passed |
-| Conflicts | An alert icon in red when the branch conflicts with its base. Nothing while the forge has not checked yet                     |
-| Threads   | A comment icon and the number of unresolved review threads, in yellow                                                         |
+| Part      | Icons                                                                                                                                                 |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Review    | Changes requested (red), approved (green) or review required (muted)                                                                                  |
+| CI        | Passing (green check), failing (red x), pending (yellow dot) or cancelled (muted stop), then `passed/total` such as `91/93` unless every check passed |
+| Conflicts | An alert icon in red when the branch conflicts with its base. Nothing while the forge has not checked yet                                             |
+| Threads   | A comment icon and the number of unresolved review threads, in yellow                                                                                 |
+
+The CI icon is the muted stop when the only checks that did not pass were cancelled: nothing failed and nothing still runs. GitHub's own rollup calls that a failure. Work rows and the sidebar leave `passed/total` out, since the checks that need a look are listed under the icons.
 
 On GitHub, successful, neutral and skipped check runs and successful statuses count as passed. github.com's own list leaves out a check run that a re-run replaced, so the totals here can be higher than there. On GitLab, the counts are the head pipeline's jobs: successful and skipped ones pass, and manual and retried jobs are not counted.
 
@@ -110,7 +112,7 @@ Each row is a pull request: a muted `-` in the marker column, its icon and numbe
 
 `enter` or a double click opens the newest session that tracks the selected pull request, `space` peeks it, `ctrl+g` opens the pull request in your web browser, and `f5` reloads it with its checks. The keys that change one session (archive, Done, rename, pin, delete, link) are off in this view. The footer reads `enter open  space peek  ctrl+g open PR  ctrl+/ keys`.
 
-The preview shows the title and state, `head -> base`, the author, the review verdict, merge conflicts and unresolved threads, every CI check with its status, the issues the pull request closes and the ones its sessions track, the description, and the sessions that worked on it. A check is a link to its page, such as the job's log: hovering makes its name bold, a click opens it and a ctrl+click copies it. `right` moves the arrow keys to the sessions, `enter` opens one, and `left` or `esc` goes back. Author, branches, checks and description are fetched for the selected pull request only, and cached as long as its state.
+The preview shows the title and state, `head -> base`, the author, the review verdict, merge conflicts and unresolved threads, the checks, the issues the pull request closes and the ones its sessions track, the description, and the sessions that worked on it. The checks take one summary line of icons and counts, leaving out zeros: passed (green check), skipped (muted skip), cancelled (muted stop), pending (yellow dot) and failed (red x); when every check passed, only the green check and the count. Under it each check that failed or waits for an action is listed by name, failures first, at most ten and then `+N more`, which opens the pull request's checks page. Cancelled checks are counted, never listed. A listed check is a link to its page, such as the job's log: hovering makes its name bold, a click opens it and a ctrl+click copies it. `right` moves the arrow keys to the sessions, `enter` opens one, and `left` or `esc` goes back. Author, branches, checks and description are fetched for the selected pull request only, and cached as long as its state.
 
 ### Pins
 
@@ -141,7 +143,7 @@ The header holds the title and these sections:
 
 - Context: tokens in the context window and their share of the model's limit, the cost so far, and whether the session is running, idle, interrupted or failed.
 - Session: the project (only when it differs from the browser's), the worktree directory (only when it is not the project root) and the branch (only when it is not the default branch).
-- Work: every tracked pull request and issue, the main pull request first. A pull request's line holds its state icon, number and title. Under an open one, a line shows its [review and CI icons](#review-and-ci-icons) when it has any, followed by each failed check with a red x, at most five and then `+N more`; pending checks are not listed. A click on a failed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
+- Work: every tracked pull request and issue, the main pull request first. A pull request's line holds its state icon, number and title. Under an open one, a line shows its [review and CI icons](#review-and-ci-icons) when it has any, followed by each check that failed (red x) or waits for an action (yellow alert), failures first, at most five and then `+N more`; pending and cancelled checks are not listed. A click on a listed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
 
 The transcript below draws messages the way OpenCode's session view does and follows your `cli.json` session settings (scrollbar, thinking, markdown, verbosity, grouping). It starts at the latest message; scrolling up loads older ones.
 
@@ -260,7 +262,7 @@ The PR line shows one pull request: the branch's pull request, else the newest o
 
 ### Review and CI status
 
-For open and draft pull requests the plugin reads the review decision, how many review threads are resolved, and the combined CI result of the head commit with its passed and total counts. List rows show them as [icons](#review-and-ci-icons) on the PR line. The preview's Work rows and the sidebar show the icons on a line under the pull request and list the failed checks by name; those names come from the pull request's check list, which the plugin fetches only for failing pull requests of the session on screen.
+For open and draft pull requests the plugin reads the review decision, how many review threads are resolved, and the combined CI result of the head commit with its passed and total counts. List rows show them as [icons](#review-and-ci-icons) on the PR line. The preview's Work rows and the sidebar show the icons on a line under the pull request and list the checks that failed or wait for an action by name; those names come from the pull request's check list, which the plugin fetches only for pull requests of the session on screen that have such checks.
 
 States are cached: open and draft pull requests for 2 minutes, closed ones for 15 minutes, merged ones and closed issues for good, and errors for 30 seconds. While the browser is open it refreshes the visible rows every 60 seconds, and the sidebar refreshes its session every 60 seconds. `gh pr merge`, `gh pr close`, `gh issue close`, `glab mr merge`, `glab mr close` and `glab issue close` refresh the session's refs right away. When the forge reports its rate limit is spent, the plugin waits for the reset and keeps showing the last known state.
 

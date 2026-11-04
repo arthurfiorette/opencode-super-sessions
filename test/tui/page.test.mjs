@@ -74,7 +74,16 @@ const refViews = {
       [key(pr4930)]: {
         status: 'open',
         title: 'Migrate build to Rspack',
-        url: 'https://github.com/mastra-ai/mastra/pull/4930'
+        url: 'https://github.com/mastra-ai/mastra/pull/4930',
+        review: {
+          checks: 'failing',
+          checksPassed: 3,
+          checksTotal: 6,
+          checksSkipped: 1,
+          checksCancelled: 1,
+          checksPending: 0,
+          checksFailed: 2
+        }
       }
     }
   }
@@ -150,6 +159,17 @@ async function host(version = '2.2.5') {
         events: { on: () => () => {} },
         refs: views,
         refresh: views,
+        'pull.details': async () => ({
+          body: 'Moves the build to Rspack.',
+          checks: [
+            { name: 'Lint', status: 'failure', url: 'https://ci.example/lint' },
+            { name: 'Unit tests', status: 'success' },
+            { name: 'Approve deploy', status: 'action_required' },
+            { name: 'Old e2e run', status: 'cancelled' },
+            { name: 'Docs', status: 'skipped' },
+            { name: 'Typecheck', status: 'success' }
+          ]
+        }),
         'history.scan': async (input) => {
           scans.push(input);
           return { skipped: false };
@@ -321,7 +341,33 @@ test('session.list opens the browser cold and lists active sessions with their r
     .flatMap((layer) => layer.commands ?? [])
     .find((command) => command.bind === 'shift+tab')
     .run();
-  await eventually(rendered, (frame) => /#4930 Migrate build to Rspack\s+1 session/.test(frame));
+  await eventually(rendered, (frame) => /#4930 .*Migrate build to Rspack\s+1 session/.test(frame));
+});
+
+test('the Pull requests preview sums the checks up and lists only the failed and blocked ones', async () => {
+  const terminal = await host();
+  const rendered = await testRender(() => terminal.overlay.render({}), { width: 140, height: 40 });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  await eventually(rendered, (frame) => frame.includes('#4930'));
+  terminal.layers
+    .flatMap((layer) => layer.commands ?? [])
+    .find((command) => command.bind === 'shift+tab')
+    .run();
+  // Passed, skipped, cancelled and failed counts from the snapshot, then the listed checks.
+  await eventually(
+    rendered,
+    (frame) =>
+      frame.includes('\uf42e 2  \uf517 1  \uf46e 1  \uf467 2') &&
+      /\uf467 Lint\s*\n.*\uf421 Approve deploy/.test(frame) &&
+      frame.includes('Moves the build to Rspack.')
+  );
+  const frame = rendered.captureCharFrame();
+  for (const name of ['Unit tests', 'Old e2e run', 'Docs', 'Typecheck']) {
+    assert.ok(!frame.includes(name), `${name} is counted, not listed`);
+  }
 });
 
 test('rows list each issue on its own line up to five, and "Group issues" joins them', async () => {

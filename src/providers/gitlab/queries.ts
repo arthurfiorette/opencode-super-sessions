@@ -194,11 +194,12 @@ function statusOf(node: Record<string, unknown>, kind: Ref['kind']): RefStatus |
 }
 
 // `manual` waits on a person and `skipped` ran nothing, so neither says anything about the code.
+// A canceled pipeline draws the muted cancelled icon, as on GitHub.
 const CHECKS: Record<string, NonNullable<RefReview['checks']>> = {
   SUCCESS: 'passing',
   FAILED: 'failing',
-  CANCELED: 'failing',
-  CANCELING: 'failing',
+  CANCELED: 'cancelled',
+  CANCELING: 'cancelled',
   CREATED: 'pending',
   WAITING_FOR_RESOURCE: 'pending',
   PREPARING: 'pending',

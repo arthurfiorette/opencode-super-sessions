@@ -27,10 +27,11 @@ import { type PullCheck, type PullDetails, type Ref, refKey, refNumber } from '.
 import { trackedRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { tuiSettingsFor } from '../settings/store.js';
-import { workRow } from '../work-row.js';
-import { ICONS, refColor, STATE_WORDS } from './icons.js';
+import { checksPage, workRow } from '../work-row.js';
+import { checkLook, listedChecks, tallyChecks, tallyOf, tallySegments } from './checks.js';
+import { refColor, STATE_WORDS } from './icons.js';
 import { createSyntax } from './preview.js';
-import { cells, checkCounts, fitText, formatAge, pullLead, type Segment } from './row.js';
+import { cells, fitText, formatAge, pullLead, type Segment } from './row.js';
 import type { PullRow } from './state.js';
 
 /** Inputs of {@link PullPreview}. */
@@ -58,23 +59,12 @@ export interface PullPreviewProps {
 const FOLLOW_DELAY = 150;
 // Cells taken by a check glyph and its trailing space.
 const ICON = 2;
-
-/** A check status's glyph and color, in GitHub's colors; cancelled and skipped read muted. */
-function checkLook(status: PullCheck['status'], theme: ResolvedTheme): [string, string | RGBA] {
-  const { feedback, muted } = theme.text;
-  if (status === 'success') return [ICONS.checksPassing, feedback.success.base];
-  if (status === 'failure' || status === 'action_required') {
-    return [ICONS.checksFailing, feedback.error.base];
-  }
-  if (status === 'cancelled') return [ICONS.checksFailing, muted];
-  if (status === 'pending') return [ICONS.checksPending, feedback.warning.base];
-  if (status === 'skipped') return [ICONS.issueNotPlanned, muted];
-  return [ICONS.checksPending, muted];
-}
+// Checks listed by name before the rest fold into `+N more`, which links to the checks page.
+const CHECKS_SHOWN = 10;
 
 /**
- * The preview of the Pull requests view: title and state, branches, author, review, every CI
- * check, the issues it closes and the ones its sessions track, the description as markdown, and
+ * The preview of the Pull requests view: title and state, branches, author, review, a summary of
+ * the CI checks with the ones that failed or wait for an action, the issues it closes and the ones its sessions track, the description as markdown, and
  * the sessions that worked on it. Details come from one `pull.details` call for the pull request
  * the selection rests on; everything else is snapshot data the list already has.
  */
@@ -301,13 +291,38 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
     ]
   });
 
+  // The snapshot's tally keeps this summary equal to the list's `passed/total`; GitLab gives none,
+  // so its details count by the same rules.
+  const tally = () => {
+    const found = tallyOf(review());
+    if (found !== undefined) return found;
+    return state.status === 'ready' && checks().length > 0 ? tallyChecks(checks()) : undefined;
+  };
+  const listed = () => listedChecks(checks());
+  /** A line that links to `url`, bold while hovered when it has one. */
+  const linkLine = (url: () => string | undefined, parts: (bold: boolean) => Segment[]) => {
+    const [hovered, setHovered] = createSignal(false);
+    return jsx('box', {
+      flexDirection: 'row',
+      height: 1,
+      flexShrink: 0,
+      onMouseOver: () => setHovered(url() !== undefined),
+      onMouseOut: () => setHovered(false),
+      onMouseUp: (event: MouseEvent) => {
+        clickLink(context, url(), event);
+      },
+      children: segments(() => parts(hovered()))
+    });
+  };
+
   const checksSection = section(
-    () => {
-      const counts = checkCounts(review());
-      return counts === undefined ? 'Checks' : `Checks ${counts}`;
-    },
-    () => state.status !== 'ready' || checks().length > 0,
+    () => 'Checks',
+    () => state.status !== 'ready' || tally() !== undefined || listed().length > 0,
     [
+      segments(() => {
+        const current = tally();
+        return current === undefined ? [] : tallySegments(current, theme());
+      }),
       line(
         () =>
           state.status === 'error'
@@ -319,33 +334,35 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
       ),
       createComponent(For, {
         get each() {
-          return checks();
+          return listed().slice(0, CHECKS_SHOWN);
         },
-        children: (check: PullCheck) => {
-          // A check with a page is a link: hover makes its name bold, like a Work row's number.
-          const [hovered, setHovered] = createSignal(false);
-          return jsx('box', {
-            flexDirection: 'row',
-            height: 1,
-            flexShrink: 0,
-            onMouseOver: () => setHovered(check.url !== undefined),
-            onMouseOut: () => setHovered(false),
-            onMouseUp: (event: MouseEvent) => {
-              clickLink(context, check.url, event);
-            },
-            children: segments(() => {
+        // A check with a page is a link: hover makes its name bold, like a Work row's number.
+        children: (check: PullCheck) =>
+          linkLine(
+            () => check.url,
+            (bold) => {
               const [glyph, fg] = checkLook(check.status, theme());
               return [
                 { text: `${glyph} `, fg },
-                {
-                  text: fitText(check.name, width() - ICON),
-                  fg: theme().text.base,
-                  bold: hovered()
-                }
+                { text: fitText(check.name, width() - ICON), fg: theme().text.base, bold }
               ];
-            })
-          });
-        }
+            }
+          )
+      }),
+      jsx('box', {
+        flexShrink: 0,
+        get visible() {
+          return listed().length > CHECKS_SHOWN;
+        },
+        children: linkLine(
+          () => {
+            const current = pull();
+            return current ? checksPage(current.ref, current.state) : undefined;
+          },
+          (bold) => [
+            { text: `+${listed().length - CHECKS_SHOWN} more`, fg: theme().text.muted, bold }
+          ]
+        )
       }),
       line(() =>
         details()?.checksTruncated === true ? 'More checks ran than the first 100 shown.' : ''
