@@ -94,6 +94,7 @@ export default function SessionBrowser(props: PageProps) {
   const [frame, setFrame] = createSignal(0);
   const [deleting, setDeleting] = createSignal<string>();
   const [projectLabel, setProjectLabel] = createSignal('');
+  const [projectID, setProjectID] = createSignal<string>();
   const settings = useCliSettings();
   const marquee = createMarquee({ animated: () => settings.animations });
   let input: InputRenderable | undefined;
@@ -199,6 +200,7 @@ export default function SessionBrowser(props: PageProps) {
     void model
       .resolveLocation()
       .then((info) => {
+        setProjectID(info.project.id);
         const project = context.data.project.get(info.project.id);
         const root = project?.canonical ?? info.project.directory;
         setProjectLabel(info.project.id === 'global' ? '' : project?.name || path.basename(root));
@@ -838,6 +840,7 @@ export default function SessionBrowser(props: PageProps) {
     },
     refs: (sessionID) => data.refs[sessionID],
     branch: branchOf,
+    project: () => (scope() === 'project' ? projectID() : undefined),
     running: model.running,
     // The session view's surface, not the dialog's, so the transcript looks as it does there.
     theme: () => context.theme

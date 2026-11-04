@@ -30,6 +30,11 @@ export interface PreviewProps {
   session(sessionID: string): SessionInfo | undefined;
   refs(sessionID: string): SessionRefView | undefined;
   branch(session: SessionInfo): string | undefined;
+  /**
+   * The project the browser lists, or undefined while it lists every project. The header names
+   * a session's project only when it differs from this one.
+   */
+  project?(): string | undefined;
   running(sessionID: string): boolean;
   /** Cells available for text inside the pane. */
   width(): number;
@@ -100,7 +105,9 @@ export function Preview(props: PreviewProps): JSX.Element {
       const id = shown();
       return id === undefined ? undefined : props.refs(id);
     },
+    messages: () => transcript.state.messages,
     branch: (value: SessionInfo) => props.branch(value),
+    project: () => props.project?.(),
     running,
     spinner,
     width: () => props.width(),

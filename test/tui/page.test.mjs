@@ -214,6 +214,7 @@ async function host(search) {
       session: {
         list: () => sessions,
         get: () => undefined,
+        cost: () => 0,
         status: (id) => (id === 'running' ? 'running' : 'idle'),
         family: (id) => [id],
         permission: { list: () => [], sync: async () => {} },
@@ -532,14 +533,14 @@ test('space peeks, the arrows walk the list from the session, and esc comes back
 
 test('the preview pane shows only on wide terminals', async () => {
   const narrow = await mount(100);
-  assert.ok(!narrow.rendered.captureCharFrame().includes('tokens'));
+  assert.ok(!narrow.rendered.captureCharFrame().includes('Context'));
   narrow.rendered.renderer.destroy();
   active = undefined;
 
   const wide = await mount(140, 40);
   await eventually(
     wide.rendered,
-    (frame) => frame.includes('tokens') && frame.includes('can we keep rollup as a fallback?')
+    (frame) => frame.includes('Context') && frame.includes('can we keep rollup as a fallback?')
   );
   const frame = wide.rendered.captureCharFrame();
   assert.match(frame, /\$ pnpm test --filter deployer/);
