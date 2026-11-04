@@ -1,11 +1,11 @@
 import { type Accessor, createSignal, onCleanup } from 'solid-js';
 import { cells } from './page/row.js';
 
-// Same rhythm as the host's session tabs (packages/tui/src/component/session-tabs.tsx), so a
-// scrolling title here moves like a scrolling tab title.
+// Slower than the host's tab titles (600 ms, then 80 ms per cell): a title in a list is read while
+// it moves, and the tab rhythm was too fast to follow.
 const GAP = ' · ';
-const DELAY = 600;
-const INTERVAL = 80;
+const DELAY = 1000;
+const INTERVAL = 200;
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 /**
@@ -40,8 +40,8 @@ export function marqueeText(text: string, width: number, offset: number): string
 }
 
 /**
- * Scrolls one key's text at a time, like the host's tab titles: after a short delay the text moves
- * one cell every 80 ms for one full cycle, then rests at the start. Only the active key ticks, so a
+ * Scrolls one key's text at a time, like the host's tab titles but slower: after 1 s the text
+ * moves one cell every 200 ms for one full cycle, then rests at the start. Only the active key ticks, so a
  * list of rows costs one timer, not one per row. While `animated()` is false (the host's
  * `animations` setting) nothing scrolls and long text stays cut at its head.
  */
