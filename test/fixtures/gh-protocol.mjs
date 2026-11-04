@@ -109,21 +109,26 @@ function pullDetails(details, variables) {
   });
 }
 
-/** Answers a branch lookup. */
+/** Answers a branch lookup. A pull request without `createdAt` in the data set gets null. */
 function branch(refs, branches, variables) {
   const key = `${variables.owner}/${variables.name}@${variables.branch}`.toLowerCase();
-  const nodes = (branches[key] ?? []).map((number) => ({
-    number,
-    state: refs[`${variables.owner}/${variables.name}#${number}`.toLowerCase()].state,
-    headRepository: { nameWithOwner: `${variables.owner}/${variables.name}` }
-  }));
+  const nodes = (branches[key] ?? []).map((number) => {
+    const node = refs[`${variables.owner}/${variables.name}#${number}`.toLowerCase()];
+    return {
+      number,
+      state: node.state,
+      createdAt: node.createdAt ?? null,
+      headRepository: { nameWithOwner: `${variables.owner}/${variables.name}` }
+    };
+  });
   reply({ data: { rateLimit, repository: { pullRequests: { nodes } } } });
 }
 
 /**
  * Answers the gh command in `process.argv` from a data set and exits; anything else fails with
  * exit code 2.
- * - `refs`: snapshot nodes keyed `owner/name#number`, lower case.
+ * - `refs`: snapshot nodes keyed `owner/name#number`, lower case. Branch lookups also read a
+ *   pull request's `createdAt` from here.
  * - `details`: pull request details keyed the same way, with their check runs in `checks`.
  * - `branches`: pull request numbers keyed `owner/name@branch`, for head branch lookups.
  * - `created`: the lines `gh pr create` prints, the new pull request's URL last.

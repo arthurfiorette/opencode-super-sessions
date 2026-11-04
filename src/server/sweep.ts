@@ -23,7 +23,7 @@ import type { LifecycleEvent } from './events.js';
 import { resolveRepo } from './links.js';
 import type { Runtime } from './runtime.js';
 import { warn } from './runtime.js';
-import { buildViews } from './views.js';
+import { collectViews } from './views.js';
 
 // Auto-archive and worktree cleanup sweeps: on daemon start, every 10 minutes, and soon after a
 // session finishes, is deleted, or a tracked pull request merges. One sweep runs at a time, and
@@ -316,8 +316,10 @@ function createSweeper(runtime: Runtime): Sweeper {
       for (const worktree of worktrees) {
         const ids = owners.get(worktree.directory) ?? [];
         const git = worktree.root ? {} : await readWorktreeGit(worktree.directory, worktree.base);
+        // The checkout's view: a pull request on this branch decides for the worktree whichever
+        // of its sessions opened it.
         const views = ids.flatMap((id) => {
-          const view = done.get(id)?.view;
+          const view = done.get(id)?.checkout;
           return view === undefined ? [] : [view];
         });
         const merged = mergedPull(views);
@@ -376,16 +378,22 @@ function createSweeper(runtime: Runtime): Sweeper {
   const doneFacts = async (context: Plugin.Context, ids: string[], running: Set<string>) => {
     const result = new Map<
       string,
-      { view: SessionRefView; done: boolean; doneAt?: number; pending: boolean }
+      {
+        view: SessionRefView;
+        checkout: SessionRefView;
+        done: boolean;
+        doneAt?: number;
+        pending: boolean;
+      }
     >();
     for (let start = 0; start < ids.length; start += VIEW_BATCH) {
       const batch = ids.slice(start, start + VIEW_BATCH);
-      const views = await buildViews(runtime, context.session, batch, { wait: true });
-      for (const [id, view] of Object.entries(views)) {
+      const views = await collectViews(runtime, context.session, batch, { wait: true });
+      for (const [id, { view, checkout }] of Object.entries(views)) {
         const base = { running: running.has(id), archived: false, view };
         // Cheap check first; only possible Done sessions pay for the pending and message reads.
         if (!isDone({ ...base, pending: false })) {
-          result.set(id, { view, done: false, pending: false });
+          result.set(id, { view, checkout, done: false, pending: false });
           continue;
         }
         const pending = await hasPending(runtime, context, id);
@@ -393,7 +401,13 @@ function createSweeper(runtime: Runtime): Sweeper {
         const last = view.done === undefined ? await lastMessage(context, id) : undefined;
         const done = isDone({ ...base, pending, lastUserMessageAt: last });
         const at = doneAt(view);
-        result.set(id, { view, done, pending, ...(at === undefined ? {} : { doneAt: at }) });
+        result.set(id, {
+          view,
+          checkout,
+          done,
+          pending,
+          ...(at === undefined ? {} : { doneAt: at })
+        });
       }
     }
     return result;

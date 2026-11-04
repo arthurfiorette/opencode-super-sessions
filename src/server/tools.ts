@@ -72,16 +72,17 @@ type Item = z.output<typeof linkInput>['refs'][number];
 // What detection already links, so the agent calls link_work only for what it cannot see. Without
 // it the agent re-links refs from the prompt and believes it forgot them.
 const INSTRUCTION =
-  'Issue and pull request links in user messages, branch pull requests, and pull requests or ' +
-  'issues you create with gh or glab are tracked automatically. You MUST call link_work when ' +
-  'you start working on an issue or pull request that the user did not link, for example one ' +
-  'you found by searching, and when you open a pull request by any other means. Do not call it ' +
-  'for refs the user already linked.';
+  'Issue and pull request links in user messages, the pull request of a branch you push with ' +
+  'git push, and pull requests or issues you create with gh or glab are tracked automatically. ' +
+  'You MUST call link_work when you start working on an issue or pull request that the user ' +
+  'did not link, for example one you found by searching, and when you open a pull request by ' +
+  'any other means. Do not call it for refs the user already linked.';
 // The same rule while "Record refs from prompts" is off, when user messages link nothing.
 const INSTRUCTION_WITHOUT_PROMPTS =
-  'Branch pull requests and pull requests or issues you create with gh or glab are tracked ' +
-  'automatically. You MUST call link_work when you start working on an issue or pull request, ' +
-  'including one the user named, and when you open a pull request by any other means.';
+  'The pull request of a branch you push with git push, and pull requests or issues you create ' +
+  'with gh or glab are tracked automatically. You MUST call link_work when you start working ' +
+  'on an issue or pull request, including one the user named, and when you open a pull request ' +
+  'by any other means.';
 
 /**
  * Tells the agent what the plugin tracks on its own, through the `context` hook the host itself

@@ -87,6 +87,14 @@ function shellSegments(script: string): string[] {
   return segments;
 }
 
+/**
+ * The simple commands of a shell input, unwrapped from `sh -c`, without heredoc bodies and split
+ * at separators outside quotes. Quotes stay in place for the caller to read words from.
+ */
+export function shellCommands(input: string): string[] {
+  return shellSegments(shellScript(input).replace(HEREDOC_BODY, '<<'));
+}
+
 /** The commands a script runs, without heredoc bodies, quoted strings or comments. */
 function shellCode(script: string): string {
   return script.replace(HEREDOC_BODY, '<<').replace(QUOTED_OR_COMMENT, "''");

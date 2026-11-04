@@ -1,13 +1,15 @@
 import type { RefCandidate, RepoRef } from '../providers/provider.js';
 import { detectCreated, detectInPrompt, detectInText } from '../refs/detect.js';
+import { pushedBranches, runsPush } from '../refs/push.js';
 import {
+  historyScanned,
   type RefLink,
   type RefSource,
   readSessionRefs,
   refKey,
   type SessionRefs
 } from '../refs/ref.js';
-import { markScanned, mergeLinks } from '../refs/store.js';
+import { addPushed, markScanned, mergeLinks } from '../refs/store.js';
 import type { HistoryItem } from '../rpc.js';
 import { resolveCandidates, resolveRepo } from './links.js';
 import type { SessionAccess } from './queue.js';
@@ -34,9 +36,12 @@ interface Found {
 
 /**
  * Runs live detection and indexing over one chunk of a session's stored messages, for sessions
- * older than the plugin or written while it was not running. A session with a scan marker is
- * skipped whole, so the TUI stops paging it. All links of a chunk, and the marker on the last
- * one, go through the write queue in one update that writes only when something changed.
+ * older than the plugin or written while it was not running. A session the scan is done with
+ * (see {@link historyScanned}) is skipped whole, so the TUI stops paging it. A session scanned
+ * before push detection existed gets one more pass that only records pushes: its links and
+ * index entries are in place, and redoing them would cost forge lookups for nothing. All links
+ * and pushes of a chunk, and the marker on the last one, go through the write queue in one
+ * update that writes only when something changed.
  */
 export async function scanHistory(
   runtime: Runtime,
@@ -45,17 +50,43 @@ export async function scanHistory(
 ): Promise<{ skipped: boolean }> {
   const { sessionID, items, done, lastMessageID } = chunk;
   const info = await session.get({ sessionID });
-  if (readSessionRefs(info.metadata).scanned !== undefined) return { skipped: true };
-  await indexItems(runtime, sessionID, items);
-  const links = await detectItems(runtime, info.location.directory, items);
-  if (links.length === 0 && !done) return { skipped: false };
+  const stored = readSessionRefs(info.metadata);
+  if (historyScanned(stored)) return { skipped: true };
+  const pushesOnly = stored.scanned !== undefined;
+  if (!pushesOnly) await indexItems(runtime, sessionID, items);
+  const links = pushesOnly ? [] : await detectItems(runtime, info.location.directory, items);
+  const pushed = await detectPushes(runtime, info.location.directory, items);
+  if (links.length === 0 && pushed.length === 0 && !done) return { skipped: false };
   await runtime.writes.update(session, sessionID, (refs) => {
     const merged = mergeLinks(refs, keepLinkedAt(refs, links));
-    if (!done) return merged;
-    const marked = markScanned(merged.next, Date.now(), lastMessageID);
-    return { next: marked.next, changed: merged.changed || marked.changed };
+    const recorded = addPushed(merged.next, pushed);
+    const changed = merged.changed || recorded.changed;
+    if (!done) return { next: recorded.next, changed };
+    const marked = markScanned(recorded.next, Date.now(), lastMessageID);
+    return { next: marked.next, changed: changed || marked.changed };
   });
   return { skipped: false };
+}
+
+/**
+ * Branches the chunk's `git push` commands wrote, as live detection records them. The branch
+ * checked out now stands in for a push whose output names none, which is right unless the
+ * checkout moved since; git's report, which the TUI keeps for push commands, usually names it.
+ */
+async function detectPushes(
+  runtime: Runtime,
+  directory: string,
+  items: HistoryItem[]
+): Promise<string[]> {
+  let current: Promise<string | undefined> | undefined;
+  const branches: string[] = [];
+  for (const item of items) {
+    if (item.type !== 'shell' || !runsPush(item.command)) continue;
+    // Read once per chunk, and only for a chunk with pushes.
+    current ??= resolveRepo(runtime, directory).then((info) => info.branch);
+    branches.push(...pushedBranches(item.command, item.output, await current));
+  }
+  return branches;
 }
 
 /**

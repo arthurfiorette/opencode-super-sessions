@@ -57,13 +57,18 @@ export const sessionRefsSchema = z.strictObject({
   doneAt: z.number().int().nonnegative().optional(),
   // Set when the history scan finished reading the session's stored messages (`history.scan`),
   // so it runs once per session. `lastMessageID` is the newest message it read; live detection
-  // covers the ones after it.
+  // covers the ones after it. `pushes` says the scan also looked for `git push`; a marker
+  // without it is from a version that did not, and earns one more pass for pushes only.
   scanned: z
     .strictObject({
       scannedAt: z.number().int().nonnegative(),
-      lastMessageID: z.string().optional()
+      lastMessageID: z.string().optional(),
+      pushes: z.literal(true).optional()
     })
-    .optional()
+    .optional(),
+  // Branches the session pushed with `git push`, oldest first. A branch pull request opened
+  // before the session counts for it only when its head is one of these.
+  pushed: z.array(z.string().min(1)).optional()
 });
 
 /**
@@ -198,6 +203,14 @@ export function refKey(ref: Ref): string {
  */
 export function refNumber(ref: Pick<Ref, 'provider' | 'number'> & { kind?: RefKind }): string {
   return `${ref.provider === 'gitlab' && ref.kind === 'pr' ? '!' : '#'}${ref.number}`;
+}
+
+/**
+ * Whether the history scan is done with a session: it read every stored message, pushes
+ * included. The TUI skips such sessions without a request, and the server answers `skipped`.
+ */
+export function historyScanned(refs: SessionRefs): boolean {
+  return refs.scanned?.pushes === true;
 }
 
 /** Empty metadata value for sessions that have no links yet. */

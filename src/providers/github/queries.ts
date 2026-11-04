@@ -1,6 +1,6 @@
 import type { Ref, RefReview, RefState, RefStatus } from '../../refs/ref.js';
 import { commitSha } from '../include.js';
-import type { ForgeError, RefCandidate, RepoRef } from '../provider.js';
+import type { BranchPull, ForgeError, RefCandidate, RepoRef } from '../provider.js';
 import type { GraphQLError, GraphQLResponse } from './output.js';
 
 /** Most candidates one document may carry. Keeps each request well under GitHub's node limits. */
@@ -364,7 +364,7 @@ export function buildBranchQuery(
   rateLimit { remaining resetAt }
   repository(owner: $owner, name: $name) {
     pullRequests(headRefName: $branch, states: [OPEN, MERGED, CLOSED], first: 20, orderBy: { field: CREATED_AT, direction: DESC }) {
-      nodes { number state headRepository { nameWithOwner } }
+      nodes { number state createdAt headRepository { nameWithOwner } }
     }
   }
 }`;
@@ -376,13 +376,13 @@ export function buildBranchQuery(
  * newest of any state. Only PRs whose head lives in `headRepo` count (the user's fork when the
  * branch was pushed there, else `repo` itself); GitHub also returns PRs from other forks that
  * happen to use the same branch name, and a deleted fork reports no head repository. Returns at
- * most one ref, always numbered in `repo`, where the pull request lives.
+ * most one pull request, always numbered in `repo`, where it lives, with when it was opened.
  */
 export function parseBranchResponse(
   repo: RepoRef,
   response: GraphQLResponse,
   headRepo: RepoRef = repo
-): Ref[] | ForgeError {
+): BranchPull[] | ForgeError {
   const repository = response.data.repository;
   if (!isRecord(repository)) return reasonOf(response.errors[0]);
   // A fork on another host can never be the head of a PR here.
@@ -395,12 +395,17 @@ export function parseBranchResponse(
     }
     const head = node.headRepository.nameWithOwner;
     if (typeof head !== 'string' || head.toLowerCase() !== headRepo.repo.toLowerCase()) return [];
-    return [{ number: node.number, open: node.state === 'OPEN' }];
+    return [{ number: node.number, open: node.state === 'OPEN', createdAt: epoch(node.createdAt) }];
   });
   // Nodes arrive newest first, so the first match in each pass is the newest.
   const chosen = own.find((node) => node.open) ?? own[0];
   if (!chosen) return [];
-  return [
-    { provider: 'github', host: repo.host, repo: repo.repo, kind: 'pr', number: chosen.number }
-  ];
+  const ref: Ref = {
+    provider: 'github',
+    host: repo.host,
+    repo: repo.repo,
+    kind: 'pr',
+    number: chosen.number
+  };
+  return [chosen.createdAt === undefined ? { ref } : { ref, createdAt: chosen.createdAt }];
 }
