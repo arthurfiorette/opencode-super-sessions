@@ -6,6 +6,7 @@ import type { ForgeDefinition, ForgeProvider } from '../providers/provider.js';
 import { definitions } from '../providers/registry.js';
 import { type ProviderId, refKey } from '../refs/ref.js';
 import { createRepoResolver, type RepoResolver } from '../repo.js';
+import { type BodyIndex, bodyIndexPath, openBodyIndex } from './body-index.js';
 import { type BranchCache, createBranchCache } from './branches.js';
 import { createEventHub, type EventContext, type EventHub, type HandledEvent } from './events.js';
 import { createWriteQueue, type WriteQueue } from './queue.js';
@@ -24,6 +25,8 @@ export interface Runtime {
   readonly events: EventHub;
   /** Sessions with a background refresh running, so repeated `refs` calls do not stack them. */
   readonly refreshing: Set<string>;
+  /** The message search index, opened on first use. */
+  readonly bodyIndex: () => Promise<BodyIndex>;
 }
 
 /** Handles one subscribed event. Set by the server entry, which owns the detection logic. */
@@ -91,6 +94,7 @@ function createRuntime(options: Options, handle: EventHandler): Runtime {
   }
   const enabled = [...providers.values()].map((provider) => provider.definition);
   const cache = createSnapshotCache();
+  let bodyIndex: Promise<BodyIndex> | undefined;
 
   const runtime: Runtime = {
     options,
@@ -111,7 +115,11 @@ function createRuntime(options: Options, handle: EventHandler): Runtime {
       handle: (event, context) => handle(runtime, event, context),
       onError: (error) => warn('Handling a session event failed', error)
     }),
-    refreshing: new Set()
+    refreshing: new Set(),
+    bodyIndex: () => {
+      bodyIndex ??= openBodyIndex(bodyIndexPath(), warn);
+      return bodyIndex;
+    }
   };
   return runtime;
 }
