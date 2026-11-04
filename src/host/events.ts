@@ -87,6 +87,24 @@ export function storedTexts(sessionID: string, messages: readonly SessionMessage
   return texts;
 }
 
+/**
+ * Time of the user's last message in `session.context`, the only message read a server plugin
+ * has. The context starts at the latest compaction (packages/core/src/session/history.ts:184), so
+ * a compaction with no user message after it says nothing about when the user last wrote: null
+ * then, which is unknown. Undefined when the user never wrote.
+ */
+export function lastUserMessageAt(
+  messages: readonly SessionMessageInfo[]
+): number | null | undefined {
+  let last: number | undefined;
+  for (const message of messages) {
+    if (message.type !== 'user') continue;
+    if (last === undefined || message.time.created > last) last = message.time.created;
+  }
+  if (last === undefined && messages.some((message) => message.type === 'compaction')) return null;
+  return last;
+}
+
 /** Index key of the `ordinal`-th text part of an assistant message. */
 function textKey(messageID: string, ordinal: number): string {
   return `${messageID}:${ordinal}`;

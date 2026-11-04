@@ -1,6 +1,7 @@
 import type { SessionInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin';
 import type { RpcHandlers, RpcRegistration } from '@opencode/plugin/promise/rpc';
+import { lastUserMessageAt } from '../host/events.js';
 import { isBusy } from '../host/session-api.js';
 import { projectWorktrees, removeWorktree } from '../host/worktree.js';
 import { doneAt, isDone } from '../refs/summary.js';
@@ -383,10 +384,9 @@ function createSweeper(runtime: Runtime): Sweeper {
           continue;
         }
         const pending = await hasPending(runtime, context, id);
-        const last = await lastUserMessageAt(context, id);
-        const done =
-          last !== null &&
-          isDone({ ...base, pending, ...(last === undefined ? {} : { lastUserMessageAt: last }) });
+        // The user's mark decides on its own, so it needs no message read.
+        const last = view.done === undefined ? await lastMessage(context, id) : undefined;
+        const done = isDone({ ...base, pending, lastUserMessageAt: last });
         const at = doneAt(view);
         result.set(id, { view, done, pending, ...(at === undefined ? {} : { doneAt: at }) });
       }
@@ -714,26 +714,15 @@ async function hasPending(
 }
 
 /**
- * Time of the user's last message, from `session.context`, the only message read a server plugin
- * has. It starts at the latest compaction, so a context with a compaction and no user message
- * after it says nothing about when the user last wrote. Null when unknown, which keeps the
- * session from counting as Done.
+ * Time of the user's last message; see {@link lastUserMessageAt}. Null when unknown, including
+ * a failed read, which keeps the session from counting as Done.
  */
-async function lastUserMessageAt(
+async function lastMessage(
   context: Plugin.Context,
   sessionID: string
 ): Promise<number | undefined | null> {
   try {
-    const messages = await context.session.context({ sessionID });
-    let last: number | undefined;
-    for (const message of messages) {
-      if (message.type !== 'user') continue;
-      if (last === undefined || message.time.created > last) last = message.time.created;
-    }
-    if (last === undefined && messages.some((message) => message.type === 'compaction')) {
-      return null;
-    }
-    return last;
+    return lastUserMessageAt(await context.session.context({ sessionID }));
   } catch {
     return null;
   }
