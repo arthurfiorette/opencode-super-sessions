@@ -251,6 +251,7 @@ async function host() {
       }
     },
     ui: {
+      slot: () => () => {},
       router: {
         register(page) {
           pages.push(page);

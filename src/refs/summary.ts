@@ -90,6 +90,36 @@ export function rowRefs(view: SessionRefView): RowRefs {
   };
 }
 
+/** Refs listed in the session sidebar, in display order, and how many mentions were left out. */
+export interface SidebarRefs {
+  refs: Ref[];
+  mentioned: number;
+}
+
+/**
+ * Orders a session's tracked refs for the sidebar: branch pull requests, then pull requests the
+ * agent or user linked, then other pull requests, then issues, newest link first within each
+ * group. Mentions are only counted.
+ */
+export function sidebarRefs(view: SessionRefView): SidebarRefs {
+  const rank = (link: RefLink) =>
+    link.ref.kind === 'issue' ? 2 : EXPLICIT_PR_SOURCES.has(link.source) ? 0 : 1;
+  const links = trackedLinks(view).sort((a, b) => rank(a) - rank(b) || b.linkedAt - a.linkedAt);
+  const refs = new Map<string, Ref>();
+  // A ref linked twice keeps its first, highest-ranked place.
+  for (const ref of [...view.branchRefs, ...links.map((link) => link.ref)]) {
+    const key = refKey(ref);
+    if (!refs.has(key)) refs.set(key, ref);
+  }
+  const mentioned = new Set(
+    view.links
+      .filter((link) => link.source === 'mention')
+      .map((link) => refKey(link.ref))
+      .filter((key) => !refs.has(key))
+  );
+  return { refs: [...refs.values()], mentioned: mentioned.size };
+}
+
 /**
  * Refs whose state decides Done: tracked PRs when the session has any, otherwise tracked issues
  * that are not `closes` links (those follow a PR and never decide on their own).

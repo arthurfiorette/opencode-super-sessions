@@ -6,6 +6,7 @@ import { type Options, parseOptions } from './config.js';
 import { copyRoute, PAGE, renderPage } from './page/page.js';
 import { createPins, type Pins } from './pins.js';
 import { type Availability, SuperSessions } from './rpc.js';
+import { installSidebar } from './sidebar.js';
 
 const TITLE = 'Super Sessions';
 
@@ -17,7 +18,7 @@ const availability: Record<Availability, string> = {
 
 /**
  * TUI plugin loaded by each OpenCode terminal client. It takes over the session list command,
- * registers the session page and adds the archive commands.
+ * registers the session page and the sidebar section, and adds the archive commands.
  */
 export default Plugin.define({
   id: 'opencode-super-sessions.tui',
@@ -41,6 +42,7 @@ export default Plugin.define({
       name: PAGE,
       render: ({ data }) => renderPage({ context, options, pins, data })
     });
+    const uninstallSidebar = installSidebar(context, options);
 
     // Must stay synchronous: the keymap only falls through to the built-in dialog when `run`
     // returns a literal `false`, and a Promise counts as handled.
@@ -122,6 +124,7 @@ export default Plugin.define({
       offRenamed?.();
       pins.dispose();
       unregister();
+      uninstallSidebar();
     };
   }
 });
