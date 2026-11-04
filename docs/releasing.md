@@ -24,7 +24,7 @@ git tag v0.1.0 && git push origin v0.1.0
 
 Then add the trusted publisher (step 2 above), and from then on publish only through GitHub releases. A manual publish carries no provenance; releases from `publish.yml` do.
 
-The same setup from the command line. `npm trust` needs npm 11.10 or newer, two-factor authentication on the account and an interactive login (not a token), and the package must already exist on the registry:
+The same setup from the command line. `npm trust` needs npm 11.15 or newer, two-factor authentication on the account and an interactive login (not a token), and the package must already exist on the registry:
 
 ```sh
 gh api -X PUT 'repos/arthurfiorette/opencode-super-sessions/environments/NPM%20Registry'
