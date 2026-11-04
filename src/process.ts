@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { type ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import { childDirectory, childEnvironment } from './environment.js';
 
 export interface RunOptions {
@@ -48,13 +48,20 @@ export const run: Runner = (command, args, options) =>
     let settled = false;
     let killTimer: NodeJS.Timeout | undefined;
 
-    const child = spawn(command, args, {
-      cwd: options.cwd ?? childDirectory(),
-      env: { ...childEnvironment(), ...options.env },
-      shell: false,
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      child = spawn(command, args, {
+        cwd: options.cwd ?? childDirectory(),
+        env: { ...childEnvironment(), ...options.env },
+        shell: false,
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+    } catch {
+      // Some invalid commands throw synchronously (on Windows, `.cmd` files without a shell).
+      resolve({ code: null, stdout: '', stderr: '', failure: 'error' });
+      return;
+    }
     const timer = setTimeout(() => stop('timeout'), options.timeoutMs);
 
     /** Records why the child is being stopped and kills it, escalating if it ignores SIGTERM. */
