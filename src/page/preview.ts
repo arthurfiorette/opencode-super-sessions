@@ -18,6 +18,7 @@ import type { Options } from '../config.js';
 import type { HistoryPage } from '../history-scan.js';
 import { markdownStyles } from '../host/theme.js';
 import { createMarquee } from '../marquee.js';
+import type { PullDetails, Ref } from '../refs/ref.js';
 import type { SessionRefView } from '../rpc.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import { PreviewHeader, SPINNER } from './preview-header.js';
@@ -53,6 +54,8 @@ export interface PreviewProps {
    * scan starts from it instead of fetching it again.
    */
   onLoaded?(sessionID: string, page: HistoryPage): void;
+  /** A pull request's details, for the failed checks in the Work section. */
+  pullDetails?(ref: Ref): Promise<PullDetails>;
 }
 
 const FOLLOW_DELAY = 150;
@@ -125,7 +128,9 @@ export function Preview(props: PreviewProps): JSX.Element {
     spinner,
     selectedRef: () => props.selectedRef?.(),
     width: () => props.width(),
-    marquee
+    marquee,
+    pullDetails: (ref: Ref) =>
+      props.pullDetails?.(ref) ?? Promise.reject(new Error('No details for this preview.'))
   });
 
   let scroll: ScrollBoxRenderable | undefined;

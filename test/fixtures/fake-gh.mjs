@@ -66,7 +66,10 @@ const refs = {
           commit: {
             statusCheckRollup: {
               state: 'FAILURE',
-              contexts: counts({ SUCCESS: 88, SKIPPED: 3, FAILURE: 2 }, { SUCCESS: 1 })
+              contexts: counts(
+                { SUCCESS: 84, SKIPPED: 3, FAILURE: 5, TIMED_OUT: 1 },
+                { SUCCESS: 1 }
+              )
             }
           }
         }
@@ -159,7 +162,8 @@ function run(workflow, name, conclusion) {
     name,
     status: conclusion ? 'COMPLETED' : 'IN_PROGRESS',
     conclusion,
-    detailsUrl: `https://github.com/acme/widgets/actions/runs/1/job/${name.length}`,
+    detailsUrl: `https://github.com/acme/widgets/actions/runs/1/job/${encodeURIComponent(name)}`,
+    url: `https://github.com/acme/widgets/runs/${encodeURIComponent(name)}`,
     startedAt: '2026-11-03T16:00:00Z',
     completedAt: conclusion ? '2026-11-03T16:10:00Z' : null,
     checkSuite: { workflowRun: { workflow: { name: workflow } } }
@@ -180,6 +184,11 @@ const details = {
       // A re-run of the same check: the preview keeps the newest.
       { ...run('CI', 'E2E', 'FAILURE'), completedAt: '2026-11-03T16:05:00Z' },
       run('CI', 'E2E', 'FAILURE'),
+      run('CI', 'Typecheck', 'FAILURE'),
+      run('Integration', 'Integration (linux)', 'FAILURE'),
+      run('Integration', 'Integration (macos)', 'TIMED_OUT'),
+      // An app without a details page: the link falls back to the run on github.com.
+      { ...run('Integration', 'Integration (windows)', 'FAILURE'), detailsUrl: null },
       run('Docs', 'Build docs', 'SKIPPED'),
       {
         __typename: 'StatusContext',

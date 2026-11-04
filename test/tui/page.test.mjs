@@ -331,6 +331,33 @@ test('the selected session is scanned from the preview page, and nothing is scan
   assert.deepEqual(terminal.pages, [scan.sessionID]);
 });
 
+// Crossing the list toward the preview used to select every row under the pointer, so the preview
+// jumped to sessions the user never chose.
+test('hovering another row leaves the preview on the selected session', async () => {
+  const terminal = await host();
+  const rendered = await testRender(() => terminal.overlay.render({}), {
+    width: 140,
+    height: 30
+  });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  await eventually(rendered, () => terminal.pages.length > 0);
+  const [shown] = terminal.pages;
+  const lines = rendered.captureCharFrame().split('\n');
+  const y = lines.findIndex((line) => line.includes('can you find all merged worktrees'));
+  assert.ok(y > 0 && shown !== 'unread', 'Another session is selected first.');
+  const x = (lines[y] ?? '').indexOf('can you find');
+  await rendered.mockMouse.moveTo(x, y);
+  // Longer than the preview's 150 ms follow delay.
+  for (let i = 0; i < 10; i++) {
+    await rendered.renderOnce();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  assert.deepEqual(terminal.pages, [shown]);
+});
+
 // On a release CI never ran, the host's own list must answer its keys, and the user must learn
 // why the browser is gone and how to reach it.
 test('an untested OpenCode keeps its session list and quick switch, and says how to open the browser', async () => {

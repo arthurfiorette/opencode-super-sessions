@@ -1,14 +1,33 @@
 import type { Plugin } from '@opencode/plugin/tui';
 import type { ResolvedTheme } from '@opencode/theme/tui';
-import { MouseButton, type MouseEvent, TextAttributes } from '@opentui/core';
+import { type MouseEvent, type RGBA, TextAttributes } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
-import { createSignal, type JSX } from 'solid-js';
-import { openUrl, refUrl } from './browser.js';
+import {
+  createComponent,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  on,
+  untrack
+} from 'solid-js';
+import { createStore, reconcile } from 'solid-js/store';
+import { refUrl } from './browser.js';
 import type { Options } from './config.js';
+import { clickLink } from './link.js';
 import { type createMarquee, marqueeText } from './marquee.js';
-import { refColor, refIcon } from './page/icons.js';
+import { ICONS, refColor, refIcon } from './page/icons.js';
 import { cells, fitText, stateBadges } from './page/row.js';
-import { type Ref, type RefState, refKey, refNumber } from './refs/ref.js';
+import {
+  type PullCheck,
+  type PullDetails,
+  type Ref,
+  type RefReview,
+  type RefState,
+  refKey,
+  refNumber
+} from './refs/ref.js';
 
 // Cells taken by a ref glyph and its trailing space (see `ICONS`).
 const ICON = 2;
@@ -33,61 +52,216 @@ export interface WorkRowInput {
   id?: string;
 }
 
-/**
- * The full review and CI status of an open pull request, as one muted line such as
- * `approved · 2/3 threads resolved · checks passing`. Undefined when there is nothing to say.
- */
-export function reviewSummary(state: RefState | undefined): string | undefined {
-  const review = state?.status === 'open' || state?.status === 'draft' ? state.review : undefined;
-  if (review === undefined) return undefined;
-  const parts: string[] = [];
-  if (review.decision !== undefined) parts.push(review.decision.replace('_', ' '));
-  if (review.threads !== undefined && review.threads > 0) {
-    parts.push(`${review.threads - (review.unresolved ?? 0)}/${review.threads} threads resolved`);
-  }
-  if (review.checks !== undefined) {
-    const counts =
-      review.checksTotal === undefined ? '' : `${review.checksPassed ?? 0}/${review.checksTotal} `;
-    parts.push(`${counts}checks ${review.checks}`);
-  }
-  return parts.length > 0 ? parts.join(' · ') : undefined;
+// Failed checks listed under a pull request before the rest fold into `+N more`.
+const FAILED_SHOWN = 5;
+
+/** The review of an open or draft pull request, or undefined for any other ref. */
+function openReview(state: RefState | undefined): RefReview | undefined {
+  return state?.status === 'open' || state?.status === 'draft' ? state.review : undefined;
 }
 
 /**
- * The muted status line under a preview Work row's pull request, indented by one icon slot.
- * Hidden while {@link reviewSummary} has nothing to say.
+ * Whether the lines under an open pull request (see {@link workStatus}) may have something to
+ * show: a review verdict, unresolved threads, or failing checks to list.
  */
-export function workStatusLine(input: {
+export function hasWorkStatus(state: RefState | undefined): boolean {
+  const review = openReview(state);
+  if (review === undefined) return false;
+  return (
+    review.decision !== undefined || (review.unresolved ?? 0) > 0 || review.checks === 'failing'
+  );
+}
+
+/** Whether a pull request's checks are failing, so its details hold failed checks to list. */
+export function failingChecks(state: RefState | undefined): boolean {
+  return openReview(state)?.checks === 'failing';
+}
+
+/** The checks listed as failed: failures and checks that wait for an action, both drawn red. */
+function failedChecks(details: PullDetails | undefined): PullCheck[] {
+  return (details?.checks ?? []).filter(
+    (check) => check.status === 'failure' || check.status === 'action_required'
+  );
+}
+
+/** The page of a pull request that lists all its checks: `/checks` on GitHub, pipelines on GitLab. */
+function checksPage(ref: Ref, state: RefState | undefined): string {
+  return `${refUrl(ref, state)}/${ref.provider === 'gitlab' ? 'pipelines' : 'checks'}`;
+}
+
+/**
+ * Details of the failing open pull requests among `refs()`, loaded through `load` (the server's
+ * details cache) whenever that set or their check counts change, so a new CI result lists its
+ * failed checks. Only failing pull requests are asked about, since only they have checks to list.
+ * A key stays undefined while loading or after a failed load.
+ */
+export function createFailedChecks(input: {
+  refs(): Array<{ ref: Ref; state: RefState | undefined }>;
+  load(ref: Ref): Promise<PullDetails>;
+}): (key: string) => PullDetails | undefined {
+  const [details, setDetails] = createStore<Record<string, PullDetails>>({});
+  const wanted = createMemo(() =>
+    input
+      .refs()
+      .filter((item) => item.ref.kind === 'pr' && failingChecks(item.state))
+      .map((item) => {
+        const review = item.state?.review;
+        return {
+          ref: item.ref,
+          stamp: `${refKey(item.ref)}@${review?.checksPassed}/${review?.checksTotal}`
+        };
+      })
+  );
+  createEffect(
+    on(
+      () =>
+        wanted()
+          .map((item) => item.stamp)
+          .join(' '),
+      () => {
+        for (const { ref } of untrack(wanted)) {
+          const key = refKey(ref);
+          Promise.resolve()
+            .then(() => input.load(ref))
+            .then(
+              (found) => setDetails(key, reconcile(found)),
+              () => {}
+            );
+        }
+      }
+    )
+  );
+  return (key) => details[key];
+}
+
+/**
+ * The lines under an open pull request in a Work section, indented by one icon slot: the review
+ * verdict (changes requested in red, approved in green, review required muted), unresolved
+ * threads in yellow, then each failed check with a red x, at most five and then `+N more`. A
+ * failed check links to its page and `+N more` to the pull request's checks page; a click opens
+ * them and a ctrl+click copies them, and hover makes them bold. Empty for any other ref.
+ */
+export function workStatus(input: {
+  context: Plugin.Context;
   theme(): ResolvedTheme;
+  ref(): Ref;
   state(): RefState | undefined;
+  /** The pull request's details, which hold its checks; undefined while unknown. */
+  details(): PullDetails | undefined;
+  /** Cells of the whole row. */
   width(): number;
 }): JSX.Element {
+  const { context, theme } = input;
+  const review = () => openReview(input.state());
+  const room = () => Math.floor(input.width()) - ICON;
+  const verdict = (): { text: string; fg: string | RGBA } | undefined => {
+    const { feedback, muted } = theme().text;
+    const decision = review()?.decision;
+    if (decision === 'changes_requested')
+      return { text: 'changes requested', fg: feedback.error.base };
+    if (decision === 'approved') return { text: 'approved', fg: feedback.success.base };
+    if (decision === 'review_required') return { text: 'review required', fg: muted };
+    return undefined;
+  };
+  const unresolved = () => review()?.unresolved ?? 0;
+  const failed = () => (review()?.checks === 'failing' ? failedChecks(input.details()) : []);
+
+  /** One plain line, hidden while `text()` is empty. */
+  const plain = (text: () => string, fg: () => string | RGBA) =>
+    jsx('text', {
+      flexShrink: 0,
+      wrapMode: 'none',
+      get visible() {
+        return text() !== '';
+      },
+      get fg() {
+        return fg();
+      },
+      get children() {
+        return fitText(text(), room());
+      }
+    });
+  /** A line that links to `url()`, bold while hovered. */
+  const link = (
+    url: () => string | undefined,
+    segments: () => Array<{ text: string; fg: string | RGBA }>
+  ) => {
+    const [hovered, setHovered] = createSignal(false);
+    return jsx('text', {
+      flexShrink: 0,
+      wrapMode: 'none',
+      onMouseOver: () => setHovered(true),
+      onMouseOut: () => setHovered(false),
+      onMouseUp: (event: MouseEvent) => {
+        clickLink(context, url(), event);
+      },
+      get children() {
+        let left = room();
+        return segments().map((segment) => {
+          const text = fitText(segment.text, left);
+          left -= cells(text);
+          return jsx('span', {
+            style: { fg: segment.fg, bold: hovered() },
+            children: text
+          });
+        });
+      }
+    });
+  };
+
   return jsx('box', {
-    flexDirection: 'row',
-    height: 1,
+    flexDirection: 'column',
     flexShrink: 0,
     paddingLeft: ICON,
     get visible() {
-      return reviewSummary(input.state()) !== undefined;
+      return verdict() !== undefined || unresolved() > 0 || failed().length > 0;
     },
-    children: jsx('text', {
-      wrapMode: 'none',
-      get fg() {
-        return input.theme().text.muted;
-      },
-      get children() {
-        return fitText(reviewSummary(input.state()) ?? '', Math.floor(input.width()) - ICON);
-      }
-    })
+    children: [
+      plain(
+        () => verdict()?.text ?? '',
+        () => verdict()?.fg ?? theme().text.muted
+      ),
+      plain(
+        () => {
+          const count = unresolved();
+          return count > 0 ? `${count} unresolved ${count === 1 ? 'thread' : 'threads'}` : '';
+        },
+        () => theme().text.feedback.warning.base
+      ),
+      createComponent(For, {
+        get each() {
+          return failed().slice(0, FAILED_SHOWN);
+        },
+        children: (check: PullCheck) =>
+          link(
+            () => check.url,
+            () => [
+              { text: `${ICONS.checksFailing} `, fg: theme().text.feedback.error.base },
+              { text: check.name, fg: theme().text.base }
+            ]
+          )
+      }),
+      jsx('box', {
+        flexShrink: 0,
+        get visible() {
+          return failed().length > FAILED_SHOWN;
+        },
+        children: link(
+          () => checksPage(input.ref(), input.state()),
+          () => [{ text: `+${failed().length - FAILED_SHOWN} more`, fg: theme().text.muted }]
+        )
+      })
+    ]
   });
 }
 
 /**
- * One line of a Work section, shared by the session sidebar and the browser's preview: an open
- * pull request's review and CI icons (see {@link stateBadges}), then the state icon, starting in
- * the column of the section's triangle like the host's MCP dots, then the number in `text.base`
- * and the muted title. Hover brightens both and scrolls a cut title; a click opens the ref's
- * page. Built once per position, so updates change properties, never the tree.
+ * One line of a Work section, shared by the session sidebar and the browser's preview: the state
+ * icon, starting in the column of the section's triangle like the host's MCP dots, the number in
+ * `text.base`, an open pull request's review and CI icons (see {@link stateBadges}), then the
+ * muted title. Hover brightens the number and the title and scrolls a cut title; a click opens
+ * the ref's page and a ctrl+click copies its URL. Built once per position, so updates change
+ * properties, never the tree.
  */
 export function workRow(input: WorkRowInput): JSX.Element {
   const context = input.context;
@@ -103,7 +277,7 @@ export function workRow(input: WorkRowInput): JSX.Element {
   const marker = () => input.marker?.();
   const badges = () => stateBadges(input.state(), theme());
   /**
-   * Cells left for the title after the badges, the icon, the number, the marker and the spaces
+   * Cells left for the title after the icon, the number, the badges, the marker and the spaces
    * between.
    */
   const room = () => {
@@ -135,30 +309,9 @@ export function workRow(input: WorkRowInput): JSX.Element {
       input.marquee.leave(key());
     },
     onMouseUp: (event: MouseEvent) => {
-      if (event.button !== MouseButton.LEFT) return;
-      event.stopPropagation();
-      if (!openUrl(refUrl(input.ref(), input.state())))
-        context.ui.toast.show({ message: 'Could not open the browser.', variant: 'error' });
+      clickLink(context, refUrl(input.ref(), input.state()), event);
     },
     children: [
-      jsx('text', {
-        ...id('badges'),
-        flexShrink: 0,
-        wrapMode: 'none',
-        get visible() {
-          return badges().length > 0;
-        },
-        get children() {
-          return badges().map((segment) =>
-            jsx('span', {
-              get style() {
-                return { fg: selectedFg() ?? segment.fg };
-              },
-              children: segment.text
-            })
-          );
-        }
-      }),
       jsx('text', {
         ...id('icon'),
         flexShrink: 0,
@@ -187,6 +340,24 @@ export function workRow(input: WorkRowInput): JSX.Element {
         },
         get children() {
           return number();
+        }
+      }),
+      jsx('text', {
+        ...id('badges'),
+        flexShrink: 0,
+        wrapMode: 'none',
+        get visible() {
+          return badges().length > 0;
+        },
+        get children() {
+          return badges().map((segment) =>
+            jsx('span', {
+              get style() {
+                return { fg: selectedFg() ?? segment.fg };
+              },
+              children: segment.text
+            })
+          );
         }
       }),
       jsx('text', {

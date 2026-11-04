@@ -9,11 +9,19 @@ import {
   TextAttributes
 } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
-import { createComponent, createEffect, For, type JSX, on, onCleanup } from 'solid-js';
+import {
+  createComponent,
+  createEffect,
+  createSignal,
+  For,
+  type JSX,
+  on,
+  onCleanup
+} from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { openUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
 import type { Options } from '../config.js';
+import { clickLink } from '../link.js';
 import { createMarquee } from '../marquee.js';
 import { type PullCheck, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
 import { trackedRefs } from '../refs/summary.js';
@@ -35,6 +43,8 @@ export interface PullPreviewProps {
   refs(sessionID: string): SessionRefView | undefined;
   /** Author, branches, description and checks, from the server. Rejects when it cannot answer. */
   details(ref: Ref): Promise<PullDetails>;
+  /** Details a reload fetched, drawn at once when they belong to the pull request on screen. */
+  reloaded?(): { key: string; details: PullDetails } | undefined;
   /** Index of the session row the keyboard selected, while the pane has the arrow keys. */
   selectedSession(): number | undefined;
   /** Opens a session, as a click on its row does. */
@@ -112,6 +122,18 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
     })
   );
   onCleanup(() => clearTimeout(follow));
+  createEffect(
+    on(
+      () => props.reloaded?.(),
+      (fresh) => {
+        if (fresh === undefined || fresh.key !== state.pull?.key) return;
+        // An answer still loading for the old details is dropped.
+        token++;
+        setState({ status: 'ready', details: fresh.details });
+      },
+      { defer: true }
+    )
+  );
 
   const cli = useCliSettings();
   const marquee = createMarquee({
@@ -125,8 +147,6 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
   const checks = () => details()?.checks ?? [];
   const review = () =>
     status() === 'open' || status() === 'draft' ? pull()?.state?.review : undefined;
-  const toast = () =>
-    context.ui.toast.show({ message: 'Could not open the browser.', variant: 'error' });
 
   /** A muted line, or one in `fg`, cut to the pane and hidden while empty. */
   const line = (text: () => string, fg: () => string | RGBA = muted) =>
@@ -299,24 +319,31 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
         get each() {
           return checks();
         },
-        children: (check: PullCheck) =>
-          jsx('box', {
+        children: (check: PullCheck) => {
+          // A check with a page is a link: hover makes its name bold, like a Work row's number.
+          const [hovered, setHovered] = createSignal(false);
+          return jsx('box', {
             flexDirection: 'row',
             height: 1,
             flexShrink: 0,
+            onMouseOver: () => setHovered(check.url !== undefined),
+            onMouseOut: () => setHovered(false),
             onMouseUp: (event: MouseEvent) => {
-              if (event.button !== MouseButton.LEFT || !check.url) return;
-              event.stopPropagation();
-              if (!openUrl(check.url)) toast();
+              clickLink(context, check.url, event);
             },
             children: segments(() => {
               const [glyph, fg] = checkLook(check.status, theme());
               return [
                 { text: `${glyph} `, fg },
-                { text: fitText(check.name, width() - ICON), fg: theme().text.base }
+                {
+                  text: fitText(check.name, width() - ICON),
+                  fg: theme().text.base,
+                  bold: hovered()
+                }
               ];
             })
-          })
+          });
+        }
       }),
       line(() =>
         details()?.checksTruncated === true ? 'More checks ran than the first 100 shown.' : ''

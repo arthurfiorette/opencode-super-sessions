@@ -1,0 +1,50 @@
+{
+  "source": "Live: anonymous POST to https://gitlab.com/api/graphql on 2026-11-04 with the document buildDetailsQuery builds for gitlab-org/cli!4291 (glab is not installed on the capturing machine; it sends the same request). Rate limit headers are verbatim and canonicalized the way glab prints them; the status line, exit code and stderr follow glab's api command source. The description is cut to 120 characters and the 16 jobs to a passing, the failed and the manual one.",
+  "code": 0,
+  "status": "HTTP/2.0 200 OK",
+  "headers": {
+    "Ratelimit-Limit": "500",
+    "Ratelimit-Name": "throttle_unauthenticated_api",
+    "Ratelimit-Observed": "2",
+    "Ratelimit-Remaining": "498",
+    "Ratelimit-Reset": "1793802360"
+  },
+  "stderr": "",
+  "body": {
+    "data": {
+      "project": {
+        "mergeRequest": {
+          "author": { "username": "hbakergitlab" },
+          "sourceBranch": "637331-maven-mirror-prefix-coordinates",
+          "targetBranch": "main",
+          "description": "## Description\n\nDependencies fetched through a mirror or proxy repository (Nexus, Artifactory, GitLab's own virtual regi",
+          "headPipeline": {
+            "jobs": {
+              "pageInfo": { "hasNextPage": false },
+              "nodes": [
+                {
+                  "name": "tests:unit",
+                  "status": "SUCCESS",
+                  "webPath": "/gitlab-org/cli/-/jobs/17737982349",
+                  "stage": { "name": "test" }
+                },
+                {
+                  "name": "lint_commit",
+                  "status": "FAILED",
+                  "webPath": "/gitlab-org/cli/-/jobs/17737982341",
+                  "stage": { "name": "checks" }
+                },
+                {
+                  "name": "govulncheck",
+                  "status": "MANUAL",
+                  "webPath": "/gitlab-org/cli/-/jobs/17737982338",
+                  "stage": { "name": "application-security-testing" }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

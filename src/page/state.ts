@@ -1,5 +1,5 @@
 import type { SessionInfo } from '@opencode/client';
-import { type Ref, type RefState, refKey } from '../refs/ref.js';
+import { type ProviderId, type Ref, type RefState, refKey } from '../refs/ref.js';
 import { rankSessions } from '../refs/search.js';
 import { doneAt, isDone, trackedRefs } from '../refs/summary.js';
 import type { SearchHit, SearchMatch, SessionRefView } from '../rpc.js';
@@ -394,7 +394,8 @@ export interface PageDeps {
   get(sessionID: string): Promise<SessionInfo>;
   search(input: { query: string; archived: boolean; scope: PageScope }): Promise<SearchHit[]>;
   refs(sessionIDs: string[]): Promise<Record<string, SessionRefView>>;
-  refresh(sessionIDs: string[]): Promise<Record<string, SessionRefView>>;
+  /** `force` refetches fresh entries too and reads the git checkouts again. */
+  refresh(sessionIDs: string[], force?: boolean): Promise<Record<string, SessionRefView>>;
   running(sessionID: string): boolean;
   pending(sessionID: string): Promise<boolean>;
   lastUserMessageAt(sessionID: string): Promise<number | undefined>;
@@ -669,6 +670,20 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
       } catch {
         // The server plugin is optional; rows keep their cached refs.
       }
+    },
+
+    /**
+     * Refetches one session's refs, branch pull requests and git checkout, ignoring the caches
+     * (a rate limit still holds). Resolves to the forges that failed; throws when the server
+     * plugin did not answer for the session.
+     */
+    async reload(sessionID: string): Promise<ProviderId[]> {
+      const { [sessionID]: found } = await deps.refresh([sessionID], true);
+      if (found === undefined) throw new Error(`No refs came back for ${sessionID}.`);
+      const { failed = [], ...view } = found;
+      publish({ refs: { ...data.refs, [sessionID]: view } });
+      await classify();
+      return failed;
     },
 
     /** Drops the Done lookups of a session after it ran again. */

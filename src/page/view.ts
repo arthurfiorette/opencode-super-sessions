@@ -29,7 +29,8 @@ import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
 import { rpcError } from '../host/rpc.js';
 import { isUnread, regenerateTitle, setArchived } from '../host/session-api.js';
 import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.js';
-import { type Ref, refKey, refNumber } from '../refs/ref.js';
+import { copyLink } from '../link.js';
+import { type ProviderId, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import { excludeFromAutoArchive } from '../settings/maintenance.js';
 import { tuiSettingsFor } from '../settings/store.js';
@@ -104,6 +105,14 @@ const HINT_GAP = 2;
 // Free in the host's default keymap and in the search input's own bindings: ctrl+e and ctrl+k
 // edit the line there, ctrl+n moves through host dialogs, ctrl+x is the host's leader.
 const DONE_KEY = 'ctrl+q';
+// ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e and ctrl+k edit the search, ctrl+h is backspace in
+// many terminals; the host binds nothing to f5.
+const RELOAD_KEY = 'f5';
+// A reload that answers sooner than this shows no "Reloading…" toast, which would only flash.
+const RELOAD_TOAST_DELAY = 300;
+// Two left clicks on one row within this many milliseconds open it.
+const DOUBLE_CLICK = 400;
+const FORGE_NAMES: Record<ProviderId, string> = { github: 'GitHub', gitlab: 'GitLab' };
 
 /** Which optional pieces the header row shows. */
 interface HeaderFit {
@@ -551,6 +560,71 @@ export default function SessionBrowser(props: PageProps) {
       toast('Could not open the browser.', 'error');
   };
 
+  /** The forge the selected row's refs live on, for the reload's title and messages. */
+  const selectedForge = (): ProviderId | undefined => {
+    if (pullView()) return selectedPull()?.ref.provider;
+    const session = selected();
+    const view = session ? data.refs[session.id] : undefined;
+    return view
+      ? [...view.branchRefs, ...view.links.map((link) => link.ref)][0]?.provider
+      : undefined;
+  };
+  /** The keys dialog's name for `f5`, with the selected row's forge when it has refs. */
+  const reloadTitle = () => {
+    const forge = selectedForge();
+    return `Reload from ${forge ? FORGE_NAMES[forge] : 'GitHub/GitLab'}`;
+  };
+  /** Fresh details of the Pull requests view's selection, handed to its preview after `f5`. */
+  const [reloadedDetails, setReloadedDetails] = createSignal<
+    { key: string; details: PullDetails } | undefined
+  >();
+  /** Waits for `task`, with a "Reloading…" toast when it takes longer than a moment. */
+  const withReloadToast = async <T>(task: Promise<T>): Promise<T> => {
+    const timer = setTimeout(() => toast('Reloading…'), RELOAD_TOAST_DELAY);
+    try {
+      return await task;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  /**
+   * `f5`: refetches the selected session's refs, branch pull requests and git checkout, or in
+   * the Pull requests view the selected pull request's snapshot and details. A rate limit still
+   * holds on the server.
+   */
+  const reload = async () => {
+    if (pullView()) {
+      const pull = selectedPull();
+      if (!pull) return;
+      const forge = FORGE_NAMES[pull.ref.provider];
+      try {
+        const details = await withReloadToast(
+          Promise.resolve().then(() =>
+            model.rpc()['pull.details']({ ref: pull.ref, force: true }, model.rpcOptions())
+          )
+        );
+        setReloadedDetails({ key: pull.key, details });
+      } catch {
+        toast(`Could not reload from ${forge}.`, 'error');
+        return;
+      }
+      // The sessions' views carry the pull request's state to the row.
+      void controller.refresh(pull.sessions.map((session) => session.id));
+      return;
+    }
+    const session = selected();
+    if (!session) return;
+    try {
+      const failed = await withReloadToast(controller.reload(session.id));
+      if (failed.length > 0) {
+        const names = failed.map((provider) => FORGE_NAMES[provider]).join(' and ');
+        toast(`Could not reload from ${names}.`, 'error');
+      }
+    } catch {
+      toast('Could not reload. Is the opencode-super-sessions server plugin enabled?', 'error');
+    }
+  };
+
   // The arrow keys drive the list, or the preview's Work rows after `right`. The search input
   // keeps the terminal focus either way, so typing still searches.
   const [focus, setFocus] = createSignal<'list' | 'work'>('list');
@@ -612,6 +686,12 @@ export default function SessionBrowser(props: PageProps) {
     if (!ref || !session) return;
     if (!openUrl(refUrl(ref, data.refs[session.id]?.states[refKey(ref)])))
       toast('Could not open the browser.', 'error');
+  };
+  /** `c` in the Work rows: copies the selected ref's URL. */
+  const copyWork = () => {
+    const ref = workRef();
+    const session = selected();
+    if (ref && session) copyLink(context, refUrl(ref, data.refs[session.id]?.states[refKey(ref)]));
   };
 
   const nextView = (step: number) =>
@@ -691,8 +771,12 @@ export default function SessionBrowser(props: PageProps) {
         key: shortcut('super-sessions.open.ref', 'ctrl+g'),
         run: openRef
       },
+      { title: reloadTitle(), key: RELOAD_KEY, run: reload },
       ...(wide() && workRefs().length > 0
         ? [{ title: 'Focus the preview links', key: 'right', run: focusWork }]
+        : []),
+      ...(workRef() !== undefined
+        ? [{ title: 'Copy the selected link', key: 'c', run: copyWork }]
         : []),
       {
         title: 'Show command palette',
@@ -719,6 +803,7 @@ export default function SessionBrowser(props: PageProps) {
       key: shortcut('super-sessions.open.ref', 'ctrl+g'),
       run: openRef
     },
+    { title: reloadTitle(), key: RELOAD_KEY, run: reload },
     ...(wide() && workCount() > 0
       ? [{ title: 'Focus the sessions in the preview', key: 'right', run: focusWork }]
       : []),
@@ -788,6 +873,13 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Back to the list',
       enabled: () => focus() === 'work',
       run: focusList
+    },
+    // Only while the Work links have the arrow keys; otherwise `c` types into the search.
+    {
+      bind: 'c',
+      title: 'Copy the selected link',
+      enabled: () => workRef() !== undefined,
+      run: copyWork
     },
     { bind: 'pageup', title: 'Page up', run: () => move(-pageRows()) },
     { bind: 'pagedown', title: 'Page down', run: () => move(pageRows()) },
@@ -909,6 +1001,7 @@ export default function SessionBrowser(props: PageProps) {
       bind: 'ctrl+g',
       run: openRef
     },
+    { bind: RELOAD_KEY, title: 'Reload from the forge', run: () => void reload() },
     // Last on purpose: the specific bindings above win on keys shared with app.exit (ctrl+d).
     // Like the host's dialogs, the exit keys clear the search first and close on the next press;
     // quitting OpenCode from a list is never what the user meant.
@@ -944,10 +1037,34 @@ export default function SessionBrowser(props: PageProps) {
     }, 1);
   });
 
-  const hover = (session: SessionInfo) => select(session.id);
-  const leave = () => {};
+  // Hover only tints the row under the pointer: selecting on hover made the preview jump while
+  // the pointer crossed the list on its way to the preview.
+  const [hoveredRow, setHoveredRow] = createSignal<string>();
+  /** The row hover handlers for the row with `id`, a session id or a pull request key. */
+  const pointer = (id: () => string) => ({
+    hover: () => setHoveredRow(id()),
+    // Moving between two lines of a row, or onto the next row, may report the new hover first.
+    leave: () => setHoveredRow((current) => (current === id() ? undefined : current))
+  });
+  // A scroll or a view switch moves other rows under a pointer that reports nothing new.
+  createEffect(
+    on([() => memory.scroll, () => memory.view], () => setHoveredRow(undefined), { defer: true })
+  );
+  let lastClick: { id: string; at: number } | undefined;
+  /**
+   * A left click on a row selects it; a second click on the same row within
+   * {@link DOUBLE_CLICK} ms opens it. OpenTUI reports no double clicks, so the view times them.
+   */
+  const clickRow = (id: string, choose: () => void, activate: () => void) => {
+    const at = Date.now();
+    const double =
+      lastClick !== undefined && lastClick.id === id && at - lastClick.at <= DOUBLE_CLICK;
+    lastClick = double ? undefined : { id, at };
+    if (double) activate();
+    else choose();
+  };
 
-  const markerOf = (session: SessionInfo): Segment | undefined => {
+  const markerOf = (session: SessionInfo): Segment => {
     const slot = slots().get(session.id);
     if (slot !== undefined) return { text: String(slot), fg: theme().hue.accent[200] };
     const permission = context.data.session.permission.list(session.id)?.length ?? 0;
@@ -965,25 +1082,9 @@ export default function SessionBrowser(props: PageProps) {
       const text = cli.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯';
       return { text, fg: runningColor(theme()) };
     }
-    return isUnread(live(session)) ? { text: '●', fg: theme().text.feedback.info.base } : undefined;
-  };
-
-  // Zebra rows: every second session of a group, all of its lines, on the session view's
-  // background, the others on the panel's. Each group starts over, so a day reads the same
-  // whatever came before it. When a theme gives both the same color, the stripe goes one step
-  // darker than the panel instead.
-  const stripes = createMemo(
-    () =>
-      new Map(
-        model
-          .groups()
-          .flatMap((group) => group.sessions.map((session, index) => [session.id, index]))
-      )
-  );
-  const stripe = () => {
-    const shade = sessionBackground(context.theme);
-    const panel = theme().background.base;
-    return shade.equals(panel) ? theme().decrease(panel) : shade;
+    if (isUnread(live(session))) return { text: '●', fg: theme().text.feedback.info.base };
+    // Every title line starts with a mark, so each session's start shows at a glance.
+    return { text: '-', fg: theme().text.muted };
   };
 
   /** The row's title lines; a delete confirmation takes the first and blanks the rest. */
@@ -1006,16 +1107,9 @@ export default function SessionBrowser(props: PageProps) {
     // Pinned rows show their slot instead of the spinner, but their title still says it runs.
     running: model.running(session.id),
     deleting: deleting() === session.id,
-    stripe: (stripes().get(session.id) ?? 0) % 2 === 1 ? stripe() : undefined
+    hovered: hoveredRow() === session.id
   });
 
-  // Pull requests stripe like sessions: every second row of a day.
-  const pullStripes = createMemo(
-    () =>
-      new Map(
-        model.pullGroups().flatMap((group) => group.pulls.map((pull, index) => [pull.key, index]))
-      )
-  );
   /** Everything a Pull requests view row draws. */
   const pullModel = (pull: PullRow): PullRowModel => {
     const count = pull.sessions.length;
@@ -1031,7 +1125,7 @@ export default function SessionBrowser(props: PageProps) {
       width: listWidth() - 2,
       selected: memory.pull === pull.key,
       deleting: false,
-      stripe: (pullStripes().get(pull.key) ?? 0) % 2 === 1 ? stripe() : undefined
+      hovered: hoveredRow() === pull.key
     };
   };
   /** A Pull requests view line; `enter` and a click open its newest session. */
@@ -1050,9 +1144,14 @@ export default function SessionBrowser(props: PageProps) {
       return last;
     });
     return pullLine(theme, row, {
-      hover: () => selectPull(pull().key),
-      leave,
-      open: () => open(pull().sessions[0]?.id)
+      ...pointer(() => pull().key),
+      click: () =>
+        clickRow(
+          pull().key,
+          () => selectPull(pull().key),
+          () => open(pull().sessions[0]?.id)
+        ),
+      copy: () => copyLink(context, refUrl(pull().ref, pull().state))
     });
   };
 
@@ -1113,9 +1212,13 @@ export default function SessionBrowser(props: PageProps) {
           return last;
         });
         const events = {
-          hover: () => hover(session()),
-          leave,
-          open: () => open(session().id)
+          ...pointer(() => session().id),
+          click: () =>
+            clickRow(
+              session().id,
+              () => select(session().id),
+              () => open(session().id)
+            )
         };
         if (value.kind === 'title') return titleLine(theme, row, events);
         if (value.kind === 'wrap') return wrapLine(value.index, theme, row, events);
@@ -1427,6 +1530,7 @@ export default function SessionBrowser(props: PageProps) {
     pull: () => (wide() && pullView() ? selectedPull() : undefined),
     refs: (sessionID) => data.refs[sessionID],
     details: (ref) => model.rpc()['pull.details']({ ref }, model.rpcOptions()),
+    reloaded: reloadedDetails,
     selectedSession: () => (focus() === 'work' && pullView() ? workIndex() : undefined),
     open: (sessionID) => open(sessionID),
     now: model.now,
@@ -1453,7 +1557,8 @@ export default function SessionBrowser(props: PageProps) {
     },
     // The session view's surface, not the dialog's, so the transcript looks as it does there.
     theme: () => context.theme,
-    onLoaded: (sessionID, page) => props.history.preview(sessionID, page)
+    onLoaded: (sessionID, page) => props.history.preview(sessionID, page),
+    pullDetails: (ref) => model.rpc()['pull.details']({ ref }, model.rpcOptions())
   });
   // A full-height column beside the list, with `esc` on the line of the browser's header.
   const preview = jsx('box', {
@@ -1497,6 +1602,7 @@ export default function SessionBrowser(props: PageProps) {
     if (focus() === 'work')
       return [
         ['open', 'enter'],
+        ...(pullView() ? [] : ([['copy', 'c']] as Array<[string, string]>)),
         ['back', 'left']
       ];
     // A row is a pull request here: enter and space act on its newest session.
@@ -1778,7 +1884,8 @@ function linkError(error: unknown): string {
   if (type === 'unavailable') {
     const provider =
       typeof data === 'object' && data !== null && 'provider' in data ? data.provider : undefined;
-    const forge = provider === 'gitlab' ? 'GitLab' : provider === 'github' ? 'GitHub' : 'The forge';
+    const forge =
+      provider === 'gitlab' || provider === 'github' ? FORGE_NAMES[provider] : 'The forge';
     return `${forge} is unavailable. Run /super-sessions status for details.`;
   }
   return 'Could not link. Enable the opencode-super-sessions server plugin.';
