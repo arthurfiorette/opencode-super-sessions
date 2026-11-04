@@ -2,6 +2,7 @@ import type { Plugin } from '@opencode/plugin';
 import { detectCreated, detectInPrompt, detectInText, isCloseCommand } from '../refs/detect.js';
 import type { EventContext, HandledEvent } from './events.js';
 import { linkDetected, resolveRepo } from './links.js';
+import type { SessionAccess } from './queue.js';
 import { type Runtime, warn } from './runtime.js';
 import { refreshInBackground } from './views.js';
 
@@ -24,37 +25,49 @@ export async function registerShellHook(runtime: Runtime, context: Plugin.Contex
     if (typeof command !== 'string' || !isRecord(result) || result.status === 'running') return;
     const output = typeof result.output === 'string' ? result.output : '';
     // Not awaited: the agent should not wait on GitHub for its shell result.
-    onShell(runtime, context, event.sessionID, command, output).catch((error: unknown) =>
+    onShell(runtime, context.session, event.sessionID, command, output).catch((error: unknown) =>
       warn('Handling a shell command failed', error)
     );
   });
 }
 
-/** Links refs a shell command created and refreshes refs it may have merged or closed. */
+/**
+ * Links refs a shell command created and refreshes refs it may have merged or closed. Called by
+ * the agent's shell tool hook and by `session.shell.ended` for `!` commands. Core publishes
+ * `session.shell.*` only from `Session.shell`, never from the shell tool, so each run reaches
+ * this once.
+ */
 async function onShell(
   runtime: Runtime,
-  context: Plugin.Context,
+  session: SessionAccess,
   sessionID: string,
   command: string,
   output: string
 ): Promise<void> {
   const created = detectCreated(runtime.definitions, command, output);
-  await linkDetected(runtime, context.session, sessionID, created, 'created');
+  await linkDetected(runtime, session, sessionID, created, 'created');
   if (isCloseCommand(runtime.definitions, command)) {
-    refreshInBackground(runtime, context.session, [sessionID], true);
+    refreshInBackground(runtime, session, [sessionID], true);
   }
 }
 
 /**
  * Handles one subscribed event: refs in user prompts (bare `#N` included, resolved against the
- * session's repository) and full refs in finished assistant text. Prompts, assistant text and
- * deletions also update the message index.
+ * session's repository), full refs in finished assistant text, and refs created or closed by a
+ * user `!` command. Prompts, assistant text and deletions also update the message index.
  */
 export async function handleEvent(
   runtime: Runtime,
   event: HandledEvent,
   context: EventContext
 ): Promise<void> {
+  if (event.type === 'session.shell.ended') {
+    // Core puts the first MiB of combined stdout and stderr here, and the plugin context has no
+    // API to page the rest, so a URL printed past that MiB is missed.
+    const { data } = event;
+    await onShell(runtime, context.session, data.sessionID, data.shell.command, data.output.output);
+    return;
+  }
   // Not awaited and never throws: the index opens lazily, and link detection must not wait on it.
   indexEvent(runtime, event).catch((error: unknown) =>
     warn('Indexing a message for search failed', error)
@@ -78,7 +91,10 @@ export async function handleEvent(
  * Keeps the message index current. Keys match the ones the backfill derives from stored messages:
  * a user message keeps its inbox id, and assistant text is `<message id>:<text ordinal>`.
  */
-async function indexEvent(runtime: Runtime, event: HandledEvent): Promise<void> {
+async function indexEvent(
+  runtime: Runtime,
+  event: Exclude<HandledEvent, { type: 'session.shell.ended' }>
+): Promise<void> {
   const index = await runtime.bodyIndex();
   if (event.type === 'session.deleted') {
     index.removeSession(event.data.sessionID);

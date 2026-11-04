@@ -3,11 +3,13 @@ import type { Plugin } from '@opencode/plugin';
 
 /**
  * Event types the server reacts to: user prompts and finished assistant text, plus deletions so
- * the message index forgets deleted sessions.
+ * the message index forgets deleted sessions. `session.shell.ended` carries the commands users
+ * type with `!`, which run through `Session.shell` and never reach the agent's shell tool hook.
  */
 export const EVENT_TYPES = [
   'session.inbox.enqueued',
   'session.text.ended',
+  'session.shell.ended',
   'session.deleted'
 ] as const;
 
