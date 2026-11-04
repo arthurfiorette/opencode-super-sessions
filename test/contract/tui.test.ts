@@ -89,7 +89,7 @@ interface Tui {
   type(text: string): Promise<unknown>;
   /** Presses a key: a character or an OpenTUI `KeyCodes` name such as `escape`. */
   press(key: string, modifiers?: { ctrl?: boolean }): Promise<unknown>;
-  /** Presses ctrl+x, the host's default leader, then `key`. */
+  /** Presses ctrl+x, the host's default leader, then `key`, in one host task. */
   leader(key: string): Promise<unknown>;
   /** Polls the screen until it contains `text` and returns it, or fails with the last screen. */
   waitFor(text: string | RegExp): Promise<string>;
@@ -181,10 +181,13 @@ async function launch(baseURL: string): Promise<Tui> {
     call,
     type: (text) => call('ui.type', { text }),
     press,
-    leader: async (key) => {
-      await press('x', { ctrl: true });
-      return press(key);
-    },
+    // Two `ui.press` calls are two host tasks, and an update landing between them can drop the
+    // leader: the session route rebuilds its keymap layers whenever its queued prompts change
+    // (packages/tui/src/routes/session/index.tsx), and OpenTUI's keymap clears the whole pending
+    // sequence when a layer holding part of it unregisters (@opentui/keymap
+    // src/services/layers.ts). Right after a turn ends that happens within milliseconds, and
+    // `key` then lands in the prompt. `ui.type` writes both bytes in one loop; 0x18 is ctrl+x.
+    leader: (key) => call('ui.type', { text: `\x18${key}` }),
     async waitFor(text) {
       const deadline = Date.now() + 30_000;
       let last = '';
