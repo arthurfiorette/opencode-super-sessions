@@ -67,6 +67,7 @@ import {
   moveSelection,
   type PageView,
   type PullRow,
+  RUNNING_GROUP,
   rowsOf,
   type SearchReason,
   scrollFor,
@@ -1104,8 +1105,6 @@ export default function SessionBrowser(props: PageProps) {
     width: listWidth() - 2,
     details: detailsOf(session),
     selected: memory.selected === session.id,
-    // Pinned rows show their slot instead of the spinner, but their title still says it runs.
-    running: model.running(session.id),
     deleting: deleting() === session.id,
     hovered: hoveredRow() === session.id
   });
@@ -1183,9 +1182,12 @@ export default function SessionBrowser(props: PageProps) {
             paddingLeft: 1,
             children: jsx('text', {
               attributes: TextAttributes.BOLD,
-              // The token the host uses for its select dialog's category headers.
+              // The token the host uses for its select dialog's category headers; the Running
+              // group takes the spinner's color instead of every running title.
               get fg() {
-                return theme().hue.accent[200];
+                return value.title === RUNNING_GROUP
+                  ? runningColor(theme())
+                  : theme().hue.accent[200];
               },
               children: value.title
             })

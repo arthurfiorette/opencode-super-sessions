@@ -204,6 +204,9 @@ export function sessionDone(
   });
 }
 
+/** Title of the group of running sessions, whose header takes the spinner's color. */
+export const RUNNING_GROUP = 'Running';
+
 /**
  * Groups sessions for a view.
  *
@@ -238,7 +241,7 @@ export function groupSessions(input: GroupInput): Group[] {
   const idle = rest.filter((session) => !input.running(session.id)).sort(byUpdated);
   return [
     ...(pinned.length > 0 ? [{ title: 'Pinned', sessions: pinned }] : []),
-    ...(running.length > 0 ? [{ title: 'Running', sessions: running }] : []),
+    ...(running.length > 0 ? [{ title: RUNNING_GROUP, sessions: running }] : []),
     ...byDay(idle, (session) => session.time.updated, input.now)
   ];
 }
@@ -272,7 +275,7 @@ export function groupSearch(
     .filter((session) => !running(session.id))
     .sort((a, b) => day(b) - day(a) || ranked(a, b));
   return [
-    ...(active.length > 0 ? [{ title: 'Running', sessions: active }] : []),
+    ...(active.length > 0 ? [{ title: RUNNING_GROUP, sessions: active }] : []),
     ...byDay(idle, (session) => session.time.updated, now)
   ];
 }

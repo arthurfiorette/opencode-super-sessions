@@ -296,6 +296,11 @@ test('session.list opens the browser cold and lists active sessions with their r
   await import('../../dist/page/view.js');
   await eventually(rendered, (frame) => frame.includes('Mastra build') && frame.includes('#4930'));
   assert.doesNotMatch(rendered.captureCharFrame(), /Old spike on Rollup plugins/);
+  // The Running header carries the spinner's color; the running title keeps the normal one.
+  const spans = rendered.captureSpans().lines.flatMap((line) => line.spans);
+  const fgOf = (text) => spans.find((span) => span.text.includes(text))?.fg;
+  assert.ok(fgOf('Running')?.equals(theme.text.feedback.warning.base));
+  assert.ok(fgOf('Mastra build')?.equals(theme.text.base));
   // The Pull requests view, last in the tab cycle, draws its rows from the same loaded refs.
   terminal.layers
     .flatMap((layer) => layer.commands ?? [])
