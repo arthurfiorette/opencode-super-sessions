@@ -17,6 +17,7 @@ jobs:
   verify:
     if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

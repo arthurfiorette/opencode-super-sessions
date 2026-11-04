@@ -45,6 +45,8 @@ The contract tests in `test/contract/server.test.ts` run against an in-process h
 
 CI (`.github/workflows/ci.yml`) runs `pnpm check` on Linux, Windows and macOS. It installs `@opencode/cli` at the version of the pinned `@opencode/sdk` under the runner's temp directory and exports `OPENCODE_BIN`. The publish workflow (`.github/workflows/publish.yml`) installs it the same way before its own `pnpm check`.
 
+Every `node:test` test has a 60 second default timeout unless it sets a longer one, and the integration and contract runs pass `--test-force-exit`, so a hung test fails with its name instead of holding the job open. Tests that start servers or child processes close them in `t.after`, which also runs on failure and timeout. The CI and publish jobs stop after 20 minutes.
+
 ## Architecture
 
 ### Server runtime
