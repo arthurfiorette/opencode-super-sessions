@@ -109,6 +109,12 @@ async function launch(baseURL: string): Promise<Tui> {
     cwd: directory('tui-project'),
     env: {
       ...process.env,
+      // The fresh home has no cached models.dev catalog, so the host fetches it at startup and
+      // republishes every provider and model when it lands. Landing around the first Enter makes
+      // the host drop that Enter (the prompt keeps its text, nothing reaches the model). The
+      // in-process hosts in harness.ts turn the fetch off the same way (`models.fetch: false`;
+      // the variable is read in packages/cli/src/server-process.ts).
+      OPENCODE_DISABLE_MODELS_FETCH: '1',
       OPENCODE_DRIVE: 'contract',
       OPENCODE_DRIVE_RENDERER: 'headless',
       OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({ plugins: [PACKAGE] }),
