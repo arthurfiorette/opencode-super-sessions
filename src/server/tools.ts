@@ -18,13 +18,13 @@ import type { Runtime } from './runtime.js';
 
 const LINK_DESCRIPTION =
   'Record a pull request or issue this session works on so the user can track its status in ' +
-  'their session list. Changes nothing on GitHub. Call it when you start on an issue, when you ' +
+  'their session list. Changes nothing on GitHub or GitLab. Call it when you start on an issue, when you ' +
   'open or find the pull request for your work, and when you switch to another one. Pass full ' +
   'URLs when you have them; a bare number uses the repository of the current directory.';
 
 const UNLINK_DESCRIPTION =
   'Stop tracking a pull request or issue in this session, for example one linked by mistake or ' +
-  'work you dropped. Changes nothing on GitHub, and the ref is not linked again automatically.';
+  'work you dropped. Changes nothing on GitHub or GitLab, and the ref is not linked again automatically.';
 
 const url = z.strictObject({
   url: z.string().min(1).describe('Pull request or issue URL, or `owner/repo#123`.')
@@ -99,12 +99,15 @@ function candidateOf(
     return parseReference(runtime.definitions, item.url, base) ?? `Could not read ${item.url}.`;
   }
   if (item.repo === undefined && base === undefined) {
-    return `#${item.number} needs a repository: the current directory has no GitHub remote. Pass a URL or repo.`;
+    return `#${item.number} needs a repository: the current directory has no GitHub or GitLab remote. Pass a URL or repo.`;
   }
   const text = item.repo === undefined ? `#${item.number}` : `${item.repo}#${item.number}`;
   const candidate = parseReference(runtime.definitions, text, base);
   if (candidate === undefined) return `Could not read ${text}.`;
-  return 'kind' in item && item.kind !== undefined ? { ...candidate, kind: item.kind } : candidate;
+  if ('kind' in item && item.kind !== undefined) return { ...candidate, kind: item.kind };
+  // The `#` above is only syntax, but GitLab reads `#N` as an issue: the item named no kind.
+  const { kind: _parsed, ...unknown } = candidate;
+  return unknown;
 }
 
 /** Repository of the session's directory. The session may live in another Location's directory. */
@@ -130,7 +133,7 @@ function linkLine(resolution: Resolution): string {
     case 'unverified':
       return `Linked ${describe(resolution.ref)}, but could not check it: ${reasonText(resolution.reason)}.`;
     case 'not-found':
-      return `Not linked: ${refLabel(resolution.candidate)} does not exist or is not visible to gh.`;
+      return `Not linked: ${refLabel(resolution.candidate)} does not exist or is not visible to the forge CLI.`;
     case 'unknown':
       return `Not linked: could not check ${refLabel(resolution.candidate)}: ${reasonText(resolution.reason)}. Pass its URL instead.`;
   }

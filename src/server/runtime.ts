@@ -1,7 +1,10 @@
 import { isDeepStrictEqual } from 'node:util';
 import { createSnapshotCache, type SnapshotCache } from '../cache.js';
 import type { Options } from '../config.js';
+import { github } from '../providers/github/definition.js';
 import { createGitHubProvider } from '../providers/github/provider.js';
+import { createGitLabDefinition } from '../providers/gitlab/definition.js';
+import { createGitLabProvider } from '../providers/gitlab/provider.js';
 import type { ForgeDefinition, ForgeProvider } from '../providers/provider.js';
 import { definitions } from '../providers/registry.js';
 import { type ProviderId, refKey } from '../refs/ref.js';
@@ -78,16 +81,23 @@ export function getRuntime(options: Options, handle: EventHandler): Runtime {
   return runtime;
 }
 
+/** Runtime provider for each forge, built from the options that configure it. */
+const providerFactories: Record<ProviderId, (options: Options) => ForgeProvider> = {
+  github: (options) => createGitHubProvider({ definition: github, ghPath: options.ghPath }),
+  gitlab: (options) =>
+    createGitLabProvider({
+      definition: createGitLabDefinition({ hosts: options.gitlab.hosts }),
+      glabPath: options.glabPath
+    })
+};
+
 /** Builds the providers, caches, queue and subscriber for `options`. */
 function createRuntime(options: Options, handle: EventHandler): Runtime {
   const providers = new Map<ProviderId, ForgeProvider>();
-  for (const id of options.providers) {
-    const definition = definitions.find((candidate) => candidate.id === id);
-    if (id !== 'github' || definition === undefined) {
-      warnOnce(`The ${id} provider is not available yet and is ignored.`);
-      continue;
-    }
-    providers.set(id, createGitHubProvider({ definition, ghPath: options.ghPath }));
+  // Registry order, so the first forge to claim an ambiguous reference does not depend on how
+  // the user listed them.
+  for (const { id } of definitions) {
+    if (options.providers.includes(id)) providers.set(id, providerFactories[id](options));
   }
   const enabled = [...providers.values()].map((provider) => provider.definition);
   const cache = createSnapshotCache();

@@ -226,6 +226,7 @@ export function createGitLabDefinition(
 
   return {
     id: 'gitlab',
+    defaultHost: PUBLIC_HOST,
     recognizeRemote,
     parseUrl,
     parseReference,

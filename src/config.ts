@@ -11,6 +11,13 @@ const executable = z
     message: 'Use an absolute executable path or a command name on PATH, without shell arguments.'
   });
 
+// A bare DNS name: refs and remotes compare hosts without scheme, port or path.
+const hostname = z
+  .string()
+  .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i, {
+    message: 'Use a host name such as code.example.com, without scheme, port or path.'
+  });
+
 const hex = z.string().regex(/^#[0-9a-f]{6}$/i, { message: 'Use a #rrggbb color.' });
 const color = z.union([hex, z.strictObject({ dark: hex, light: hex })]);
 
@@ -27,7 +34,14 @@ const githubColors: Record<RefStatus, { dark: string; light: string }> = {
 export const optionsSchema = z
   .strictObject({
     ghPath: executable.default('gh'),
+    glabPath: executable.default('glab'),
     providers: z.array(providerIdSchema).min(1).default(['github']),
+    gitlab: z
+      .strictObject({
+        /** Self-managed GitLab hosts whose names have no `gitlab` label, e.g. `code.acme.io`. */
+        hosts: z.array(hostname).default([])
+      })
+      .default({ hosts: [] }),
     detect: z
       .strictObject({
         mentions: z.boolean().default(true),
@@ -51,7 +65,9 @@ export const optionsSchema = z
   })
   .default({
     ghPath: 'gh',
+    glabPath: 'glab',
     providers: ['github'],
+    gitlab: { hosts: [] },
     detect: { mentions: true, prompts: true },
     closeTabOnArchive: true,
     previewWidth: 0.4,

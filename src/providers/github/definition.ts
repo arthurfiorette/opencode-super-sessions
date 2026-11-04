@@ -195,6 +195,7 @@ function scanBareNumbers(text: string, base: RepoRef): RefCandidate[] {
 /** Static GitHub definition: github.com, GitHub Enterprise Cloud and GitHub Enterprise Server. */
 export const github: ForgeDefinition = {
   id: 'github',
+  defaultHost: PUBLIC_HOST,
   recognizeRemote,
   parseUrl,
   parseReference,
