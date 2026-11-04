@@ -209,6 +209,16 @@ export function detectInText(definitions: ForgeDefinition[], text: string): RefC
   return dedupe(scanAll(definitions, text));
 }
 
+/** Refs in a user prompt. */
+export interface PromptRefs {
+  candidates: RefCandidate[];
+  /**
+   * The candidates that came from a bare `#N` or `!N`. Only the forge's answer makes one a ref:
+   * GitLab's `!` and `#` name a kind, but nothing says the number exists in that project.
+   */
+  bare: ReadonlySet<RefCandidate>;
+}
+
 /**
  * References in a user prompt: everything {@link detectInText} finds plus bare `#N` resolved
  * against `base`. Without a base, bare numbers are ignored because nothing says which repo.
@@ -218,12 +228,14 @@ export function detectInPrompt(
   definitions: ForgeDefinition[],
   text: string,
   base?: RepoRef
-): RefCandidate[] {
+): PromptRefs {
   const bare =
     base === undefined
       ? []
       : definitions
           .filter((definition) => definition.id === base.provider)
           .flatMap((definition) => definition.scanBareNumbers(text, base));
-  return dedupe([...scanAll(definitions, text), ...bare], base?.provider);
+  const candidates = dedupe([...scanAll(definitions, text), ...bare], base?.provider);
+  const scanned = new Set(bare);
+  return { candidates, bare: new Set(candidates.filter((candidate) => scanned.has(candidate))) };
 }

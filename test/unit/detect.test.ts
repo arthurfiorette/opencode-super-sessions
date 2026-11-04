@@ -167,7 +167,9 @@ test('prompts add bare numbers only with a base repository', () => {
   const base: RepoRef = { provider: 'github', host: 'github.com', repo: 'acme/app' };
   const text = `debug #28957 and fix, like ${ISSUE(28957)} and #3`;
   const found = (repo?: RepoRef) =>
-    detectInPrompt(definitions, text, repo).map((ref) => `${ref.number} ${ref.kind ?? '?'}`);
+    detectInPrompt(definitions, text, repo).candidates.map(
+      (ref) => `${ref.number} ${ref.kind ?? '?'}`
+    );
   assert.deepEqual(found(base), ['28957 issue', '3 ?']);
   assert.deepEqual(found(), ['28957 issue']);
 });
@@ -175,7 +177,7 @@ test('prompts add bare numbers only with a base repository', () => {
 test('owner/repo#N, valid on GitHub and GitLab, goes to the session forge or else the first', () => {
   const gitlabBase: RepoRef = { provider: 'gitlab', host: 'gitlab.com', repo: 'acme/app' };
   const found = (repo?: RepoRef) =>
-    detectInPrompt(definitions, 'continue acme/app#12', repo).map(
+    detectInPrompt(definitions, 'continue acme/app#12', repo).candidates.map(
       (ref) => `${ref.provider} ${ref.kind ?? '?'}`
     );
   assert.deepEqual(found(gitlabBase), ['gitlab issue']);

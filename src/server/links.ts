@@ -120,17 +120,25 @@ export async function addLinks(
 
 /**
  * Detection path shared by the shell hook and the event subscriber: checks candidates, drops the
- * ones the forge does not know or that have no kind, and links the rest under `source`.
+ * ones the forge does not know or that have no kind, and links the rest under `source`. The
+ * candidates in `confirmed` are linked only when the forge found them.
  */
 export async function linkDetected(
   runtime: Runtime,
   session: SessionAccess,
   sessionID: string,
   candidates: RefCandidate[],
-  source: RefSource
+  source: RefSource,
+  confirmed: ReadonlySet<RefCandidate> = new Set()
 ): Promise<void> {
   if (candidates.length === 0) return;
-  const refs = usableRefs(await resolveCandidates(runtime, candidates));
+  const resolutions = await resolveCandidates(runtime, candidates);
+  const refs = usableRefs(
+    resolutions.filter(
+      (resolution, index) =>
+        resolution.status === 'found' || !confirmed.has(candidates[index] as RefCandidate)
+    )
+  );
   await addLinks(runtime, session, sessionID, linksOf(refs, source));
 }
 
