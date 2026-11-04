@@ -1,8 +1,15 @@
 import type { OpenCodeEvent } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin';
 
-/** Event types the server reacts to: user prompts and finished assistant text. */
-export const EVENT_TYPES = ['session.inbox.enqueued', 'session.text.ended'] as const;
+/**
+ * Event types the server reacts to: user prompts and finished assistant text, plus deletions so
+ * the message index forgets deleted sessions.
+ */
+export const EVENT_TYPES = [
+  'session.inbox.enqueued',
+  'session.text.ended',
+  'session.deleted'
+] as const;
 
 export type HandledEvent = Extract<OpenCodeEvent, { type: (typeof EVENT_TYPES)[number] }>;
 
@@ -16,6 +23,8 @@ export interface EventHub {
    * to the next live context, or stops it when none is left.
    */
   attach(context: EventContext): () => void;
+  /** The oldest live context, for background jobs; undefined once every Location detached. */
+  current(): EventContext | undefined;
 }
 
 export interface EventHubOptions {
@@ -101,6 +110,7 @@ export function createEventHub(options: EventHubOptions): EventHub {
         owner = undefined;
         start();
       };
-    }
+    },
+    current: () => live[0]
   };
 }

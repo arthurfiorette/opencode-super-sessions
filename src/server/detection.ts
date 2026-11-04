@@ -47,13 +47,19 @@ async function onShell(
 
 /**
  * Handles one subscribed event: refs in user prompts (bare `#N` included, resolved against the
- * session's repository) and full refs in finished assistant text.
+ * session's repository) and full refs in finished assistant text. Prompts, assistant text and
+ * deletions also update the message index.
  */
 export async function handleEvent(
   runtime: Runtime,
   event: HandledEvent,
   context: EventContext
 ): Promise<void> {
+  // Not awaited and never throws: the index opens lazily, and link detection must not wait on it.
+  indexEvent(runtime, event).catch((error: unknown) =>
+    warn('Indexing a message for search failed', error)
+  );
+  if (event.type === 'session.deleted') return;
   if (event.type === 'session.inbox.enqueued') {
     if (!runtime.options.detect.prompts || event.data.item.type !== 'user') return;
     const { sessionID } = event.data;
@@ -66,4 +72,24 @@ export async function handleEvent(
   if (!runtime.options.detect.mentions) return;
   const candidates = detectInText(runtime.definitions, event.data.text);
   await linkDetected(runtime, context.session, event.data.sessionID, candidates, 'mention');
+}
+
+/**
+ * Keeps the message index current. Keys match the ones the backfill derives from stored messages:
+ * a user message keeps its inbox id, and assistant text is `<message id>:<text ordinal>`.
+ */
+async function indexEvent(runtime: Runtime, event: HandledEvent): Promise<void> {
+  const index = await runtime.bodyIndex();
+  if (event.type === 'session.deleted') {
+    index.removeSession(event.data.sessionID);
+    return;
+  }
+  if (event.type === 'session.inbox.enqueued') {
+    const { item } = event.data;
+    if (item.type !== 'user') return;
+    index.add(event.data.sessionID, event.data.inboxID, item.payload.text, event.created);
+    return;
+  }
+  const { data } = event;
+  index.add(data.sessionID, `${data.assistantMessageID}:${data.ordinal}`, data.text, event.created);
 }
