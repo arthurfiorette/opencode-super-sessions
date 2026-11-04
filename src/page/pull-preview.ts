@@ -9,7 +9,15 @@ import {
   TextAttributes
 } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
-import { createComponent, createEffect, For, type JSX, on, onCleanup } from 'solid-js';
+import {
+  createComponent,
+  createEffect,
+  createSignal,
+  For,
+  type JSX,
+  on,
+  onCleanup
+} from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { openUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
@@ -313,11 +321,15 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
         get each() {
           return checks();
         },
-        children: (check: PullCheck) =>
-          jsx('box', {
+        children: (check: PullCheck) => {
+          // A check with a page is a link: hover makes its name bold, like a Work row's number.
+          const [hovered, setHovered] = createSignal(false);
+          return jsx('box', {
             flexDirection: 'row',
             height: 1,
             flexShrink: 0,
+            onMouseOver: () => setHovered(check.url !== undefined),
+            onMouseOut: () => setHovered(false),
             onMouseUp: (event: MouseEvent) => {
               if (event.button !== MouseButton.LEFT || !check.url) return;
               event.stopPropagation();
@@ -327,10 +339,15 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
               const [glyph, fg] = checkLook(check.status, theme());
               return [
                 { text: `${glyph} `, fg },
-                { text: fitText(check.name, width() - ICON), fg: theme().text.base }
+                {
+                  text: fitText(check.name, width() - ICON),
+                  fg: theme().text.base,
+                  bold: hovered()
+                }
               ];
             })
-          })
+          });
+        }
       }),
       line(() =>
         details()?.checksTruncated === true ? 'More checks ran than the first 100 shown.' : ''

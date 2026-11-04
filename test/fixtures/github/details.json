@@ -1,0 +1,70 @@
+{
+  "_comment": "Captured on 2026-11-04 from gh 2.103.3 against github.com (authenticated, read-only) with the document buildDetailsQuery builds for prettier/prettier#20438. Only rate limit headers kept; the body is cut to 200 characters and the 49 rollup nodes to a check run with a workflow, a Netlify check run without one, and the one status context.",
+  "code": 0,
+  "status": "HTTP/2.0 200 OK",
+  "headers": {
+    "X-Ratelimit-Limit": "5000",
+    "X-Ratelimit-Remaining": "4939",
+    "X-Ratelimit-Reset": "1793805415",
+    "X-Ratelimit-Resource": "graphql",
+    "X-Ratelimit-Used": "61"
+  },
+  "stderr": "",
+  "body": {
+    "data": {
+      "rateLimit": { "remaining": 4939, "resetAt": "2026-11-04T15:16:55Z" },
+      "repository": {
+        "pullRequest": {
+          "author": { "login": "fisker" },
+          "headRefName": "filtered-namespaces",
+          "baseRefName": "main",
+          "body": "<!--\n⚠️ Pull requests that do not follow the template may be closed without review.\n-->\n\n## Description\n\n<!-- Please provide a brief summary of your changes -->\n\nPart of #20426\n\n## Checklist\n\n<!-- Ple",
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "contexts": {
+                      "pageInfo": { "hasNextPage": false },
+                      "nodes": [
+                        {
+                          "__typename": "CheckRun",
+                          "name": "Check Sizes",
+                          "status": "COMPLETED",
+                          "conclusion": "CANCELLED",
+                          "detailsUrl": "https://github.com/prettier/prettier/actions/runs/41842336048/job/126616881046",
+                          "url": "https://github.com/prettier/prettier/runs/126616881046",
+                          "startedAt": "2026-11-04T13:54:07Z",
+                          "completedAt": "2026-11-04T13:54:07Z",
+                          "checkSuite": { "workflowRun": { "workflow": { "name": "Check Sizes" } } }
+                        },
+                        {
+                          "__typename": "CheckRun",
+                          "name": "Header rules",
+                          "status": "COMPLETED",
+                          "conclusion": "NEUTRAL",
+                          "detailsUrl": "https://app.netlify.com/projects/prettier/deploys/6aeb38fdfdef176ec421c296",
+                          "url": "https://github.com/prettier/prettier/runs/126616961540",
+                          "startedAt": "2026-11-04T13:54:15Z",
+                          "completedAt": "2026-11-04T13:55:21Z",
+                          "checkSuite": { "workflowRun": null }
+                        },
+                        {
+                          "__typename": "StatusContext",
+                          "context": "deploy/netlify",
+                          "state": "SUCCESS",
+                          "targetUrl": "https://deploy-preview-20438--prettier.netlify.app",
+                          "createdAt": "2026-11-04T13:55:23Z"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

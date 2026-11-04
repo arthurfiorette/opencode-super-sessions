@@ -15,7 +15,7 @@ const DETAILS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
         nodes {
           __typename
           ... on CheckRun {
-            name status conclusion detailsUrl startedAt completedAt
+            name status conclusion detailsUrl url startedAt completedAt
             checkSuite { workflowRun { workflow { name } } }
           }
           ... on StatusContext { context state targetUrl createdAt }
@@ -82,7 +82,9 @@ function entryOf(node: unknown): CheckEntry[] {
   const name = node.__typename === 'CheckRun' ? node.name : node.context;
   if (typeof name !== 'string' || name.trim() === '') return [];
   const status = checkStatus(node);
-  const url = node.detailsUrl ?? node.targetUrl;
+  // A check run's `detailsUrl` is its log or the app's page, and null for some apps; `url` is
+  // the run on github.com. A status has only `targetUrl`.
+  const url = node.__typename === 'CheckRun' ? node.detailsUrl || node.url : node.targetUrl;
   const suite = isRecord(node.checkSuite) ? node.checkSuite.workflowRun : undefined;
   const workflow = isRecord(suite) && isRecord(suite.workflow) ? suite.workflow.name : undefined;
   return [
