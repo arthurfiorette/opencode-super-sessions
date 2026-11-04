@@ -889,7 +889,18 @@ export default function SessionBrowser(props: PageProps) {
           const current = line();
           return current.kind === 'blank' || current.kind === 'header' ? initial : current.session;
         };
-        const row = createMemo(() => rowModel(session()));
+        // A failed memo reads as undefined, and the row's render effects would throw on it again
+        // after the crash fallback, outside any boundary. So the first model is read here, where
+        // a throw stops this line before any node exists, and a later failure keeps the last one.
+        let last = rowModel(initial);
+        const row = createMemo(() => {
+          try {
+            last = rowModel(session());
+          } catch (error) {
+            props.fail(error);
+          }
+          return last;
+        });
         const events = {
           hover: () => hover(session()),
           leave,
