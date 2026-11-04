@@ -7,8 +7,15 @@ import { SuperSessions } from './rpc.js';
 export default Plugin.define({
   id: 'opencode-super-sessions',
   async setup(context) {
+    // Inert handlers until the server wiring lands, so the TUI degrades to title-only data.
     await context.rpc.register(SuperSessions, {
-      status: async () => ({ providers: {} })
+      status: async () => ({ providers: {} }),
+      refs: async () => ({}),
+      refresh: async () => ({}),
+      search: async () => [],
+      link: async (_input, invocation) =>
+        invocation.error('unavailable', 'Linking is not available yet.', { reason: 'failed' }),
+      unlink: async () => ({})
     });
   }
 });
