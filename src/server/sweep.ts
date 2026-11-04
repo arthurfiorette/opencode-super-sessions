@@ -347,7 +347,7 @@ function createSweeper(runtime: Runtime): Sweeper {
               pinned: pinned.has(id)
             };
           }),
-          status: git.status,
+          changed: git.changed,
           ahead: git.ahead,
           merged,
           contained: git.contained,
@@ -408,7 +408,7 @@ function createSweeper(runtime: Runtime): Sweeper {
       }
       const fresh = await readWorktreeGit(decision.directory, undefined);
       const recheck = decideWorktree(
-        { ...entry.facts, status: fresh.status },
+        { ...entry.facts, changed: fresh.changed },
         settings,
         Date.now()
       );

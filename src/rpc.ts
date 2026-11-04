@@ -1,6 +1,5 @@
 import { Rpc } from '@opencode/plugin/rpc';
 import { z } from 'zod';
-import { keepModeSchema } from './config.js';
 import { providerIdSchema, refLinkSchema, refSchema, refStateSchema } from './refs/ref.js';
 
 export const availabilitySchema = z.enum(['ok', 'missing-tool', 'unauthenticated']);
@@ -55,8 +54,7 @@ export const serverSettingsSchema = z.strictObject({
   cleanupMerged: z.boolean(),
   cleanupInactiveDays: days.min(1).nullable(),
   cleanupDoneDays: days.nullable(),
-  cleanupUnchanged: z.boolean(),
-  keepLocalChanges: keepModeSchema
+  cleanupUnchanged: z.boolean()
 });
 
 /** Effective values and the plugin-option defaults they override. */

@@ -20,12 +20,6 @@ const hostname = z
 
 const days = z.number().int().min(0).max(365);
 
-/**
- * Which local changes keep a worktree from cleanup: any status line, staged or edited tracked
- * files, or edited tracked files only. Ignored files never keep one.
- */
-export const keepModeSchema = z.enum(['any', 'uncommitted', 'tracked']);
-
 const hex = z.string().regex(/^#[0-9a-f]{6}$/i, { message: 'Use a #rrggbb color.' });
 const color = z.union([hex, z.strictObject({ dark: hex, light: hex })]);
 
@@ -85,10 +79,9 @@ export const optionsSchema = z
         merged: z.boolean().default(false),
         inactiveDays: days.min(1).optional(),
         doneDays: days.optional(),
-        unchanged: z.boolean().default(false),
-        keep: keepModeSchema.default('any')
+        unchanged: z.boolean().default(false)
       })
-      .default({ deletedSessions: false, merged: false, unchanged: false, keep: 'any' }),
+      .default({ deletedSessions: false, merged: false, unchanged: false }),
     colors: z
       .strictObject({
         open: color.optional(),
@@ -114,7 +107,7 @@ export const optionsSchema = z
     titleScroll: 'auto',
     preview: true,
     untestedHosts: false,
-    cleanup: { deletedSessions: false, merged: false, unchanged: false, keep: 'any' },
+    cleanup: { deletedSessions: false, merged: false, unchanged: false },
     colors: {}
   });
 

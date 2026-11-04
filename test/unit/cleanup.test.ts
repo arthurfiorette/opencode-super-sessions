@@ -22,8 +22,7 @@ const OFF: CleanupSettings = {
   cleanupMerged: false,
   cleanupInactiveDays: null,
   cleanupDoneDays: null,
-  cleanupUnchanged: false,
-  keepLocalChanges: 'any'
+  cleanupUnchanged: false
 };
 
 /** A settled session: Done four days ago, last touched ten days ago, nothing holding it. */
@@ -46,7 +45,7 @@ const worktree = (patch: Partial<WorktreeFacts> = {}): WorktreeFacts => ({
   root: false,
   sessions: [session()],
   deleted: false,
-  status: parseStatus(''),
+  changed: false,
   ahead: 0,
   merged: true,
   contained: true,
@@ -96,7 +95,7 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
       'remove:merged'
     ],
     ['main checkout', { cleanupMerged: true, cleanupUnchanged: true }, { root: true }, 'keep'],
-    ['git status unreadable', { cleanupMerged: true }, { status: undefined }, 'keep'],
+    ['git status unreadable', { cleanupMerged: true }, { changed: undefined }, 'keep'],
     [
       'running session',
       { cleanupMerged: true },
@@ -223,38 +222,26 @@ test('a squash-merged branch counts as merged only while HEAD has nothing beyond
   assert.equal(await readPullHead(directory, []), 'missing');
 });
 
-test('the keep mode decides which local changes, read from git status, keep a worktree', () => {
+test('any local change read from git status keeps a worktree, since git refuses to remove it', () => {
   // Real `git status --porcelain=v1` lines; `!!` (ignored) only appears with --ignored.
-  const outputs = {
-    clean: '',
-    ignored: '!! .env\n',
-    untracked: '?? notes.md\n',
-    staged: 'A  src/new.ts\n',
-    edited: ' M src/app.ts\n',
-    deleted: ' D src/old.ts\n',
-    renamed: 'R  a.ts -> b.ts\n',
-    conflict: 'UU src/app.ts\n'
-  };
-  const kept: Record<CleanupSettings['keepLocalChanges'], Array<keyof typeof outputs>> = {
-    any: ['untracked', 'staged', 'edited', 'deleted', 'renamed', 'conflict'],
-    uncommitted: ['staged', 'edited', 'deleted', 'renamed', 'conflict'],
-    tracked: ['edited', 'deleted', 'renamed', 'conflict']
-  };
-  for (const [mode, keeps] of Object.entries(kept) as Array<
-    [CleanupSettings['keepLocalChanges'], Array<keyof typeof outputs>]
-  >) {
-    for (const [name, output] of Object.entries(outputs) as Array<[keyof typeof outputs, string]>) {
-      const decision = decideWorktree(
-        worktree({ status: parseStatus(output) }),
-        { ...OFF, cleanupMerged: true, keepLocalChanges: mode },
-        NOW
-      );
-      assert.equal(
-        decision.action,
-        keeps.includes(name) ? 'keep' : 'remove',
-        `${mode} with ${name}`
-      );
-    }
+  const outputs: Array<[string, string, 'keep' | 'remove']> = [
+    ['clean', '', 'remove'],
+    ['ignored', '!! .env\n', 'remove'],
+    ['untracked', '?? notes.md\n', 'keep'],
+    ['staged', 'A  src/new.ts\n', 'keep'],
+    ['edited', ' M src/app.ts\n', 'keep'],
+    ['deleted', ' D src/old.ts\n', 'keep'],
+    ['renamed', 'R  a.ts -> b.ts\n', 'keep'],
+    ['conflict', 'UU src/app.ts\n', 'keep']
+  ];
+  for (const [name, output, expected] of outputs) {
+    const decision = decideWorktree(
+      worktree({ changed: parseStatus(output) }),
+      { ...OFF, cleanupMerged: true },
+      NOW
+    );
+    assert.equal(decision.action, expected, name);
+    if (expected === 'keep') assert.equal(decision.reason, 'has local changes', name);
   }
 });
 

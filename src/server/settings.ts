@@ -42,8 +42,7 @@ export function serverDefaults(options: Options): ServerSettings {
     cleanupMerged: options.cleanup.merged,
     cleanupInactiveDays: options.cleanup.inactiveDays ?? null,
     cleanupDoneDays: options.cleanup.doneDays ?? null,
-    cleanupUnchanged: options.cleanup.unchanged,
-    keepLocalChanges: options.cleanup.keep
+    cleanupUnchanged: options.cleanup.unchanged
   };
 }
 

@@ -114,7 +114,7 @@ try {
   assert.equal(decision(merged)?.action, 'remove', JSON.stringify(plan.worktrees));
   assert.equal(decision(merged)?.rule, 'merged');
   assert.equal(decision(dirty)?.action, 'keep', JSON.stringify(plan.worktrees));
-  assert.equal(decision(dirty)?.reason, 'has edited tracked files');
+  assert.equal(decision(dirty)?.reason, 'has local changes');
   assert.ok(existsSync(merged), 'The dry run removes nothing.');
 
   // Asked for both: the server checks again and removes only the one that qualifies.

@@ -26,15 +26,6 @@ export interface WorktreeSession {
   pinned: boolean;
 }
 
-/** Local changes from `git status --porcelain`. Ignored files are never listed. */
-export interface LocalChanges {
-  /** A tracked file is modified, deleted, renamed or in conflict, staged or not. */
-  edited: boolean;
-  /** A new file is staged. */
-  added: boolean;
-  untracked: boolean;
-}
-
 /** Everything known about one worktree. Optional fields are unknown, and unknown keeps it. */
 export interface WorktreeFacts {
   directory: string;
@@ -44,7 +35,8 @@ export interface WorktreeFacts {
   sessions: WorktreeSession[];
   /** A session that used this worktree was deleted while the plugin was running. */
   deleted: boolean;
-  status?: LocalChanges | undefined;
+  /** A file is modified, staged or untracked; see {@link parseStatus}. */
+  changed?: boolean | undefined;
   /** Commits on HEAD that the default branch does not have. */
   ahead?: number | undefined;
   /** A tracked pull request is merged and none is open or a draft. */
@@ -73,7 +65,6 @@ export type CleanupSettings = Pick<
   | 'cleanupInactiveDays'
   | 'cleanupDoneDays'
   | 'cleanupUnchanged'
-  | 'keepLocalChanges'
 >;
 
 /** Whether any cleanup rule is on. */
@@ -90,8 +81,8 @@ export function cleanupEnabled(settings: CleanupSettings): boolean {
 /**
  * Decides whether cleanup removes one worktree. Keep reasons are checked first, in order: the
  * main checkout, a session that is running, waiting, open or pinned, unreadable git state and
- * local changes under the keep mode. Only then do the enabled rules get a say, and the first
- * matching rule names the removal.
+ * local changes. Only then do the enabled rules get a say, and the first matching rule names the
+ * removal.
  */
 export function decideWorktree(
   facts: WorktreeFacts,
@@ -118,9 +109,10 @@ export function decideWorktree(
     return keep('a session waits for a permission or an answer');
   if (sessions.some((session) => session.open)) return keep('a session in it is open');
   if (sessions.some((session) => session.pinned)) return keep('a session in it is pinned');
-  if (facts.status === undefined) return keep('git status could not be read');
-  const changes = localChanges(facts.status, settings.keepLocalChanges);
-  if (changes !== undefined) return keep(changes);
+  if (facts.changed === undefined) return keep('git status could not be read');
+  // `git worktree remove` without `--force` refuses these anyway; keeping them here means a
+  // sweep does not retry and log a failure every time.
+  if (facts.changed) return keep('has local changes');
 
   // A session counts as settled once it is archived or Done; the rules for merged, Done and
   // unchanged worktrees never take one from a session the user is still working in.
@@ -173,39 +165,17 @@ function days(count: number): string {
   return `${count} ${count === 1 ? 'day' : 'days'}`;
 }
 
-/** The keep reason for local changes under `mode`, or undefined when they do not keep it. */
-function localChanges(
-  changes: LocalChanges,
-  mode: ServerSettings['keepLocalChanges']
-): string | undefined {
-  if (changes.edited) return 'has edited tracked files';
-  if (mode === 'tracked') return undefined;
-  if (changes.added) return 'has uncommitted changes';
-  if (mode === 'uncommitted') return undefined;
-  if (changes.untracked) return 'has untracked files';
-  return undefined;
-}
-
 /**
- * Reads `git status --porcelain=v1` output. The two status columns are the index and the work
- * tree; `??` is untracked, an `A` is a staged new file, anything else names a tracked file.
+ * Whether `git status --porcelain=v1` output lists a modified, staged or untracked file. Every
+ * line is one, except `!!` for an ignored file, which only appears with `--ignored`.
  */
-export function parseStatus(porcelain: string): LocalChanges {
-  const changes: LocalChanges = { edited: false, added: false, untracked: false };
-  for (const line of porcelain.split('\n')) {
-    if (line.length < 3) continue;
-    const code = line.slice(0, 2);
-    if (code === '??') changes.untracked = true;
-    else if (code === '!!') continue;
-    else if (/[MDRCTU]/.test(code)) changes.edited = true;
-    else if (code.includes('A')) changes.added = true;
-  }
-  return changes;
+export function parseStatus(porcelain: string): boolean {
+  return porcelain.split('\n').some((line) => line.length >= 3 && !line.startsWith('!!'));
 }
 
 /** Git facts of one worktree. Every field is undefined when git could not answer. */
 export interface WorktreeGit {
-  status?: LocalChanges;
+  changed?: boolean;
   ahead?: number;
   /** Whether HEAD is contained in `base`. */
   contained?: boolean;
@@ -247,7 +217,7 @@ export async function readWorktreeGit(
   // reader might take for a file; no `--ignored`, since ignored files never keep a worktree.
   const status = await git('status', '--porcelain=v1', '--untracked-files=all');
   const result: WorktreeGit = {};
-  if (status.code === 0) result.status = parseStatus(status.stdout);
+  if (status.code === 0) result.changed = parseStatus(status.stdout);
   if (base === undefined) return result;
   const ahead = await git('rev-list', '--count', `${base}..HEAD`);
   const count = Number.parseInt(ahead.stdout.trim(), 10);
