@@ -22,7 +22,18 @@ npm publish --access public    # runs prepack, which rebuilds dist
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-Then add the trusted publisher on npmjs.com (step 2 above), and from then on publish only through GitHub releases. A manual publish carries no provenance; releases from `publish.yml` do.
+Then add the trusted publisher (step 2 above), and from then on publish only through GitHub releases. A manual publish carries no provenance; releases from `publish.yml` do.
+
+The same setup from the command line. `npm trust` needs npm 11.10 or newer, two-factor authentication on the account and an interactive login (not a token), and the package must already exist on the registry:
+
+```sh
+gh api -X PUT 'repos/arthurfiorette/opencode-super-sessions/environments/NPM%20Registry'
+npm trust github opencode-super-sessions --repo arthurfiorette/opencode-super-sessions \
+  --file publish.yml --env 'NPM Registry' --allow-publish --dry-run
+npm trust github opencode-super-sessions --repo arthurfiorette/opencode-super-sessions \
+  --file publish.yml --env 'NPM Registry' --allow-publish
+npm trust list opencode-super-sessions
+```
 
 Complete a successful publish within two days of creating the trusted publisher, or npm expires the unvalidated configuration. Create it when the release is ready. See [npm's trusted publishing guide](https://docs.npmjs.com/trusted-publishers/).
 
