@@ -46,7 +46,7 @@ export interface WorkRowInput {
   marquee: ReturnType<typeof createMarquee>;
   /** Keyboard selection, drawn in the action selection colors like a selected list row. */
   selected?(): boolean;
-  /** Small muted note at the right end, such as `branch` for the session's branch PR. */
+  /** Small muted note at the right end, such as `closes` for an issue a pull request closes. */
   marker?(): string | undefined;
   /** Element id; the parts get `-icon`, `-number` and `-title` after it. */
   id?: string;
@@ -61,14 +61,15 @@ function openReview(state: RefState | undefined): RefReview | undefined {
 }
 
 /**
- * Whether the lines under an open pull request (see {@link workStatus}) may have something to
- * show: a review verdict, unresolved threads, or failing checks to list.
+ * Whether the lines under an open pull request (see {@link workStatus}) have something to show:
+ * a review verdict, a CI result or unresolved threads for the icon line, which failing checks
+ * always come with.
  */
 export function hasWorkStatus(state: RefState | undefined): boolean {
   const review = openReview(state);
   if (review === undefined) return false;
   return (
-    review.decision !== undefined || (review.unresolved ?? 0) > 0 || review.checks === 'failing'
+    review.decision !== undefined || review.checks !== undefined || (review.unresolved ?? 0) > 0
   );
 }
 
@@ -135,11 +136,12 @@ export function createFailedChecks(input: {
 }
 
 /**
- * The lines under an open pull request in a Work section, indented by one icon slot: the review
- * verdict (changes requested in red, approved in green, review required muted), unresolved
- * threads in yellow, then each failed check with a red x, at most five and then `+N more`. A
- * failed check links to its page and `+N more` to the pull request's checks page; a click opens
- * them and a ctrl+click copies them, and hover makes them bold. Empty for any other ref.
+ * The lines under an open pull request in a Work section, indented by one icon slot: one line of
+ * review, CI and thread icons without words (see {@link stateBadges}), then each failed check
+ * with a red x, at most five and then `+N more`. The icons sit here rather than on the pull
+ * request's line so a narrow sidebar keeps room for the title. A failed check links to its page
+ * and `+N more` to the pull request's checks page; a click opens them and a ctrl+click copies
+ * them, and hover makes them bold. Empty for any other ref.
  */
 export function workStatus(input: {
   context: Plugin.Context;
@@ -154,33 +156,22 @@ export function workStatus(input: {
   const { context, theme } = input;
   const review = () => openReview(input.state());
   const room = () => Math.floor(input.width()) - ICON;
-  const verdict = (): { text: string; fg: string | RGBA } | undefined => {
-    const { feedback, muted } = theme().text;
-    const decision = review()?.decision;
-    if (decision === 'changes_requested')
-      return { text: 'changes requested', fg: feedback.error.base };
-    if (decision === 'approved') return { text: 'approved', fg: feedback.success.base };
-    if (decision === 'review_required') return { text: 'review required', fg: muted };
-    return undefined;
-  };
-  const unresolved = () => review()?.unresolved ?? 0;
+  // Each badge starts with its separating space, which the line's first one does not need.
+  const icons = () =>
+    stateBadges(input.state(), theme()).map((segment, index) =>
+      index === 0 ? { ...segment, text: segment.text.trimStart() } : segment
+    );
   const failed = () => (review()?.checks === 'failing' ? failedChecks(input.details()) : []);
 
-  /** One plain line, hidden while `text()` is empty. */
-  const plain = (text: () => string, fg: () => string | RGBA) =>
-    jsx('text', {
-      flexShrink: 0,
-      wrapMode: 'none',
-      get visible() {
-        return text() !== '';
-      },
-      get fg() {
-        return fg();
-      },
-      get children() {
-        return fitText(text(), room());
-      }
+  /** Segments in their colors, cut together to the room. */
+  const fitted = (segments: Array<{ text: string; fg: string | RGBA }>, bold = false) => {
+    let left = room();
+    return segments.map((segment) => {
+      const text = fitText(segment.text, left);
+      left -= cells(text);
+      return jsx('span', { style: { fg: segment.fg, bold }, children: text });
     });
+  };
   /** A line that links to `url()`, bold while hovered. */
   const link = (
     url: () => string | undefined,
@@ -196,15 +187,7 @@ export function workStatus(input: {
         clickLink(context, url(), event);
       },
       get children() {
-        let left = room();
-        return segments().map((segment) => {
-          const text = fitText(segment.text, left);
-          left -= cells(text);
-          return jsx('span', {
-            style: { fg: segment.fg, bold: hovered() },
-            children: text
-          });
-        });
+        return fitted(segments(), hovered());
       }
     });
   };
@@ -214,20 +197,16 @@ export function workStatus(input: {
     flexShrink: 0,
     paddingLeft: ICON,
     get visible() {
-      return verdict() !== undefined || unresolved() > 0 || failed().length > 0;
+      return icons().length > 0;
     },
     children: [
-      plain(
-        () => verdict()?.text ?? '',
-        () => verdict()?.fg ?? theme().text.muted
-      ),
-      plain(
-        () => {
-          const count = unresolved();
-          return count > 0 ? `${count} unresolved ${count === 1 ? 'thread' : 'threads'}` : '';
-        },
-        () => theme().text.feedback.warning.base
-      ),
+      jsx('text', {
+        flexShrink: 0,
+        wrapMode: 'none',
+        get children() {
+          return fitted(icons());
+        }
+      }),
       createComponent(For, {
         get each() {
           return failed().slice(0, FAILED_SHOWN);
@@ -258,10 +237,10 @@ export function workStatus(input: {
 /**
  * One line of a Work section, shared by the session sidebar and the browser's preview: the state
  * icon, starting in the column of the section's triangle like the host's MCP dots, the number in
- * `text.base`, an open pull request's review and CI icons (see {@link stateBadges}), then the
- * muted title. Hover brightens the number and the title and scrolls a cut title; a click opens
- * the ref's page and a ctrl+click copies its URL. Built once per position, so updates change
- * properties, never the tree.
+ * `text.base`, then the muted title. An open pull request's review and CI icons go on the line
+ * under it (see {@link workStatus}). Hover brightens the number and the title and scrolls a cut
+ * title; a click opens the ref's page and a ctrl+click copies its URL. Built once per position,
+ * so updates change properties, never the tree.
  */
 export function workRow(input: WorkRowInput): JSX.Element {
   const context = input.context;
@@ -275,21 +254,11 @@ export function workRow(input: WorkRowInput): JSX.Element {
   /** Selection foreground over every part, or undefined for the parts' own colors. */
   const selectedFg = () => (selected() ? theme().text.action.primary.focused : undefined);
   const marker = () => input.marker?.();
-  const badges = () => stateBadges(input.state(), theme());
-  /**
-   * Cells left for the title after the icon, the number, the badges, the marker and the spaces
-   * between.
-   */
+  /** Cells left for the title after the icon, the number, the marker and the spaces between. */
   const room = () => {
     const note = marker();
-    const before = badges().reduce((sum, segment) => sum + cells(segment.text), 0);
     return (
-      Math.floor(input.width()) -
-      before -
-      ICON -
-      cells(number()) -
-      1 -
-      (note ? cells(note) + MARKER_GAP : 0)
+      Math.floor(input.width()) - ICON - cells(number()) - 1 - (note ? cells(note) + MARKER_GAP : 0)
     );
   };
   return jsx('box', {
@@ -340,24 +309,6 @@ export function workRow(input: WorkRowInput): JSX.Element {
         },
         get children() {
           return number();
-        }
-      }),
-      jsx('text', {
-        ...id('badges'),
-        flexShrink: 0,
-        wrapMode: 'none',
-        get visible() {
-          return badges().length > 0;
-        },
-        get children() {
-          return badges().map((segment) =>
-            jsx('span', {
-              get style() {
-                return { fg: selectedFg() ?? segment.fg };
-              },
-              children: segment.text
-            })
-          );
         }
       }),
       jsx('text', {

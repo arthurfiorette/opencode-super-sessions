@@ -58,7 +58,7 @@ const view = {
   )
 };
 
-test('the Work rows load cold, list failed checks, and a click on a row opens its own URL', async () => {
+test('the Work rows load cold, put status icons and failed checks under the PR line, and a click on a row opens its own URL', async () => {
   let claim;
   const answer = async ({ sessionIDs }) => Object.fromEntries(sessionIDs.map((id) => [id, view]));
   const details = async ({ ref }) => ({
@@ -110,9 +110,11 @@ test('the Work rows load cold, list failed checks, and a click on a row opens it
     await import('../../dist/sidebar-view.js');
     await rendered.waitForFrame(
       (frame) =>
-        frame.includes('#4930') &&
+        // The PR line holds only the number and title; the icons and counts go on the next line.
+        frame.includes('#4930 Migrate build to Rspack') &&
         frame.includes('#4871') &&
-        frame.includes('changes requested') &&
+        frame.includes(' 1/2') &&
+        !frame.includes('changes requested') &&
         frame.includes('Lint') &&
         !frame.includes('Build')
     );

@@ -30,7 +30,7 @@ import { tuiSettingsFor } from '../settings/store.js';
 import { workRow } from '../work-row.js';
 import { ICONS, refColor, STATE_WORDS } from './icons.js';
 import { createSyntax } from './preview.js';
-import { cells, fitText, formatAge, pullLead, type Segment } from './row.js';
+import { cells, checkCounts, fitText, formatAge, pullLead, type Segment } from './row.js';
 import type { PullRow } from './state.js';
 
 /** Inputs of {@link PullPreview}. */
@@ -299,10 +299,8 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
 
   const checksSection = section(
     () => {
-      const current = review();
-      return current?.checksTotal === undefined
-        ? 'Checks'
-        : `Checks ${current.checksPassed ?? 0}/${current.checksTotal}`;
+      const counts = checkCounts(review());
+      return counts === undefined ? 'Checks' : `Checks ${counts}`;
     },
     () => state.status !== 'ready' || checks().length > 0,
     [

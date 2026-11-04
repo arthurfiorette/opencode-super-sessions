@@ -107,8 +107,20 @@ export function detailKinds(details: RowDetails): Array<'pr' | 'issues'> {
 }
 
 /**
+ * A pull request's CI counts as `passed/total`, or undefined when they are unknown or every check
+ * passed: the green check alone says that, and `160/160` only took room from the title.
+ */
+export function checkCounts(review: RefReview | undefined): string | undefined {
+  const passed = review?.checksPassed;
+  const total = review?.checksTotal;
+  if (passed === undefined || total === undefined || passed === total) return undefined;
+  return `${passed}/${total}`;
+}
+
+/**
  * The review and CI icons drawn after an open pull request's number, in GitHub's colors: the
- * review verdict, the CI result with `passed/total` muted, then the unresolved threads in the
+ * review verdict, the CI result with `passed/total` muted unless every check passed (see
+ * {@link checkCounts}), then the unresolved threads in the
  * warning color. A part without data is left out. Each part starts with its separating space, so
  * the number and the state icon stay in the same column on every row, and each glyph keeps a
  * 2-cell slot like the ref icons because a space always follows it (the next part's or the
@@ -133,9 +145,8 @@ export function badgeSegments(review: RefReview | undefined, theme: ResolvedThem
           ? [ICONS.checksFailing, feedback.error.base]
           : [ICONS.checksPending, feedback.warning.base];
     parts.push({ text: ` ${glyph}`, fg });
-    if (review.checksTotal !== undefined && review.checksPassed !== undefined) {
-      parts.push({ text: ` ${review.checksPassed}/${review.checksTotal}`, fg: muted });
-    }
+    const counts = checkCounts(review);
+    if (counts !== undefined) parts.push({ text: ` ${counts}`, fg: muted });
   }
   if (review.unresolved !== undefined && review.unresolved > 0) {
     parts.push({ text: ` ${ICONS.threads} ${review.unresolved}`, fg: feedback.warning.base });

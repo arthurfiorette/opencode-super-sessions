@@ -92,13 +92,13 @@ With animations off in OpenCode, the spinner is a still `⋯`. Titles wrap onto 
 
 ### Review and CI icons
 
-An open or draft pull request shows these Nerd Font icons after its icon and number, in this order, on list rows, in the Pull requests view, in the preview's Work rows and in the sidebar. A part without data is left out, so the icon and number always start in the same column.
+An open or draft pull request shows these Nerd Font icons in this order. On list rows and in the Pull requests view they follow its icon and number on the same line. In the preview's Work rows and in the sidebar they get their own line under the pull request, so the title keeps its room. A part without data is left out, so the icon and number always start in the same column.
 
-| Part    | Icons                                                                                               |
-| ------- | --------------------------------------------------------------------------------------------------- |
-| Review  | Changes requested (red), approved (green) or review required (muted)                                |
-| CI      | Passing (green check), failing (red x) or pending (yellow dot), then `passed/total` such as `91/93` |
-| Threads | A comment icon and the number of unresolved review threads, in yellow                               |
+| Part    | Icons                                                                                                                         |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Review  | Changes requested (red), approved (green) or review required (muted)                                                          |
+| CI      | Passing (green check), failing (red x) or pending (yellow dot), then `passed/total` such as `91/93` unless every check passed |
+| Threads | A comment icon and the number of unresolved review threads, in yellow                                                         |
 
 On GitHub, successful, neutral and skipped check runs and successful statuses count as passed. github.com's own list leaves out a check run that a re-run replaced, so the totals here can be higher than there. On GitLab, the counts are the head pipeline's jobs: successful and skipped ones pass, and manual and retried jobs are not counted.
 
@@ -139,7 +139,7 @@ The header holds the title and these sections:
 
 - Context: tokens in the context window and their share of the model's limit, the cost so far, and whether the session is running, idle, interrupted or failed.
 - Session: the project (only when it differs from the browser's), the worktree directory (only when it is not the project root) and the branch (only when it is not the default branch).
-- Work: every tracked pull request and issue, the main pull request first with a `branch` note when it is the branch's pull request. Open pull requests show their [review and CI icons](#review-and-ci-icons) after the number, and lines under each give the review (`changes requested` in red, `approved` in green, `review required` muted), the unresolved threads in yellow, and each failed check with a red x, at most five and then `+N more`; pending checks are not listed. A click on a failed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
+- Work: every tracked pull request and issue, the main pull request first. A pull request's line holds its state icon, number and title. Under an open one, a line shows its [review and CI icons](#review-and-ci-icons) when it has any, followed by each failed check with a red x, at most five and then `+N more`; pending checks are not listed. A click on a failed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
 
 The transcript below draws messages the way OpenCode's session view does and follows your `cli.json` session settings (scrollbar, thinking, markdown, verbosity, grouping). It starts at the latest message; scrolling up loads older ones.
 
@@ -224,7 +224,7 @@ Work rows, checks and failed check lines are links: a click opens them in your w
 
 ## Sidebar
 
-The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first with a `branch` note, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests show their [review and CI icons](#review-and-ci-icons) between the number and the title and the same review, thread and failed check lines as the preview, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), a click opens it in your web browser, and a ctrl+click copies its URL (see [Copying links](#copying-links)). A session without pull requests, issues or mentions shows nothing there.
+The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests get the same line of [review and CI icons](#review-and-ci-icons) and failed check lines under them as in the preview, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), a click opens it in your web browser, and a ctrl+click copies its URL (see [Copying links](#copying-links)). A session without pull requests, issues or mentions shows nothing there.
 
 ## Pull request and issue tracking
 
@@ -258,7 +258,7 @@ The PR line shows one pull request: the branch's pull request, else the newest o
 
 ### Review and CI status
 
-For open and draft pull requests the plugin reads the review decision, how many review threads are resolved, and the combined CI result of the head commit with its passed and total counts. List rows show them as [icons](#review-and-ci-icons) on the PR line. The preview's Work rows and the sidebar add a line for the review and one for unresolved threads, and list the failed checks by name; those names come from the pull request's check list, which the plugin fetches only for failing pull requests of the session on screen.
+For open and draft pull requests the plugin reads the review decision, how many review threads are resolved, and the combined CI result of the head commit with its passed and total counts. List rows show them as [icons](#review-and-ci-icons) on the PR line. The preview's Work rows and the sidebar show the icons on a line under the pull request and list the failed checks by name; those names come from the pull request's check list, which the plugin fetches only for failing pull requests of the session on screen.
 
 States are cached: open and draft pull requests for 2 minutes, closed ones for 15 minutes, merged ones and closed issues for good, and errors for 30 seconds. While the browser is open it refreshes the visible rows every 60 seconds, and the sidebar refreshes its session every 60 seconds. `gh pr merge`, `gh pr close`, `gh issue close`, `glab mr merge`, `glab mr close` and `glab issue close` refresh the session's refs right away. When the forge reports its rate limit is spent, the plugin waits for the reset and keeps showing the last known state.
 

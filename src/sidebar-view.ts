@@ -83,18 +83,13 @@ export default function Sidebar(props: SidebarProps) {
     controller.dispose();
   });
 
-  /** Key of the session's branch PR, which leads the list with a `branch` marker. */
-  const branchKey = () => {
-    const ref = data.view?.branchRefs[0];
-    return ref === undefined ? undefined : refKey(ref);
-  };
   const failed = createFailedChecks({
     refs: () => listed().refs.map((ref) => ({ ref, state: stateOf(ref) })),
     load: (ref) => rpc['pull.details']({ ref }, rpcOptions(untrack(props.sessionID)))
   });
   /**
    * One ref line; the shared Work row also draws the preview's Work section. An open pull
-   * request gets the same review, thread and failed check lines under it as there.
+   * request gets the same icon and failed check lines under it as there.
    */
   const row = (ref: () => Ref, index: number) =>
     jsx('box', {
@@ -109,7 +104,6 @@ export default function Sidebar(props: SidebarProps) {
           state: () => stateOf(ref()),
           width,
           marquee,
-          marker: () => (refKey(ref()) === branchKey() ? 'branch' : undefined),
           id: `super-sessions-sidebar-ref-${index}`
         }),
         workStatus({

@@ -275,8 +275,7 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
           state,
           width: () => props.width(),
           marquee: props.marquee,
-          selected: () => props.selectedRef() === refKey(item.ref),
-          marker: () => (item.branch ? 'branch' : undefined)
+          selected: () => props.selectedRef() === refKey(item.ref)
         });
       }
     })
@@ -310,13 +309,12 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
 }
 
 /**
- * One line of the preview's Work section: a ref row (`branch` marks the session's branch PR),
- * the status lines under an open pull request (see `workStatus`), or the label over mentioned
- * refs.
+ * One line of the preview's Work section: a ref row, the status lines under an open pull request
+ * (see `workStatus`), or the label over mentioned refs.
  */
 export type WorkLine =
   | { kind: 'label'; text: string }
-  | { kind: 'ref'; ref: Ref; branch?: boolean }
+  | { kind: 'ref'; ref: Ref }
   | { kind: 'status'; ref: Ref };
 
 /**
@@ -338,11 +336,7 @@ export function workLines(view: SessionRefView): WorkLine[] {
   ];
   for (const pr of ordered) {
     const key = refKey(pr);
-    lines.push(
-      key === mainKey && main.branch
-        ? { kind: 'ref', ref: pr, branch: true }
-        : { kind: 'ref', ref: pr }
-    );
+    lines.push({ kind: 'ref', ref: pr });
     if (hasWorkStatus(view.states[key])) lines.push({ kind: 'status', ref: pr });
     const closes = new Map<string, Ref>();
     for (const ref of view.states[key]?.closes ?? []) closes.set(refKey(ref), ref);
