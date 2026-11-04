@@ -32,7 +32,11 @@ test('the real TUI hands session.list, the peek arrows and its dialogs to the pl
   const tui = await launch(model.baseURL);
   t.after(() => tui.close());
 
-  await tui.waitFor('Ask anything');
+  // The composer draws and takes typing before the Location's agents and models load, and an
+  // Enter in that window does nothing: submit returns false while `local.agent.current()` is
+  // undefined (packages/tui/src/component/prompt/index.tsx). The footer shows the agent only
+  // once both lists are loaded, the same state submit reads.
+  await tui.waitFor(/Build · scripted contract/);
   await send(tui, 'alpha task');
   await tui.leader('n');
   await send(tui, 'beta task');
