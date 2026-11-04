@@ -110,6 +110,8 @@ const DONE_KEY = 'ctrl+q';
 const RELOAD_KEY = 'f5';
 // A reload that answers sooner than this shows no "Reloading…" toast, which would only flash.
 const RELOAD_TOAST_DELAY = 300;
+// Two left clicks on one row within this many milliseconds open it.
+const DOUBLE_CLICK = 400;
 const FORGE_NAMES: Record<ProviderId, string> = { github: 'GitHub', gitlab: 'GitLab' };
 
 /** Which optional pieces the header row shows. */
@@ -1035,8 +1037,32 @@ export default function SessionBrowser(props: PageProps) {
     }, 1);
   });
 
-  const hover = (session: SessionInfo) => select(session.id);
-  const leave = () => {};
+  // Hover only tints the row under the pointer: selecting on hover made the preview jump while
+  // the pointer crossed the list on its way to the preview.
+  const [hoveredRow, setHoveredRow] = createSignal<string>();
+  /** The row hover handlers for the row with `id`, a session id or a pull request key. */
+  const pointer = (id: () => string) => ({
+    hover: () => setHoveredRow(id()),
+    // Moving between two lines of a row, or onto the next row, may report the new hover first.
+    leave: () => setHoveredRow((current) => (current === id() ? undefined : current))
+  });
+  // A scroll or a view switch moves other rows under a pointer that reports nothing new.
+  createEffect(
+    on([() => memory.scroll, () => memory.view], () => setHoveredRow(undefined), { defer: true })
+  );
+  let lastClick: { id: string; at: number } | undefined;
+  /**
+   * A left click on a row selects it; a second click on the same row within
+   * {@link DOUBLE_CLICK} ms opens it. OpenTUI reports no double clicks, so the view times them.
+   */
+  const clickRow = (id: string, choose: () => void, activate: () => void) => {
+    const at = Date.now();
+    const double =
+      lastClick !== undefined && lastClick.id === id && at - lastClick.at <= DOUBLE_CLICK;
+    lastClick = double ? undefined : { id, at };
+    if (double) activate();
+    else choose();
+  };
 
   const markerOf = (session: SessionInfo): Segment => {
     const slot = slots().get(session.id);
@@ -1080,7 +1106,8 @@ export default function SessionBrowser(props: PageProps) {
     selected: memory.selected === session.id,
     // Pinned rows show their slot instead of the spinner, but their title still says it runs.
     running: model.running(session.id),
-    deleting: deleting() === session.id
+    deleting: deleting() === session.id,
+    hovered: hoveredRow() === session.id
   });
 
   /** Everything a Pull requests view row draws. */
@@ -1097,7 +1124,8 @@ export default function SessionBrowser(props: PageProps) {
       // The row box pads one cell on each side.
       width: listWidth() - 2,
       selected: memory.pull === pull.key,
-      deleting: false
+      deleting: false,
+      hovered: hoveredRow() === pull.key
     };
   };
   /** A Pull requests view line; `enter` and a click open its newest session. */
@@ -1116,9 +1144,13 @@ export default function SessionBrowser(props: PageProps) {
       return last;
     });
     return pullLine(theme, row, {
-      hover: () => selectPull(pull().key),
-      leave,
-      open: () => open(pull().sessions[0]?.id),
+      ...pointer(() => pull().key),
+      click: () =>
+        clickRow(
+          pull().key,
+          () => selectPull(pull().key),
+          () => open(pull().sessions[0]?.id)
+        ),
       copy: () => copyLink(context, refUrl(pull().ref, pull().state))
     });
   };
@@ -1180,9 +1212,13 @@ export default function SessionBrowser(props: PageProps) {
           return last;
         });
         const events = {
-          hover: () => hover(session()),
-          leave,
-          open: () => open(session().id)
+          ...pointer(() => session().id),
+          click: () =>
+            clickRow(
+              session().id,
+              () => select(session().id),
+              () => open(session().id)
+            )
         };
         if (value.kind === 'title') return titleLine(theme, row, events);
         if (value.kind === 'wrap') return wrapLine(value.index, theme, row, events);

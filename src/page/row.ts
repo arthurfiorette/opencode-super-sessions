@@ -34,6 +34,8 @@ export interface RowModel {
   running: boolean;
   /** The first delete press turned this row into a confirmation. */
   deleting: boolean;
+  /** The pointer is over one of the row's lines; a faint tint, below the selection's colors. */
+  hovered: boolean;
 }
 
 /** Input of {@link refSegments}. */
@@ -234,7 +236,8 @@ export interface RowEvents {
   hover(): void;
   /** The pointer left one of the row's lines. */
   leave(): void;
-  open(): void;
+  /** A left click without ctrl: the view selects the row, or opens it on a double click. */
+  click(): void;
   /** A ctrl+click on a row that stands for a link, such as a pull request, copies its URL. */
   copy?(): void;
 }
@@ -248,7 +251,7 @@ export function runningColor(theme: ResolvedTheme): RGBA {
 }
 
 /** What a row's colors depend on. */
-type RowLook = Pick<RowModel, 'deleting' | 'selected'>;
+type RowLook = Pick<RowModel, 'deleting' | 'selected' | 'hovered'>;
 
 /** Everything a row of the Pull requests view draws. */
 export interface PullRowModel extends RowLook {
@@ -338,7 +341,10 @@ export function pullLine(
   ]);
 }
 
-/** Background and foreground of a row for its selection and delete state. */
+/**
+ * Background and foreground of a row for its delete, selection and hover state, in that order of
+ * precedence. Hover only tints the background, so it never reads as the selection.
+ */
 function rowColors(theme: ResolvedTheme, model: RowLook) {
   if (model.deleting) {
     return {
@@ -349,7 +355,17 @@ function rowColors(theme: ResolvedTheme, model: RowLook) {
   if (model.selected) {
     return { bg: theme.background.action.primary.focused, fg: theme.text.action.primary.focused };
   }
-  return { bg: undefined, fg: undefined };
+  return { bg: model.hovered ? hoverBackground(theme) : undefined, fg: undefined };
+}
+
+/**
+ * The hover tint: the theme's hovered action background. `raised.base` equals the panel on the
+ * dialog surface, so it would show nothing; when the hovered token does too, `raised.high`
+ * stands in.
+ */
+function hoverBackground(theme: ResolvedTheme): RGBA {
+  const hovered = theme.background.action.primary.hovered;
+  return hovered.equals(theme.background.base) ? theme.background.raised.high : hovered;
 }
 
 /** A row line's outer box: height, padding, colors and pointer handlers. */
@@ -374,7 +390,7 @@ function lineBox(
       if (event.button !== MouseButton.LEFT) return;
       event.stopPropagation();
       if (event.modifiers.ctrl && events.copy) events.copy();
-      else events.open();
+      else events.click();
     },
     children
   });

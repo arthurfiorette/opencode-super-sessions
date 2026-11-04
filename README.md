@@ -207,7 +207,7 @@ Most terminals send `ctrl+/` as `ctrl+_`; the browser takes both.
 
 The quit keys never exit OpenCode from the browser. With the default keys `ctrl+d` deletes there, because `session.delete` wins over `app.exit` inside the browser.
 
-A left click on a row opens the session, hovering selects it, and a click outside the panel or on `esc` closes the browser.
+Hovering a row tints it without selecting it, so the preview stays on the selected session. A left click selects a row and a double click (two clicks within 400 ms) opens it, like `enter`. The mouse wheel scrolls the list or the preview under the pointer. A click outside the panel or on `esc` closes the browser.
 
 ## Sidebar
 
