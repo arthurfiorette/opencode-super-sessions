@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { type ArchiveFacts, isArchiveDue } from '../../src/server/auto-archive.js';
 import {
   type CleanupSettings,
   decideWorktree,
   parseStatus,
+  readPullHead,
   type WorktreeFacts,
   type WorktreeSession
 } from '../../src/server/cleanup.js';
@@ -44,6 +49,7 @@ const worktree = (patch: Partial<WorktreeFacts> = {}): WorktreeFacts => ({
   status: parseStatus(''),
   ahead: 0,
   merged: true,
+  contained: true,
   ...patch
 });
 
@@ -51,8 +57,32 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
   const cases: Array<[string, Partial<CleanupSettings>, Partial<WorktreeFacts>, string]> = [
     ['every rule off', {}, {}, 'keep'],
     ['merged', { cleanupMerged: true }, {}, 'remove:merged'],
-    ['merged, HEAD not in the default branch', { cleanupMerged: true }, { merged: false }, 'keep'],
-    ['merged, state unknown', { cleanupMerged: true }, { merged: undefined }, 'keep'],
+    ['no merged pull request', { cleanupMerged: true }, { merged: false }, 'keep'],
+    // Squash and rebase merges leave HEAD out of the default branch; the PR head decides.
+    [
+      'squash merged, HEAD is the pull request head',
+      { cleanupMerged: true },
+      { contained: false, head: 'included' },
+      'remove:merged'
+    ],
+    [
+      'squash merged, one local commit the pull request lacks',
+      { cleanupMerged: true },
+      { contained: false, head: 'extra' },
+      'keep:branch has commits the pull request did not include'
+    ],
+    [
+      'squash merged, head never fetched',
+      { cleanupMerged: true },
+      { contained: false, head: 'missing' },
+      'keep:pull request head is not available locally'
+    ],
+    [
+      'merged, git state unknown',
+      { cleanupMerged: true },
+      { contained: undefined, head: undefined },
+      'keep'
+    ],
     [
       'merged, but the user still works in the session',
       { cleanupMerged: true },
@@ -130,9 +160,60 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
   ];
   for (const [name, settings, facts, expected] of cases) {
     const decision = decideWorktree(worktree(facts), { ...OFF, ...settings }, NOW);
-    const actual = decision.action === 'remove' ? `remove:${decision.rule}` : 'keep';
+    const actual =
+      decision.action === 'remove'
+        ? `remove:${decision.rule}`
+        : expected.startsWith('keep:')
+          ? `keep:${decision.reason}`
+          : 'keep';
     assert.equal(actual, expected, `${name}: ${decision.reason}`);
   }
+});
+
+test('a squash-merged branch counts as merged only while HEAD has nothing beyond the PR head', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'super-sessions-cleanup-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  /** Runs git with identity, hooks and signing pinned, and returns its trimmed output. */
+  const git = (...args: string[]) =>
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.name=Test',
+        '-c',
+        'user.email=test@example.com',
+        '-c',
+        'commit.gpgsign=false',
+        '-c',
+        'core.hooksPath=',
+        '-C',
+        directory,
+        ...args
+      ],
+      { encoding: 'utf8' }
+    ).trim();
+  /** Makes an empty commit and returns its id. */
+  const commit = (message: string) => {
+    git('commit', '-q', '--allow-empty', '--no-verify', '-m', message);
+    return git('rev-parse', 'HEAD');
+  };
+  git('init', '-q', '-b', 'main');
+  commit('init');
+  const first = commit('first PR commit');
+  const head = commit('second PR commit');
+  const absent = 'f'.repeat(40);
+
+  // HEAD is the merged head.
+  assert.equal(await readPullHead(directory, [head]), 'included');
+  // The checkout never pulled the last PR commit: still nothing the PR lacks.
+  git('checkout', '-q', '--detach', first);
+  assert.equal(await readPullHead(directory, [absent, head]), 'included');
+  // A commit made after the PR was merged would be lost with the worktree.
+  git('checkout', '-q', head);
+  commit('local follow-up');
+  assert.equal(await readPullHead(directory, [head]), 'extra');
+  assert.equal(await readPullHead(directory, [absent]), 'missing');
+  assert.equal(await readPullHead(directory, []), 'missing');
 });
 
 test('the keep mode decides which local changes, read from git status, keep a worktree', () => {

@@ -219,7 +219,7 @@ export const SETTINGS: readonly SettingRow[] = [
     group: 'Cleanup',
     title: 'Delete merged worktrees',
     description:
-      'Removes worktrees whose pull request is merged and whose commits are in the default branch.',
+      'Removes worktrees whose pull request is merged, including squash and rebase merges, when the branch has no commits the pull request did not include.',
     ...onOff,
     keywords: ['worktree', 'merged']
   },

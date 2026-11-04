@@ -92,7 +92,12 @@ export const refStateSchema = z.strictObject({
   // Issues: pull requests that reference this issue as closed by them.
   closedBy: z.array(refSchema).optional(),
   // Pull requests only.
-  review: refReviewSchema.optional()
+  review: refReviewSchema.optional(),
+  // Pull requests only: the head commit, which worktree cleanup compares a local branch with.
+  headSha: z
+    .string()
+    .regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/)
+    .optional()
 });
 
 export type ProviderId = z.output<typeof providerIdSchema>;

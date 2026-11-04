@@ -3,6 +3,13 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Keeps a full lower-case commit id (SHA-1 or SHA-256), the only form git and the schema accept. */
+export function commitSha(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value)
+    ? value
+    : undefined;
+}
+
 /** Parses JSON without throwing; the CLIs print plain text for failures that never reached the forge. */
 export function parseJson(text: string): unknown {
   try {

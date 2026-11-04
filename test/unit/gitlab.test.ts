@@ -97,6 +97,8 @@ test('a batch resolves states, kinds and closed issues, and isolates missing ref
   });
   // Merged snapshots are never refetched, so they must not carry a review that would go stale.
   assert.equal(merged.state.review, undefined);
+  // Worktree cleanup compares local branches with this commit after squash merges.
+  assert.equal(merged.state.headSha, '9ec13dc75a12438c938dda136485254b379f0c61');
   assert.equal(merged.state.mergedAt, Date.UTC(2026, 10, 2, 5, 41, 35));
   assert.deepEqual(merged.state.closes?.map(refKey), [refKey(issue.ref)]);
   assert.equal(issue.state.url, 'https://gitlab.com/gitlab-org/cli/-/work_items/8701');

@@ -47,9 +47,24 @@ export interface WorktreeFacts {
   status?: LocalChanges | undefined;
   /** Commits on HEAD that the default branch does not have. */
   ahead?: number | undefined;
-  /** A tracked pull request is merged, none is open, and HEAD is in the default branch. */
+  /** A tracked pull request is merged and none is open or a draft. */
   merged?: boolean | undefined;
+  /** HEAD is in the default branch, as after a plain merge. */
+  contained?: boolean | undefined;
+  /** HEAD against the merged pull requests' head commits; see {@link PullHead}. */
+  head?: PullHead | undefined;
 }
+
+/**
+ * Where HEAD stands against the head commits of the merged pull requests. Squash and rebase
+ * merges put new commits on the default branch, so only the pull request's own head shows that
+ * the branch holds nothing it did not merge.
+ *
+ * - `included`: HEAD is a merged head, or behind one.
+ * - `extra`: a head is available locally, and HEAD has commits none of them has.
+ * - `missing`: no head commit is known or present in the local repository.
+ */
+export type PullHead = 'included' | 'extra' | 'missing';
 
 export type CleanupSettings = Pick<
   ServerSettings,
@@ -113,8 +128,14 @@ export function decideWorktree(
   if (settings.cleanupDeleted && facts.deleted && sessions.length === 0) {
     return remove('deleted', 'its sessions were deleted');
   }
+  // Why the merged rule passed over a merged pull request; reported only if no later rule removes.
+  let unmerged: string | undefined;
   if (settings.cleanupMerged && facts.merged === true && settled) {
-    return remove('merged', 'pull request merged into the default branch');
+    if (facts.contained === true || facts.head === 'included') {
+      return remove('merged', 'pull request merged');
+    }
+    if (facts.head === 'extra') unmerged = 'branch has commits the pull request did not include';
+    if (facts.head === 'missing') unmerged = 'pull request head is not available locally';
   }
   const doneDays = settings.cleanupDoneDays;
   if (doneDays !== null && sessions.length > 0 && settled) {
@@ -140,6 +161,7 @@ export function decideWorktree(
     return remove('unchanged', 'no commits beyond the default branch');
   }
 
+  if (unmerged !== undefined) return keep(unmerged);
   if (!settled) return keep('a session in it is still active');
   if (sessions.length === 0 && !facts.deleted) return keep('no session uses it');
   return keep('no cleanup rule matches');
@@ -186,6 +208,28 @@ export interface WorktreeGit {
   ahead?: number;
   /** Whether HEAD is contained in `base`. */
   contained?: boolean;
+}
+
+/**
+ * Compares HEAD with pull request head commits, for squash and rebase merges the default branch
+ * does not contain. Undefined when git failed on a head that exists, which keeps the worktree.
+ */
+export async function readPullHead(
+  directory: string,
+  heads: string[],
+  runner: Runner = run
+): Promise<PullHead | undefined> {
+  const git = gitIn(runner, directory, GIT_TIMEOUT_MS);
+  let available = false;
+  for (const head of heads) {
+    // A head that was never fetched (another clone pushed it, or the fork is gone) cannot be compared.
+    if ((await git('cat-file', '-e', `${head}^{commit}`)).code !== 0) continue;
+    available = true;
+    const ancestor = await git('merge-base', '--is-ancestor', 'HEAD', head);
+    if (ancestor.code === 0) return 'included';
+    if (ancestor.code !== 1) return undefined;
+  }
+  return available ? 'extra' : 'missing';
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   cleanupEnabled,
   decideWorktree,
   defaultBranchRef,
+  readPullHead,
   readWorktreeGit,
   type WorktreeFacts,
   type WorktreeSession
@@ -312,6 +313,12 @@ function createSweeper(runtime: Runtime): Sweeper {
           const view = done.get(id)?.view;
           return view === undefined ? [] : [view];
         });
+        const merged = mergedPull(views);
+        // Only worth the git calls when a plain merge does not already explain the branch.
+        const head =
+          merged && !worktree.root && git.contained !== true
+            ? await readPullHead(worktree.directory, mergedHeads(views))
+            : undefined;
         const fact: WorktreeFacts = {
           directory: worktree.directory,
           root: worktree.root,
@@ -333,7 +340,9 @@ function createSweeper(runtime: Runtime): Sweeper {
           }),
           status: git.status,
           ahead: git.ahead,
-          merged: git.contained === undefined ? undefined : git.contained && mergedPull(views)
+          merged,
+          contained: git.contained,
+          head
         };
         facts.set(worktree.directory, { projectID: worktree.projectID, facts: fact });
         decisions.push(decideWorktree(fact, settings, now));
@@ -673,6 +682,17 @@ function mergedPull(views: SessionRefView[]): boolean {
     pulls.includes('merged') &&
     pulls.every((status) => status !== undefined && status !== 'open' && status !== 'draft')
   );
+}
+
+/** Head commits of the tracked pull requests that are merged, as the forge last reported them. */
+function mergedHeads(views: SessionRefView[]): string[] {
+  const heads = views.flatMap((view) =>
+    trackedRefs(view).flatMap((ref) => {
+      const state = ref.kind === 'pr' ? view.states[refKey(ref)] : undefined;
+      return state?.status === 'merged' && state.headSha !== undefined ? [state.headSha] : [];
+    })
+  );
+  return [...new Set(heads)];
 }
 
 /** Whether a permission request waits on the session. A failed read counts as waiting. */

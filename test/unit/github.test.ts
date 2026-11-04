@@ -75,6 +75,8 @@ test('a batch with a missing number and a missing repository still resolves ever
   });
   // Merged snapshots are never refetched, so they must not carry a review that would go stale.
   assert.equal(merged.state.review, undefined);
+  // Worktree cleanup compares local branches with this commit after squash merges.
+  assert.equal(merged.state.headSha, 'ab3efc24f8e74f7588f06d0d368d31279166950d');
   assert.equal(merged.state.mergedAt, Date.UTC(2026, 9, 26, 18, 2, 47));
   assert.deepEqual(merged.state.closes?.map(refKey), [refKey(issue.ref)]);
   assert.deepEqual(issue.state.closedBy?.map(refKey), [refKey(merged.ref)]);

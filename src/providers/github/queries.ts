@@ -1,4 +1,5 @@
 import type { Ref, RefReview, RefState, RefStatus } from '../../refs/ref.js';
+import { commitSha } from '../include.js';
 import type { ForgeError, RefCandidate, RepoRef } from '../provider.js';
 import type { GraphQLError, GraphQLResponse } from './output.js';
 
@@ -20,7 +21,7 @@ export interface SnapshotDocument {
 // maximum. At 25 refs the document measured 3,375 nodes (limit 500,000) and cost 1 point.
 const SNAPSHOT_FRAGMENTS = `
 fragment PullRequestFields on PullRequest {
-  state isDraft title url mergedAt closedAt reviewDecision
+  state isDraft title url mergedAt closedAt reviewDecision headRefOid
   closingIssuesReferences(first: 10) { nodes { number repository { nameWithOwner } } }
   latestReviews(first: 20) { nodes { state } }
   reviewThreads(first: 100) { totalCount nodes { isResolved } }
@@ -234,6 +235,7 @@ export function parseSnapshotResponse(
     const mergedAt = epoch(node.mergedAt);
     const closedAt = epoch(node.closedAt);
     const review = isPullRequest ? reviewOf(node, status) : undefined;
+    const headSha = isPullRequest ? commitSha(node.headRefOid) : undefined;
     const state: RefState = {
       status,
       title: node.title,
@@ -243,7 +245,8 @@ export function parseSnapshotResponse(
       ...(isPullRequest
         ? { closes: linkedRefs(node.closingIssuesReferences, candidate.host, 'issue') }
         : { closedBy: linkedRefs(node.closedByPullRequestsReferences, candidate.host, 'pr') }),
-      ...(review ? { review } : {})
+      ...(review ? { review } : {}),
+      ...(headSha === undefined ? {} : { headSha })
     };
     return { ref, state };
   });

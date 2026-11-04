@@ -1,15 +1,15 @@
 import type { Ref, RefReview, RefState, RefStatus } from '../../refs/ref.js';
-import { isRecord } from '../include.js';
+import { commitSha, isRecord } from '../include.js';
 import type { ForgeError, RefCandidate, RepoRef } from '../provider.js';
 import type { GraphQLError, GraphQLResponse } from './output.js';
 
 // GitLab rejects a whole document above 200 complexity points when anonymous (250 signed in).
 // Costs were measured on gitlab.com with `queryComplexity { score }`; the budget leaves room
-// for the query itself and `metadata`. The review fields raised a merge request from 21 to 32,
-// so an all-merge-request batch holds 5 (scored 166 anonymously) instead of 8.
+// for the query itself and `metadata`. The review fields and `diffHeadSha` raised a merge
+// request from 21 to 34, so an all-merge-request batch holds 5 instead of 8.
 const COMPLEXITY_BUDGET = 180;
 const PROJECT_COST = 2;
-const MERGE_REQUEST_COST = 32;
+const MERGE_REQUEST_COST = 34;
 const ISSUE_COST = 6;
 
 /** GraphQL field that lists the issues a merge request closes. Older GitLab servers lack it. */
@@ -50,7 +50,9 @@ export interface SnapshotDocument {
   review: boolean;
 }
 
-const MERGE_REQUEST_FIELDS = 'state draft title webUrl mergedAt closedAt';
+// `diffHeadSha` is the source branch head, the same commit REST calls `sha`; it stays the branch
+// head after a squash merge.
+const MERGE_REQUEST_FIELDS = 'state draft title webUrl mergedAt closedAt diffHeadSha';
 const CLOSES_SELECTION = `${CLOSES_FIELD}(types: [CLOSES], first: 10) { nodes { workItem { iid namespace { fullPath } } } }`;
 // One approver is enough to tell "someone approved" from "nobody did". The discussion counts are
 // precomputed by GitLab, so no discussion is read.
@@ -336,6 +338,7 @@ export function parseSnapshotResponse(
     const closedAt = epoch(node.closedAt);
     const review =
       kind === 'pr' && document.review ? reviewOf(node, status, enterprise) : undefined;
+    const headSha = kind === 'pr' ? commitSha(node.diffHeadSha) : undefined;
     const state: RefState = {
       status,
       title: node.title,
@@ -345,7 +348,8 @@ export function parseSnapshotResponse(
       ...(kind === 'pr' && document.closes
         ? { closes: closingIssues(node[CLOSES_FIELD], candidate.host) }
         : {}),
-      ...(review ? { review } : {})
+      ...(review ? { review } : {}),
+      ...(headSha === undefined ? {} : { headSha })
     };
     return { ref, state };
   });
