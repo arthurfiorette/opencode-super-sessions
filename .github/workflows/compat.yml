@@ -1,0 +1,144 @@
+name: OpenCode compatibility
+
+# The plugin runs inside whatever opencode binary the user installed, while package.json pins
+# the versions CI tests. This run tests the newest OpenCode release before users get it.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: compat
+  cancel-in-progress: false
+
+jobs:
+  compat:
+    name: Test against the latest OpenCode release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/setup@v3
+        with:
+          runtime: node@24.16.0
+          cache: true
+          install: true
+
+      - name: Setup Bun for native TUI tests
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      # @opencode/theme pins @opentui/core exactly, so its dependency names the OpenTUI release
+      # that OpenCode version ships with.
+      - name: Resolve the latest OpenCode and its OpenTUI version
+        id: versions
+        run: |
+          opencode=$(npm view @opencode/plugin version)
+          opentui=$(npm view "@opencode/theme@$opencode" 'dependencies.@opentui/core')
+          pinned=$(node -p "require('./package.json').dependencies['@opencode/plugin']")
+          {
+            echo "opencode=$opencode"
+            echo "opentui=$opentui"
+            echo "pinned=$pinned"
+          } >> "$GITHUB_OUTPUT"
+
+      # Changes package.json and the lockfile in the runner only; nothing is committed.
+      - name: Install those versions
+        env:
+          OPENCODE: ${{ steps.versions.outputs.opencode }}
+          OPENTUI: ${{ steps.versions.outputs.opentui }}
+        run: |
+          pnpm add --save-exact "@opencode/client@$OPENCODE" "@opencode/plugin@$OPENCODE" "@opencode/theme@$OPENCODE"
+          pnpm add --save-dev --save-exact "@opencode/sdk@$OPENCODE" "@opentui/core@$OPENTUI" "@opentui/solid@$OPENTUI"
+
+      # npm 12 skips install scripts by default, so the postinstall that links the platform
+      # binary runs explicitly.
+      - name: Install the OpenCode CLI of that release
+        env:
+          OPENCODE: ${{ steps.versions.outputs.opencode }}
+        run: |
+          cli="$RUNNER_TEMP/opencode/node_modules/@opencode/cli"
+          npm install --no-save --ignore-scripts --prefix "$RUNNER_TEMP/opencode" "@opencode/cli@$OPENCODE"
+          node "$cli/postinstall.mjs"
+          echo "OPENCODE_BIN=$cli/bin/opencode.exe" >> "$GITHUB_ENV"
+
+      # Every suite runs even after one fails, so the issue lists all of them.
+      - name: Typecheck
+        id: typecheck
+        continue-on-error: true
+        run: pnpm build && pnpm test-types
+
+      - name: Unit tests
+        id: unit
+        continue-on-error: true
+        run: pnpm test
+
+      - name: Integration tests
+        id: integration
+        continue-on-error: true
+        run: pnpm test:integration
+
+      - name: Contract tests
+        id: contract
+        continue-on-error: true
+        run: pnpm test:contract
+
+      - name: Native TUI tests
+        id: tui
+        continue-on-error: true
+        run: pnpm test:tui
+
+      - name: Report the result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENCODE: ${{ steps.versions.outputs.opencode }}
+          OPENTUI: ${{ steps.versions.outputs.opentui }}
+          PINNED: ${{ steps.versions.outputs.pinned }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TYPECHECK: ${{ steps.typecheck.outcome }}
+          UNIT: ${{ steps.unit.outcome }}
+          INTEGRATION: ${{ steps.integration.outcome }}
+          CONTRACT: ${{ steps.contract.outcome }}
+          TUI: ${{ steps.tui.outcome }}
+        run: |
+          failed=""
+          [ "$TYPECHECK" = success ] || failed="$failed- typecheck"$'\n'
+          [ "$UNIT" = success ] || failed="$failed- unit tests"$'\n'
+          [ "$INTEGRATION" = success ] || failed="$failed- integration tests"$'\n'
+          [ "$CONTRACT" = success ] || failed="$failed- contract tests"$'\n'
+          [ "$TUI" = success ] || failed="$failed- native TUI tests"$'\n'
+
+          if [ -z "$failed" ]; then
+            {
+              echo "OpenCode $OPENCODE with OpenTUI $OPENTUI passed the typecheck, unit, integration, contract and native TUI tests."
+              if [ "$OPENCODE" != "$PINNED" ]; then
+                echo
+                echo "The pins are still at $PINNED. Updating the \`@opencode/*\` pins to $OPENCODE raises \`TESTED_UP_TO\` with them."
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          title="Compatibility with OpenCode $OPENCODE"
+          body="OpenCode $OPENCODE with OpenTUI $OPENTUI failed:"$'\n\n'"$failed"$'\n'"Run: $RUN"$'\n\n'"The contract tests drive the TUI through OpenCode's Drive test harness. If only the TUI contract test fails, check whether Drive itself changed before suspecting the plugin."
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+          {
+            echo "OpenCode $OPENCODE with OpenTUI $OPENTUI failed:"
+            echo
+            echo "$failed"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1

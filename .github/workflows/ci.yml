@@ -33,5 +33,17 @@ jobs:
         with:
           bun-version: 1.3.14
 
+      # The contract tests drive the real TUI, so they need the CLI of the pinned @opencode/sdk.
+      # It goes under the runner's temp directory so nothing global changes. npm 12 skips install
+      # scripts by default, so the postinstall that links the platform binary runs explicitly.
+      - name: Install the OpenCode CLI the plugin is pinned to
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').devDependencies['@opencode/sdk']")
+          cli="$RUNNER_TEMP/opencode/node_modules/@opencode/cli"
+          npm install --no-save --ignore-scripts --prefix "$RUNNER_TEMP/opencode" "@opencode/cli@$version"
+          node "$cli/postinstall.mjs"
+          echo "OPENCODE_BIN=$cli/bin/opencode.exe" >> "$GITHUB_ENV"
+
       - name: Check
         run: pnpm check
