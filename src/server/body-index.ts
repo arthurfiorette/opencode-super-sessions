@@ -216,13 +216,18 @@ function createIndex(db: DatabaseSync): BodyIndex {
  * index those, so every keyed upsert and session removal would scan the whole index.
  */
 function migrate(db: DatabaseSync): void {
-  const version = rowNumber(db.prepare('PRAGMA user_version').get(), 'user_version') ?? 0;
-  if (version === SCHEMA_VERSION) return;
-  if (version > SCHEMA_VERSION) {
-    throw new Error(`search.db has schema ${version}, newer than this plugin understands`);
-  }
+  // The version is read inside the write lock, so a second daemon opening the file at the same
+  // time waits for the first migration instead of repeating it.
   db.exec('BEGIN IMMEDIATE');
   try {
+    const version = rowNumber(db.prepare('PRAGMA user_version').get(), 'user_version') ?? 0;
+    if (version === SCHEMA_VERSION) {
+      db.exec('COMMIT');
+      return;
+    }
+    if (version > SCHEMA_VERSION) {
+      throw new Error(`search.db has schema ${version}, newer than this plugin understands`);
+    }
     // The key is unique per session, not globally: a fork may carry its parent's message ids.
     db.exec(`
       CREATE TABLE entry (
