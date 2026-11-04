@@ -1,0 +1,114 @@
+{
+  "source": "Live: anonymous POST to https://gitlab.com/api/graphql on 2026-11-04 with buildBranchQuery for each key (`project@branch`). Bodies are verbatim, except the renovate list, which keeps the first 10 of 20 nodes; the glab framing follows glab's api command source.",
+  "gitlab-org/cli@8703-preserve-release-notes-on-update": {
+    "code": 0,
+    "status": "HTTP/2.0 200 OK",
+    "stderr": "",
+    "body": {
+      "data": {
+        "project": {
+          "mergeRequests": {
+            "nodes": [
+              {
+                "iid": "4270",
+                "state": "merged",
+                "sourceProject": { "fullPath": "gitlab-community/gitlab-org/cli" }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "gitlab-org/cli@claude-transcript-incomplete-line": {
+    "code": 0,
+    "status": "HTTP/2.0 200 OK",
+    "stderr": "",
+    "body": {
+      "data": {
+        "project": {
+          "mergeRequests": {
+            "nodes": [
+              {
+                "iid": "4300",
+                "state": "merged",
+                "sourceProject": { "fullPath": "gitlab-org/cli" }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "gitlab-org/cli@renovate/gitlab.com-gitlab-org-api-client-go-v3-3.x": {
+    "code": 0,
+    "status": "HTTP/2.0 200 OK",
+    "stderr": "",
+    "body": {
+      "data": {
+        "project": {
+          "mergeRequests": {
+            "nodes": [
+              {
+                "iid": "4312",
+                "state": "opened",
+                "sourceProject": { "fullPath": "gitlab-renovate-forks/cli" }
+              },
+              {
+                "iid": "4298",
+                "state": "merged",
+                "sourceProject": { "fullPath": "gitlab-renovate-forks/cli" }
+              },
+              {
+                "iid": "4273",
+                "state": "merged",
+                "sourceProject": { "fullPath": "gitlab-renovate-forks/cli" }
+              },
+              {
+                "iid": "4256",
+                "state": "merged",
+                "sourceProject": { "fullPath": "gitlab-renovate-forks/cli" }
+              },
+              {
+                "iid": "4246",
+                "state": "merged",
+                "sourceProject": { "fullPath": "gitlab-renovate-forks/cli" }
+              },
+              {
+                "iid": "4223",
+                "state": "merged",
+                "sourceProject": { "fullPath": "gitlab-renovate-forks/cli" }
+              },
+              {
+                "iid": "4222",
+                "state": "merged",
+                "sourceProject": { "fullPath": "gitlab-renovate-forks/cli" }
+              },
+              {
+                "iid": "4147",
+                "state": "merged",
+                "sourceProject": { "fullPath": "gitlab-renovate-forks/cli" }
+              },
+              {
+                "iid": "4126",
+                "state": "closed",
+                "sourceProject": { "fullPath": "gitlab-renovate-forks/cli" }
+              },
+              {
+                "iid": "4115",
+                "state": "merged",
+                "sourceProject": { "fullPath": "gitlab-renovate-forks/cli" }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "arthurfiorette/does-not-exist-zz@x": {
+    "code": 0,
+    "status": "HTTP/2.0 200 OK",
+    "stderr": "",
+    "body": { "data": { "project": null } }
+  }
+}

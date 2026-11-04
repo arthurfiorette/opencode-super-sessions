@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import type { RunResult } from '../../src/process.js';
 import { parseGraphQLOutput } from '../../src/providers/github/output.js';
@@ -10,38 +9,11 @@ import {
 } from '../../src/providers/github/queries.js';
 import type { RefCandidate, RepoRef } from '../../src/providers/provider.js';
 import { refKey } from '../../src/refs/ref.js';
-
-interface CapturedOutput {
-  code: number;
-  status?: string;
-  headers?: Record<string, string>;
-  body?: unknown;
-  stdout?: string;
-  stderr: string;
-}
+import { asRun, type CapturedOutput, fixture as forgeFixture } from '../fixtures/captured.js';
 
 /** Loads a JSON fixture from test/fixtures/github. */
 function fixture<T>(name: string): T {
-  return JSON.parse(readFileSync(new URL(`../fixtures/github/${name}`, import.meta.url), 'utf8'));
-}
-
-/**
- * Rebuilds what `gh api --include` printed: status line ending in LF, CRLF headers, a blank CRLF
- * line, then the body. Fixtures keep the parts apart so they stay readable and trimmed.
- */
-function asRun(output: CapturedOutput): RunResult {
-  if (output.stdout !== undefined) {
-    return { code: output.code, stdout: output.stdout, stderr: output.stderr };
-  }
-  const headers = Object.entries({
-    'Content-Type': 'application/json; charset=utf-8',
-    ...output.headers
-  }).map(([name, value]) => `${name}: ${value}\r\n`);
-  return {
-    code: output.code,
-    stdout: `${output.status}\n${headers.join('')}\r\n${JSON.stringify(output.body)}`,
-    stderr: output.stderr
-  };
+  return forgeFixture('github', name);
 }
 
 const NOW = Date.UTC(2026, 10, 4);
