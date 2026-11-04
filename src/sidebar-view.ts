@@ -13,6 +13,7 @@ import {
 } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { openUrl, refUrl } from './browser.js';
+import { useCliSettings } from './cli-settings.js';
 import { createMarquee, marqueeText } from './marquee.js';
 import { refColor, refIcon, STATE_WORDS } from './page/icons.js';
 import { cells, fitText } from './page/row.js';
@@ -33,8 +34,9 @@ export default function Sidebar(props: SidebarProps) {
   const [prefs, setPrefs] = context.storage.store('sidebar', { initial: { expanded: true } });
   const [data, setData] = createStore<{ view: SessionRefView | undefined }>({ view: undefined });
   const [width, setWidth] = createSignal(0);
+  const settings = useCliSettings();
   // One timer for every row: only the hovered title scrolls, and unmounting clears it.
-  const marquee = createMarquee();
+  const marquee = createMarquee({ animated: () => settings.animations });
   let box: BoxRenderable | undefined;
 
   const rpc = context.client.rpc(SuperSessions);

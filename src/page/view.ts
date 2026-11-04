@@ -8,6 +8,7 @@ import {
   type MouseEvent,
   type Renderable,
   RGBA,
+  SliderRenderable,
   TextAttributes
 } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
@@ -23,6 +24,7 @@ import {
   untrack
 } from 'solid-js';
 import { openUrl, refUrl } from '../browser.js';
+import { useCliSettings } from '../cli-settings.js';
 import { createMarquee } from '../marquee.js';
 import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
@@ -90,7 +92,8 @@ export default function SessionBrowser(props: PageProps) {
   const [frame, setFrame] = createSignal(0);
   const [deleting, setDeleting] = createSignal<string>();
   const [projectLabel, setProjectLabel] = createSignal('');
-  const marquee = createMarquee();
+  const settings = useCliSettings();
+  const marquee = createMarquee({ animated: () => settings.animations });
   let input: InputRenderable | undefined;
   let listBox: BoxRenderable | undefined;
   let panelBox: BoxRenderable | undefined;
@@ -206,6 +209,7 @@ export default function SessionBrowser(props: PageProps) {
       refreshVisible();
     }, REFRESH_INTERVAL),
     setInterval(() => {
+      if (!untrack(() => settings.animations)) return;
       if (untrack(() => rows().some((session) => model.running(session.id))))
         setFrame((value) => value + 1);
     }, 80)
@@ -227,7 +231,7 @@ export default function SessionBrowser(props: PageProps) {
     });
   const select = (sessionID: string | undefined) => remember({ selected: sessionID });
   const move = (delta: number) => select(moveSelection(rows(), memory.selected, delta));
-  // Rows take one to three lines plus a blank one; two lines per row keeps the jump on screen.
+  // Rows take one to three lines; counting three per row keeps the jump on screen.
   const pageRows = () => Math.max(1, Math.floor(listHeight() / 3));
   const open = (sessionID = memory.selected) => {
     if (sessionID === undefined) return;
@@ -488,7 +492,9 @@ export default function SessionBrowser(props: PageProps) {
       };
     }
     if (model.running(session.id)) {
-      return { text: SPINNER[frame() % SPINNER.length] ?? '', fg: theme().text.muted };
+      // The host's spinner stands still as `⋯` while animations are off.
+      const text = settings.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯';
+      return { text, fg: theme().text.muted };
     }
     const info = live(session);
     const unread =
@@ -766,6 +772,36 @@ export default function SessionBrowser(props: PageProps) {
     ]
   });
 
+  // The list draws only the lines on screen, so it has no scrollbox to carry a bar. This is the
+  // native slider a scrollbox draws, in the colors of the host's session transcript bar
+  // (routes/session/index.tsx `verticalScrollbarOptions`), shown under the same setting.
+  let slider: SliderRenderable | undefined;
+  const listBar = jsx('box', {
+    width: 1,
+    flexShrink: 0,
+    get visible() {
+      return settings.session.scrollbar;
+    },
+    ref: (value: BoxRenderable) => {
+      slider = new SliderRenderable(context.renderer, {
+        orientation: 'vertical',
+        width: 1,
+        height: '100%',
+        // Dragging or clicking the track scrolls the list.
+        onChange: (position) => remember({ scroll: Math.round(position) })
+      });
+      value.add(slider);
+    }
+  });
+  createEffect(() => {
+    if (!slider || slider.isDestroyed) return;
+    slider.backgroundColor = theme().decrease(theme().background.raised.base);
+    slider.foregroundColor = theme().border.base;
+    slider.max = Math.max(0, lines().length - listHeight());
+    slider.viewPortSize = Math.max(1, listHeight());
+    slider.value = memory.scroll;
+  });
+
   const previewWidth = () => Math.floor(panelWidth() * props.options.previewWidth);
   const preview = jsx('box', {
     flexDirection: 'row',
@@ -899,7 +935,7 @@ export default function SessionBrowser(props: PageProps) {
         flexGrow: 1,
         flexShrink: 1,
         minHeight: 0,
-        children: [list, preview]
+        children: [list, listBar, preview]
       }),
       jsx('box', { height: 1, flexShrink: 0 }),
       footer

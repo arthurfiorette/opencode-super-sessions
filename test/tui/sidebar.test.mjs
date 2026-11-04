@@ -1,6 +1,9 @@
 import { mock, test } from 'bun:test';
 import assert from 'node:assert/strict';
 import * as childProcess from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { migrateV1, resolveThemeDocument } from '@opencode/theme/tui';
 import { RGBA } from '@opentui/core';
 import { testRender } from '@opentui/solid';
@@ -8,6 +11,9 @@ import { jsx } from '@opentui/solid/jsx-runtime';
 import { createSignal } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import themeSource from '../fixtures/theme-opencode.json';
+
+// The host's defaults, whatever the developer's own cli.json says.
+process.env.OPENCODE_CONFIG_DIR = mkdtempSync(path.join(tmpdir(), 'super-sessions-cli-'));
 
 // The OS opener is the external boundary; record what it would open instead of launching a browser.
 const opened = [];

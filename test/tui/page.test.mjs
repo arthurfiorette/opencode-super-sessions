@@ -1,5 +1,8 @@
 import { afterEach, test } from 'bun:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { migrateV1, resolveThemeDocument } from '@opencode/theme/tui';
 import { testRender } from '@opentui/solid';
 import { jsx } from '@opentui/solid/jsx-runtime';
@@ -7,6 +10,9 @@ import { createSignal, onCleanup } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import plugin from '../../dist/tui.js';
 import themeSource from '../fixtures/theme-opencode.json';
+
+// The host's defaults, whatever the developer's own cli.json says.
+process.env.OPENCODE_CONFIG_DIR = mkdtempSync(path.join(tmpdir(), 'super-sessions-cli-'));
 
 const NOW = Date.now();
 const MINUTE = 60_000;

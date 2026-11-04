@@ -42,9 +42,10 @@ export function marqueeText(text: string, width: number, offset: number): string
 /**
  * Scrolls one key's text at a time, like the host's tab titles: after a short delay the text moves
  * one cell every 80 ms for one full cycle, then rests at the start. Only the active key ticks, so a
- * list of rows costs one timer, not one per row.
+ * list of rows costs one timer, not one per row. While `animated()` is false (the host's
+ * `animations` setting) nothing scrolls and long text stays cut at its head.
  */
-export function createMarquee(): {
+export function createMarquee(options: { animated?(): boolean } = {}): {
   /** The key currently scrolling, if any. */
   active: Accessor<string | undefined>;
   /** Current offset in cells of the active key. */
@@ -78,7 +79,7 @@ export function createMarquee(): {
     active,
     offset,
     enter(key, text, width) {
-      if (cells(text) <= width) {
+      if (cells(text) <= width || options.animated?.() === false) {
         if (active() === key) reset();
         return;
       }
@@ -89,6 +90,8 @@ export function createMarquee(): {
       const cycle = cells(text + GAP);
       delay = setTimeout(() => {
         interval = setInterval(() => {
+          // Animations turned off mid-scroll: back to the head at once.
+          if (options.animated?.() === false) return reset();
           const next = offset() + 1;
           if (next < cycle) return setOffset(next);
           clear();
