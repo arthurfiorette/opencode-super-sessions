@@ -3,7 +3,7 @@ import type { Plugin } from '@opencode/plugin/tui';
 import type { Route } from '@opencode/plugin/tui/context';
 import { createEffect, createMemo, createRoot, createSignal, on } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import { listFilters, projectScope } from '../host/session-api.js';
+import { listFilters, projectScope, sessionScope } from '../host/session-api.js';
 import type { Pins } from '../pins.js';
 import { type SearchScope, SuperSessions } from '../rpc.js';
 import { tuiSettingsFor } from '../settings/store.js';
@@ -60,28 +60,68 @@ export function createBrowserModel(
 
   // The browser opens over a session, home or a plugin page; "this project" means the project of
   // the session underneath, like the built-in list.
-  const location = (): LocationRef => {
+  /** The session the browser opened over, when it did. */
+  const originSession = (): SessionInfo | undefined => {
     const route = origin();
-    const from = route.type === 'session' ? context.data.session.get(route.sessionID) : undefined;
-    return from?.location ?? context.location ?? context.data.location.default();
+    return route.type === 'session' ? context.data.session.get(route.sessionID) : undefined;
   };
+  /** The TUI's own Location. */
+  const home = (): LocationRef => context.location ?? context.data.location.default();
+  const location = (): LocationRef => originSession()?.location ?? home();
   const infos = new Map<string, Promise<LocationPublicInfo>>();
+  // Directories whose last lookup failed, such as a worktree removed before a restart. RPCs go
+  // through the home Location instead, since the host routes them through the request's Location.
+  const unreachable = new Set<string>();
   const resolveLocation = () => {
     const directory = location().directory;
     let info = infos.get(directory);
     if (info === undefined) {
       info = client.location.get({ location: { directory } });
       // A failed lookup is retried on the next open instead of failing every open after it.
-      info.catch(() => infos.delete(directory));
+      info.then(
+        () => unreachable.delete(directory),
+        () => {
+          infos.delete(directory);
+          unreachable.add(directory);
+        }
+      );
       infos.set(directory, info);
     }
     return info;
   };
+  /**
+   * "This project" for the location under the browser. When its directory does not resolve, a
+   * session underneath still names its project and path, so the list stays on that project.
+   */
+  const projectOf = async (): Promise<Exclude<SearchScope, { type: 'all' }>> => {
+    try {
+      return projectScope(await resolveLocation());
+    } catch (error) {
+      const session = originSession();
+      if (session === undefined) throw error;
+      return sessionScope(session);
+    }
+  };
+  /** The project id and root directory under the browser, for the header. */
+  const resolveProject = async (): Promise<{ id: string; directory: string }> => {
+    try {
+      const info = await resolveLocation();
+      return { id: info.project.id, directory: info.project.directory };
+    } catch (error) {
+      const session = originSession();
+      if (session === undefined) throw error;
+      return { id: session.projectID, directory: session.location.directory };
+    }
+  };
   const searchScope = async (target: PageScope): Promise<SearchScope> =>
-    target === 'all' ? { type: 'all' } : projectScope(await resolveLocation());
+    target === 'all' ? { type: 'all' } : projectOf();
   const listScope = async (target: PageScope) => listFilters(await searchScope(target));
   const rpc = () => context.client.rpc(SuperSessions);
-  const rpcOptions = () => ({ location: { directory: location().directory } });
+  /** The Location the plugin's RPCs go through: the one under the browser, if it resolves. */
+  const rpcOptions = () => {
+    const directory = location().directory;
+    return { location: { directory: unreachable.has(directory) ? home().directory : directory } };
+  };
   const running = (sessionID: string) =>
     context.data.session.status(sessionID) === 'running' ||
     context.data.session
@@ -227,25 +267,43 @@ export function createBrowserModel(
     };
   });
 
-  // What the cached lists were loaded for, and when.
+  // The resolved scope the cached lists were loaded for, and when. Keyed by what the lists hold
+  // rather than by directory: every worktree of a project, and any directory in "all projects",
+  // lists the same sessions.
   let loadedFor: string | undefined;
   let loadedAt = 0;
   let dirty = false;
-  const reload = () => {
-    loadedFor = `${scope()}:${location().directory}`;
+  let syncToken = 0;
+  /**
+   * Brings the lists up to date for the current scope and location. Cached lists for the same
+   * resolved scope stay on screen while the location resolves and a reload runs; a different
+   * project starts over. Resolves once the lists are settled, or at once when the cache is fresh.
+   */
+  const sync = async (): Promise<void> => {
+    const token = ++syncToken;
+    const target = scope();
+    // An unresolved scope matches nothing, so the load runs and reports the failure.
+    const key = await searchScope(target).then(
+      (resolved) => JSON.stringify(resolved),
+      () => undefined
+    );
+    // A later sync, such as a ctrl+a during the lookup, decides instead.
+    if (token !== syncToken) return;
+    if (key !== undefined && key === loadedFor && !dirty && Date.now() - loadedAt <= FRESH_FOR)
+      return;
+    if (key !== loadedFor && loadedFor !== undefined) controller.reset();
+    loadedFor = key;
     loadedAt = Date.now();
     dirty = false;
-    return controller.load(scope());
+    await controller.load(target);
   };
   let reloadTimer: ReturnType<typeof setTimeout> | undefined;
   /** Reloads soon while the browser is open; otherwise the next open reloads. */
   const changed = () => {
-    if (!isOpen()) {
-      dirty = true;
-      return;
-    }
+    dirty = true;
+    if (!isOpen()) return;
     clearTimeout(reloadTimer);
-    reloadTimer = setTimeout(() => void reload(), RELOAD_DELAY);
+    reloadTimer = setTimeout(() => void sync(), RELOAD_DELAY);
   };
   const offs = [
     context.data.on('session.deleted', (event) => controller.removed(event.data.sessionID)),
@@ -283,7 +341,9 @@ export function createBrowserModel(
     now,
     setNow,
     location,
-    resolveLocation,
+    resolveProject,
+    /** "This project" under the browser, as a list scope. */
+    resolveScope: projectOf,
     rpc,
     rpcOptions,
     running,
@@ -300,19 +360,16 @@ export function createBrowserModel(
         Object.assign(draft, patch);
       });
     },
+    sync,
     /**
-     * Brings the lists up to date for the current scope and location. Cached lists for the same
-     * scope and location stay on screen while a reload runs; a different project starts over.
-     * Returns the reload, or undefined when the cache is fresh.
+     * Starts the next open from an empty search. Coming back from a peek skips this: the user
+     * is walking through the results.
      */
-    sync(): Promise<void> | undefined {
-      const key = `${scope()}:${location().directory}`;
-      if (key !== loadedFor) {
-        if (loadedFor !== undefined) controller.reset();
-        return reload();
-      }
-      if (dirty || Date.now() - loadedAt > FRESH_FOR) return reload();
-      return undefined;
+    clearSearch() {
+      setMemory((draft) => {
+        draft.query = '';
+      });
+      controller.search('', false, scope());
     },
     dispose() {
       clearTimeout(reloadTimer);

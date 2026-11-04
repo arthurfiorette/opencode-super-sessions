@@ -319,11 +319,7 @@ export default function SessionBrowser(props: PageProps) {
     );
   // Cached lists draw at once; a reload, when due, and the forge refresh run behind them.
   const refreshVisible = () => void controller.refresh(visibleIDs());
-  const sync = () => {
-    const pending = model.sync();
-    if (pending === undefined) refreshVisible();
-    else void pending.then(refreshVisible);
-  };
+  const sync = () => void model.sync().then(refreshVisible);
   sync();
   // Pressing ctrl+a several times in a row loads only the scope it stops on, instead of one
   // reload, refs call and refresh per press.
@@ -352,12 +348,12 @@ export default function SessionBrowser(props: PageProps) {
     }, 10);
     onCleanup(() => clearTimeout(refocus));
     void model
-      .resolveLocation()
+      .resolveProject()
       .then((info) => {
-        setProjectID(info.project.id);
-        const project = context.data.project.get(info.project.id);
-        const root = project?.canonical ?? info.project.directory;
-        setProjectLabel(info.project.id === 'global' ? '' : project?.name || path.basename(root));
+        setProjectID(info.id);
+        const project = context.data.project.get(info.id);
+        const root = project?.canonical ?? info.directory;
+        setProjectLabel(info.id === 'global' ? '' : project?.name || path.basename(root));
       })
       .catch(() => {});
   });
