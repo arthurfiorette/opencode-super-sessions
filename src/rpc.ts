@@ -28,6 +28,8 @@ export const searchMatchSchema = z.enum(['title', 'ref-number', 'ref-title', 'bo
 export const searchHitSchema = z.strictObject({
   sessionID: z.string(),
   match: searchMatchSchema,
+  /** `refKey` of the ref that matched, for `ref-number` and `ref-title` matches. */
+  ref: z.string().optional(),
   /** Higher sorts first. Ties keep the server's most-recently-updated order. */
   score: z.number()
 });

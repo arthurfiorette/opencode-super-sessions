@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { definitions } from '../../src/providers/registry.js';
-import type { Ref } from '../../src/refs/ref.js';
+import { type Ref, refKey } from '../../src/refs/ref.js';
 import { rankSessions, type SearchSession } from '../../src/refs/search.js';
 
 const ref = (repo: string, number: number, kind: Ref['kind'] = 'pr'): Ref => ({
@@ -93,4 +93,22 @@ test('ranks by tier, then recency, and never matches a number by prefix', () => 
       query
     );
   }
+});
+
+test('a ref match names the ref that matched, so the row can say why it is listed', () => {
+  const issue = ref('acme/app', 7, 'issue');
+  const pr = ref('acme/app', 40);
+  const session = {
+    id: 'two-refs',
+    title: 'Upgrade deps',
+    updated: 1,
+    refs: [
+      { ref: pr, title: 'Bump vite' },
+      { ref: issue, title: 'Safari login fails' }
+    ]
+  };
+  const hit = (query: string) => rankSessions({ query, definitions, sessions: [session] })[0];
+  assert.equal(hit('#7')?.ref, refKey(issue));
+  assert.equal(hit('safari')?.ref, refKey(issue));
+  assert.equal(hit('upgrade')?.ref, undefined);
 });

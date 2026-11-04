@@ -1,6 +1,6 @@
 import type { ForgeDefinition, RefCandidate, RepoRef } from '../providers/provider.js';
 import type { SearchHit, SearchMatch } from '../rpc.js';
-import type { Ref } from './ref.js';
+import { type Ref, refKey } from './ref.js';
 
 /** A search query reduced to what the ranking compares. */
 export interface NormalizedQuery {
@@ -74,12 +74,15 @@ function sameRef(ref: Ref, exact: RefCandidate): boolean {
   );
 }
 
-/** The best tier a session reaches for the query, or undefined when nothing matches. */
+/**
+ * The best tier a session reaches for the query, or undefined when nothing matches. Ref matches
+ * carry the key of the first ref that matched, so the row can show why the session is listed.
+ */
 function bestTier(
   session: SearchSession,
   query: NormalizedQuery,
   titleHits: ReadonlySet<string>
-): { tier: number; match: SearchMatch } | undefined {
+): { tier: number; match: SearchMatch; ref?: string } | undefined {
   const title = session.title.trim().toLowerCase();
   if (title === query.text) return { tier: TIERS['exact-title'], match: 'title' };
   if (title.includes(query.text) || titleHits.has(session.id)) {
@@ -87,13 +90,14 @@ function bestTier(
   }
   // Numbers compare whole, so `12` never matches ref 123.
   const { exact, number } = query;
-  const named = session.refs.some(({ ref }) =>
+  const named = session.refs.find(({ ref }) =>
     exact === undefined ? ref.number === number : sameRef(ref, exact)
   );
-  if (named) return { tier: TIERS['ref-number'], match: 'ref-number' };
-  if (session.refs.some(({ title: refTitle }) => refTitle?.toLowerCase().includes(query.text))) {
-    return { tier: TIERS['ref-title'], match: 'ref-title' };
-  }
+  if (named) return { tier: TIERS['ref-number'], match: 'ref-number', ref: refKey(named.ref) };
+  const titled = session.refs.find(({ title: refTitle }) =>
+    refTitle?.toLowerCase().includes(query.text)
+  );
+  if (titled) return { tier: TIERS['ref-title'], match: 'ref-title', ref: refKey(titled.ref) };
   return undefined;
 }
 
@@ -113,7 +117,12 @@ export function rankSessions(input: RankInput): SearchHit[] {
     const previous = best.get(session.id);
     if (previous !== undefined && previous.hit.score >= found.tier) continue;
     best.set(session.id, {
-      hit: { sessionID: session.id, match: found.match, score: found.tier },
+      hit: {
+        sessionID: session.id,
+        match: found.match,
+        ...(found.ref === undefined ? {} : { ref: found.ref }),
+        score: found.tier
+      },
       updated: session.updated
     });
   }
