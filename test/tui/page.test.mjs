@@ -404,7 +404,7 @@ function bgAt(rendered, text) {
   throw new Error(`"${text}" is not on screen`);
 }
 
-test('rows take a line per detail they have, with one blank line between rows and two before a day', async () => {
+test('rows take a line per detail they have, with no gap between rows and one blank line before a group', async () => {
   const { lines, row } = await mount(100);
   const frame = lines();
 
@@ -412,12 +412,13 @@ test('rows take a line per detail they have, with one blank line between rows an
   const running = row('Mastra build: Rollup to Rspack');
   assert.match(frame[running + 1], /rspack-build\s*$/);
   assert.match(frame[running + 2], /#4930 Migrate build to Rspack/);
-  // Both pins have neither: one blank line between them, then two before the Running header.
+  // Both pins have neither: the second follows on the next line, then one blank line comes
+  // before the Running header.
   const pinned = row('Homelab Mastra');
-  assert.equal(row('can you find all merged'), pinned + 2);
-  assert.equal(frame[pinned + 1].trim(), '');
-  assert.equal(row('Running'), pinned + 5);
-  assert.deepEqual([frame[pinned + 3].trim(), frame[pinned + 4].trim()], ['', '']);
+  assert.equal(row('can you find all merged'), pinned + 1);
+  assert.equal(frame[pinned + 2].trim(), '');
+  assert.equal(row('Running'), pinned + 3);
+  assert.equal(row('Pinned'), pinned - 1, 'No blank line between a header and its first row.');
 
   const long = frame[row('Investigate why the deployer')];
   const title = long.slice(long.indexOf('Investigate'), long.indexOf('…') + 1);

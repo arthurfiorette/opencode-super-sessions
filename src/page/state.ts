@@ -162,21 +162,19 @@ export interface RowShape {
 
 /**
  * Lays groups out as terminal lines. Each row is its title line plus a branch line and a refs
- * line when it has them; one blank line separates rows and two come before every group after
- * the first.
+ * line when it has them. Rows follow each other with no gap, and one blank line comes before
+ * every group after the first, like the host's session list.
  */
 export function layoutLines(
   groups: readonly Group[],
   shape: (session: SessionInfo) => RowShape
 ): Line[] {
-  const blank: Line = { kind: 'blank' };
   return groups.flatMap((group, index): Line[] => [
-    ...(index > 0 ? [blank, blank] : []),
+    ...(index > 0 ? [{ kind: 'blank' as const }] : []),
     ...(group.title === undefined ? [] : [{ kind: 'header' as const, title: group.title }]),
-    ...group.sessions.flatMap((session, row): Line[] => {
+    ...group.sessions.flatMap((session): Line[] => {
       const { branch, refs } = shape(session);
       return [
-        ...(row > 0 ? [blank] : []),
         { kind: 'title', session },
         ...(branch ? [{ kind: 'branch' as const, session }] : []),
         ...(refs ? [{ kind: 'refs' as const, session }] : [])
