@@ -114,7 +114,6 @@ function deps(overrides: Partial<PageDeps>): PageDeps {
     running: () => false,
     pending: async () => false,
     lastUserMessageAt: async () => undefined,
-    lastAssistantText: async () => undefined,
     ...overrides
   };
 }

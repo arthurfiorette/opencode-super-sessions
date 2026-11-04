@@ -3,44 +3,48 @@ import { MouseButton, type MouseEvent, type RGBA } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import type { JSX } from 'solid-js';
 import type { Options } from '../config.js';
-import { refKey, refNumber } from '../refs/ref.js';
+import { marqueeText } from '../marquee.js';
+import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { ICONS, refColor, refIcon } from './icons.js';
 
-/** A run of text in one color on a row's second line. */
+/** A run of text in one color on a row line. */
 export interface Segment {
   text: string;
   fg: string | RGBA;
+  bold?: boolean;
 }
 
 /** Everything a session row draws. Built by the view for each visible row. */
 export interface RowModel {
   marker: Segment | undefined;
   title: string;
-  /** Age and cost, right-aligned on the first line. */
+  /** Muted note before the age, such as why a search matched. Empty for none. */
+  label: string;
+  /** Age, or archive and update ages in the Archived view, right-aligned on the title line. */
   right: string;
   /** Cells inside the row's padding, measured from the list. */
   width: number;
-  detail: Segment[];
+  /** Shown on its own line only when it is not the default branch. */
+  branch: string | undefined;
+  /** The refs line. Empty when the session has no refs. */
+  refs: Segment[];
   selected: boolean;
   /** The first delete press turned this row into a confirmation. */
   deleting: boolean;
+  /** Marquee offset while the pointer hovers a title that does not fit. */
+  scroll: number | undefined;
 }
 
-/** Input of {@link detailSegments}. */
-export interface DetailInput {
+/** Input of {@link refSegments}. */
+export interface RefsInput {
   options: Options;
   theme: ResolvedTheme;
   mode: 'dark' | 'light';
-  now: number;
-  /** Shown only when it differs from the default branch. */
-  branch: string | undefined;
   refs: SessionRefView | undefined;
-  /** First line of the last assistant text, shown when the row has no branch and no refs. */
-  last: string | undefined;
-  /** Archive and update times, for rows in the Archived view. */
-  archived?: { at: number; updated: number } | undefined;
+  /** `refKey` of the ref a search matched, drawn with its title in the base text color. */
+  matched?: string | undefined;
 }
 
 /** Short relative age: `now`, `5m`, `3h`, `2d`, `4mo`, `1y`. */
@@ -61,51 +65,65 @@ export function formatCost(cost: number): string {
   return cost >= 0.005 ? `$${cost.toFixed(2)}` : '';
 }
 
-/** Age and cost padded to fixed widths, so both line up down the list. */
-export function rightColumn(age: string, cost: string): string {
-  return `${age.padStart(4)}  ${cost.padStart(7)}`;
+/** Every ref of a view, branch pull requests first, by key. */
+function refsByKey(view: SessionRefView): Map<string, Ref> {
+  const refs = new Map<string, Ref>();
+  for (const ref of [...view.branchRefs, ...view.links.map((link) => link.ref)]) {
+    if (!refs.has(refKey(ref))) refs.set(refKey(ref), ref);
+  }
+  return refs;
+}
+
+/** The ref a key names among a session's refs. */
+export function findRef(view: SessionRefView | undefined, key: string): Ref | undefined {
+  return view === undefined ? undefined : refsByKey(view).get(key);
 }
 
 /**
- * The second line of a row: archive dates, the branch, the primary ref with its title, an issue
- * beside it and a count of the rest. A row with none of these shows the last assistant line.
+ * The refs line: the primary ref with its title, the issue beside it, the ref a search matched
+ * when it is neither, and a count of the rest. Icons take the state color, numbers the base
+ * text color and titles the muted one, except the matched ref's title.
  */
-export function detailSegments(input: DetailInput): Segment[] {
-  const muted = input.theme.text.muted;
-  const pieces: Segment[][] = [];
-  if (input.archived) {
-    pieces.push([
-      {
-        text: `archived ${formatAge(input.now - input.archived.at)} · updated ${formatAge(input.now - input.archived.updated)}`,
-        fg: muted
-      }
-    ]);
+export function refSegments(input: RefsInput): Segment[] {
+  const view = input.refs;
+  if (view === undefined) return [];
+  const { base, muted } = input.theme.text;
+  const summary = rowRefs(view);
+  const shown = [summary.primary, summary.issue].filter((ref): ref is Ref => ref !== undefined);
+  const matched = input.matched === undefined ? undefined : findRef(view, input.matched);
+  let extra = summary.extra;
+  if (matched !== undefined && !shown.some((ref) => refKey(ref) === input.matched)) {
+    shown.push(matched);
+    extra = Math.max(0, extra - 1);
   }
-  if (input.branch) pieces.push([{ text: `${ICONS.branch} ${input.branch}`, fg: muted }]);
-  const summary = input.refs ? rowRefs(input.refs) : { extra: 0 };
-  for (const ref of [summary.primary, summary.issue]) {
-    if (ref === undefined) continue;
-    const state = input.refs?.states[refKey(ref)];
-    const fg = refColor(input.options, state?.status, input.theme, input.mode);
+  const pieces = shown.map((ref): Segment[] => {
+    const key = refKey(ref);
+    const state = view.states[key];
+    const hit = key === input.matched;
     const piece: Segment[] = [
-      { text: `${refIcon(ref.kind, state?.status)} ${refNumber(ref)}`, fg }
+      {
+        text: `${refIcon(ref.kind, state?.status)} `,
+        fg: refColor(input.options, state?.status, input.theme, input.mode)
+      },
+      { text: refNumber(ref), fg: base }
     ];
-    if (ref === summary.primary && state?.title) piece.push({ text: ` ${state.title}`, fg: muted });
-    pieces.push(piece);
-  }
-  if (summary.extra > 0) pieces.push([{ text: `+${summary.extra}`, fg: muted }]);
-  const hasRefs = summary.primary !== undefined || summary.extra > 0;
-  if (!input.branch && !hasRefs && input.last) {
-    pieces.push([{ text: `last: ${input.last}`, fg: muted }]);
-  }
+    if ((ref === summary.primary || hit) && state?.title) {
+      piece.push({ text: ` ${state.title}`, fg: hit ? base : muted });
+    }
+    return piece;
+  });
+  if (extra > 0) pieces.push([{ text: `+${extra}`, fg: muted }]);
   return pieces.flatMap((piece, index) =>
     index === 0 ? piece : [{ text: '  ', fg: muted }, ...piece]
   );
 }
 
-/** Pointer handlers shared by both lines of a row. */
+/** Pointer handlers shared by every line of a row. */
 export interface RowEvents {
+  /** The pointer entered one of the row's lines. */
   hover(): void;
+  /** The pointer left one of the row's lines. */
+  leave(): void;
   open(): void;
 }
 
@@ -123,7 +141,7 @@ function rowColors(theme: ResolvedTheme, model: RowModel) {
   return { bg: undefined, fg: undefined };
 }
 
-/** Props of a row line's outer box: height, padding, colors and pointer handlers. */
+/** A row line's outer box: height, padding, colors and pointer handlers. */
 function lineBox(
   theme: () => ResolvedTheme,
   model: () => RowModel,
@@ -140,6 +158,7 @@ function lineBox(
       return rowColors(theme(), model()).bg;
     },
     onMouseOver: () => events.hover(),
+    onMouseOut: () => events.leave(),
     onMouseUp: (event: MouseEvent) => {
       if (event.button !== MouseButton.LEFT) return;
       event.stopPropagation();
@@ -153,7 +172,13 @@ function lineBox(
 const MARKER_WIDTH = 2;
 const RIGHT_GAP = 2;
 
-/** First row line: marker column, title at the full remaining width, then age and cost. */
+/** Cells the title gets on its line, after the marker, the label and the age. */
+export function titleRoom(model: Pick<RowModel, 'width' | 'label' | 'right'>): number {
+  const label = model.label ? cells(model.label) + RIGHT_GAP : 0;
+  return model.width - MARKER_WIDTH - RIGHT_GAP - label - cells(model.right);
+}
+
+/** First row line: marker column, title at the full remaining width, then label and age. */
 export function titleLine(
   theme: () => ResolvedTheme,
   model: () => RowModel,
@@ -168,11 +193,17 @@ export function titleLine(
       flexShrink: 0,
       children: jsx('text', {
         wrapMode: 'none',
-        get fg() {
-          return rowColors(theme(), model()).fg ?? model().marker?.fg ?? theme().text.muted;
-        },
         get children() {
-          return model().marker?.text ?? '';
+          const marker = model().marker;
+          return jsx('span', {
+            get style() {
+              return {
+                fg: rowColors(theme(), model()).fg ?? marker?.fg ?? theme().text.muted,
+                bold: marker?.bold ?? false
+              };
+            },
+            children: marker?.text ?? ''
+          });
         }
       })
     }),
@@ -181,13 +212,16 @@ export function titleLine(
       flexShrink: 1,
       minWidth: 0,
       wrapMode: 'none',
-      get fg() {
-        return fg(theme().text.base);
-      },
       get children() {
         const current = model();
-        const room = current.width - MARKER_WIDTH - RIGHT_GAP - cells(current.right);
-        return fitText(current.title, room);
+        const room = titleRoom(current);
+        return jsx('span', {
+          style: { fg: fg(theme().text.base), bold: current.selected },
+          children:
+            current.scroll !== undefined && current.scroll > 0
+              ? marqueeText(current.title, room, current.scroll)
+              : fitText(current.title, room)
+        });
       }
     }),
     jsx('text', {
@@ -197,17 +231,19 @@ export function titleLine(
         return fg(theme().text.muted);
       },
       get children() {
-        return model().right;
+        const current = model();
+        return current.label ? `${current.label}  ${current.right}` : current.right;
       }
     })
   ]);
 }
 
-/** Second row line, indented under the title. */
-export function detailLine(
+/** A line under the title, indented to the title column, cut to the row width. */
+function detailLine(
   theme: () => ResolvedTheme,
   model: () => RowModel,
-  events: RowEvents
+  events: RowEvents,
+  segments: () => Segment[]
 ): JSX.Element {
   return lineBox(theme, model, events, [
     jsx('box', { width: MARKER_WIDTH, flexShrink: 0 }),
@@ -219,12 +255,36 @@ export function detailLine(
       get children() {
         const current = model();
         const override = rowColors(theme(), current).fg;
-        return fitSegments(current.detail, current.width - MARKER_WIDTH).map((segment) =>
-          jsx('span', { style: { fg: override ?? segment.fg }, children: segment.text })
+        return fitSegments(segments(), current.width - MARKER_WIDTH).map((segment) =>
+          jsx('span', {
+            style: { fg: override ?? segment.fg, bold: segment.bold ?? false },
+            children: segment.text
+          })
         );
       }
     })
   ]);
+}
+
+/** Second row line, when the session is on a branch other than the default one. */
+export function branchLine(
+  theme: () => ResolvedTheme,
+  model: () => RowModel,
+  events: RowEvents
+): JSX.Element {
+  return detailLine(theme, model, events, () => {
+    const branch = model().branch;
+    return branch ? [{ text: `${ICONS.branch} ${branch}`, fg: theme().text.muted }] : [];
+  });
+}
+
+/** Last row line, when the session has refs. */
+export function refsLine(
+  theme: () => ResolvedTheme,
+  model: () => RowModel,
+  events: RowEvents
+): JSX.Element {
+  return detailLine(theme, model, events, () => model().refs);
 }
 
 type Bun = { stringWidth(text: string): number };

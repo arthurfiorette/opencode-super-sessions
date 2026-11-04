@@ -8,7 +8,10 @@ test('session.list toggles the browser synchronously and falls through for the c
   const layers: KeymapLayer[] = [];
   const context = {
     options: {},
-    storage: { store: () => [{ imported: true, ids: [] }, async () => {}] as const },
+    storage: {
+      store: () => [{ imported: true, ids: [] }, async () => {}] as const,
+      memory: () => [{}, () => {}] as const
+    },
     data: { on: () => () => {}, session: { list: () => [] } },
     keymap: {
       layer(factory: () => KeymapLayer) {

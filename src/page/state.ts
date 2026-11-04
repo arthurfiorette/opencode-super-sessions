@@ -1,6 +1,8 @@
 import type { SessionInfo } from '@opencode/client';
+import { refKey } from '../refs/ref.js';
+import { rankSessions } from '../refs/search.js';
 import { doneAt, isDone } from '../refs/summary.js';
-import type { SearchHit, SessionRefView } from '../rpc.js';
+import type { SearchHit, SearchMatch, SessionRefView } from '../rpc.js';
 
 export type PageView = 'active' | 'done' | 'archived';
 export type PageScope = 'project' | 'all';
@@ -26,11 +28,11 @@ export interface Group {
   sessions: SessionInfo[];
 }
 
-/** One terminal line of the session list. Each session takes a `title` and a `detail` line. */
+/** One terminal line of the session list. A session takes a `title` line and the others it needs. */
 export type Line =
   | { kind: 'blank' }
   | { kind: 'header'; title: string }
-  | { kind: 'title' | 'detail'; session: SessionInfo };
+  | { kind: 'title' | 'branch' | 'refs'; session: SessionInfo };
 
 /** What the Done rule needs beyond refs. Fetched only for sessions that could be Done. */
 export interface DoneExtra {
@@ -152,15 +154,34 @@ export function rowsOf(groups: readonly Group[]): SessionInfo[] {
   return groups.flatMap((group) => group.sessions);
 }
 
-/** Lays groups out as terminal lines: a blank line between groups, a header, two lines per row. */
-export function layoutLines(groups: readonly Group[]): Line[] {
+/** Which optional lines a session row has under its title. */
+export interface RowShape {
+  branch: boolean;
+  refs: boolean;
+}
+
+/**
+ * Lays groups out as terminal lines. Each row is its title line plus a branch line and a refs
+ * line when it has them; one blank line separates rows and two come before every group after
+ * the first.
+ */
+export function layoutLines(
+  groups: readonly Group[],
+  shape: (session: SessionInfo) => RowShape
+): Line[] {
+  const blank: Line = { kind: 'blank' };
   return groups.flatMap((group, index): Line[] => [
-    ...(index > 0 ? [{ kind: 'blank' as const }] : []),
+    ...(index > 0 ? [blank, blank] : []),
     ...(group.title === undefined ? [] : [{ kind: 'header' as const, title: group.title }]),
-    ...group.sessions.flatMap((session): Line[] => [
-      { kind: 'title', session },
-      { kind: 'detail', session }
-    ])
+    ...group.sessions.flatMap((session, row): Line[] => {
+      const { branch, refs } = shape(session);
+      return [
+        ...(row > 0 ? [blank] : []),
+        { kind: 'title', session },
+        ...(branch ? [{ kind: 'branch' as const, session }] : []),
+        ...(refs ? [{ kind: 'refs' as const, session }] : [])
+      ];
+    })
   ]);
 }
 
@@ -193,7 +214,7 @@ export function keepSelection(
 }
 
 /**
- * Returns the first visible line so the selected row's two lines are on screen. When the row is
+ * Returns the first visible line so every line of the selected row is on screen. When the row is
  * the first of its group, its header is kept in view too.
  */
 export function scrollFor(
@@ -206,9 +227,16 @@ export function scrollFor(
   const at = lines.findIndex((line) => line.kind === 'title' && line.session.id === selected);
   if (at === -1 || height <= 0) return Math.min(Math.max(0, scroll), max);
   const top = lines[at - 1]?.kind === 'header' ? at - 1 : at;
+  let end = at + 1;
+  while (end < lines.length) {
+    const line = lines[end];
+    if (line === undefined || line.kind === 'blank' || line.kind === 'header') break;
+    if (line.kind === 'title' || line.session.id !== selected) break;
+    end++;
+  }
   let next = scroll;
   if (top < next) next = top;
-  if (at + 2 > next + height) next = at + 2 - height;
+  if (end > next + height) next = end - height;
   return Math.min(Math.max(0, next), max);
 }
 
@@ -222,14 +250,25 @@ export interface PageDeps {
   running(sessionID: string): boolean;
   pending(sessionID: string): Promise<boolean>;
   lastUserMessageAt(sessionID: string): Promise<number | undefined>;
-  lastAssistantText(sessionID: string): Promise<string | undefined>;
 }
 
-/** Result of the current search. `query` tells which input it answers. */
+/** Why a session is in the search results. */
+export interface SearchReason {
+  match: SearchMatch;
+  /** `refKey` of the ref that matched, for ref matches. */
+  ref?: string | undefined;
+}
+
+/**
+ * Result of the current search. `query` tells which input it answers. `searching` means the
+ * server's answer has not arrived yet; `sessions` then holds the local matches.
+ */
 export interface SearchState {
   query: string;
   status: 'searching' | 'done' | 'error';
   sessions: SessionInfo[];
+  /** Match reason by session id. */
+  reasons: Record<string, SearchReason>;
 }
 
 /** Everything the controller loaded. */
@@ -239,8 +278,6 @@ export interface PageData {
   archived: SessionInfo[];
   refs: Record<string, SessionRefView>;
   extra: Record<string, DoneExtra>;
-  /** First line of the last assistant text, by session. Empty string when there is none. */
-  last: Record<string, string>;
   search: SearchState | undefined;
 }
 
@@ -248,25 +285,71 @@ export const SEARCH_DELAY = 150;
 // The RPC accepts at most 200 ids per call.
 const RPC_BATCH = 200;
 
+/** Data before the first load. */
+function initialData(): PageData {
+  return { status: 'loading', active: [], archived: [], refs: {}, extra: {}, search: undefined };
+}
+
 /**
- * Loads and keeps the page's data. Plain TypeScript with a change callback, so it runs under
- * Node in unit tests and the view decides how to make it reactive.
+ * Ranks the loaded sessions for a query on the client: titles, ref numbers and cached ref titles,
+ * with the same rules as the server. URLs and `owner/repo#N` need the forge definitions, so only
+ * the server answers those.
+ */
+export function localSearch(
+  query: string,
+  sessions: readonly SessionInfo[],
+  refs: Readonly<Record<string, SessionRefView>>
+): SearchHit[] {
+  return rankSessions({
+    query,
+    definitions: [],
+    sessions: sessions
+      .filter((session) => session.parentID === undefined)
+      .map((session) => {
+        const view = refs[session.id];
+        const all = view ? [...view.branchRefs, ...view.links.map((link) => link.ref)] : [];
+        return {
+          id: session.id,
+          title: session.title ?? '',
+          updated: session.time.updated,
+          refs: all.map((ref) => {
+            const title = view?.states[refKey(ref)]?.title;
+            return title === undefined ? { ref } : { ref, title };
+          })
+        };
+      })
+  });
+}
+
+/**
+ * Local hits first, in their order, then the server's other hits in its order. A session both
+ * found keeps the local reason, so rows do not move or relabel when the server answers.
+ */
+function mergeHits(local: readonly SearchHit[], remote: readonly SearchHit[]): SearchHit[] {
+  const seen = new Set(local.map((hit) => hit.sessionID));
+  return [...local, ...remote.filter((hit) => !seen.has(hit.sessionID))];
+}
+
+/** Match reasons by session id. */
+function reasonsOf(hits: readonly SearchHit[]): Record<string, SearchReason> {
+  return Object.fromEntries(
+    hits.map((hit) => [
+      hit.sessionID,
+      hit.ref === undefined ? { match: hit.match } : { match: hit.match, ref: hit.ref }
+    ])
+  );
+}
+
+/**
+ * Loads and keeps the browser's data. Plain TypeScript with a change callback, so it runs under
+ * Node in unit tests and the caller decides how to make it reactive.
  */
 export function createPageController(deps: PageDeps, changed: (data: PageData) => void) {
-  let data: PageData = {
-    status: 'loading',
-    active: [],
-    archived: [],
-    refs: {},
-    extra: {},
-    last: {},
-    search: undefined
-  };
+  let data = initialData();
   let disposed = false;
   let loadToken = 0;
   let searchToken = 0;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
-  const lastRequested = new Set<string>();
   const extraRequested = new Set<string>();
 
   const publish = (update: Partial<PageData>) => {
@@ -310,28 +393,42 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
     publish({ extra: { ...data.extra, ...Object.fromEntries(found) } });
   };
 
-  /** Runs the search for the current input. Falls back to the server's title search. */
-  const runSearch = async (query: string, archived: boolean, scope: PageScope) => {
-    const token = ++searchToken;
-    let sessions: SessionInfo[];
+  /**
+   * Asks the server for the query and merges its hits after the local ones. Falls back to the
+   * server's title search when the plugin's RPC does not answer.
+   */
+  const runSearch = async (
+    query: string,
+    archived: boolean,
+    scope: PageScope,
+    local: SearchHit[],
+    token: number
+  ) => {
+    let remote: SearchHit[];
     try {
-      const hits = await deps.search({ query, archived, scope });
-      sessions = await sessionsFor(hits.map((hit) => hit.sessionID));
+      remote = await deps.search({ query, archived, scope });
     } catch {
       // The server plugin may be missing or older; the built-in title search still works.
       try {
-        sessions = await deps.list({ archived, scope, search: query });
+        const titled = await deps.list({ archived, scope, search: query });
+        remote = titled.map((session) => ({ sessionID: session.id, match: 'title', score: 0 }));
       } catch {
-        if (token === searchToken) publish({ search: { query, status: 'error', sessions: [] } });
+        if (token === searchToken && data.search) {
+          publish({ search: { ...data.search, status: 'error' } });
+        }
         return;
       }
     }
+    if (token !== searchToken) return;
+    const hits = mergeHits(local, remote);
+    const sessions = await sessionsFor(hits.map((hit) => hit.sessionID));
     if (token !== searchToken) return;
     publish({
       search: {
         query,
         status: 'done',
-        sessions: sessions.filter((session) => session.parentID === undefined)
+        sessions: sessions.filter((session) => session.parentID === undefined),
+        reasons: reasonsOf(hits)
       }
     });
   };
@@ -366,22 +463,44 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
       }
     },
 
+    /** Clears the lists and lookups, for a scope or project whose cache does not apply. */
+    reset(): void {
+      loadToken++;
+      searchToken++;
+      clearTimeout(searchTimer);
+      extraRequested.clear();
+      publish(initialData());
+    },
+
     /**
-     * Sets the search input. Searching waits {@link SEARCH_DELAY} ms after the last keystroke;
-     * an empty query clears the results at once.
+     * Sets the search input. The loaded sessions are filtered at once; the server, which also
+     * finds sessions outside the loaded lists and message text, is asked {@link SEARCH_DELAY} ms
+     * after the last keystroke. An empty query clears the results.
      */
     search(query: string, archived: boolean, scope: PageScope): void {
       clearTimeout(searchTimer);
+      const token = ++searchToken;
       const trimmed = query.trim();
       if (trimmed.length === 0) {
-        searchToken++;
         publish({ search: undefined });
         return;
       }
+      const local = localSearch(trimmed, archived ? data.archived : data.active, data.refs);
+      const known = new Map(
+        [...data.active, ...data.archived].map((session) => [session.id, session])
+      );
       publish({
-        search: { query: trimmed, status: 'searching', sessions: data.search?.sessions ?? [] }
+        search: {
+          query: trimmed,
+          status: 'searching',
+          sessions: local.flatMap((hit) => known.get(hit.sessionID) ?? []),
+          reasons: reasonsOf(local)
+        }
       });
-      searchTimer = setTimeout(() => void runSearch(trimmed, archived, scope), SEARCH_DELAY);
+      searchTimer = setTimeout(
+        () => void runSearch(trimmed, archived, scope, local, token),
+        SEARCH_DELAY
+      );
     },
 
     /** Asks the forge for fresh state of the given sessions, then reclassifies Done. */
@@ -396,27 +515,11 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
       }
     },
 
-    /** Loads the last assistant line for rows that need it and have not asked yet. */
-    async requestLast(ids: string[]): Promise<void> {
-      const missing = ids.filter((id) => !lastRequested.has(id));
-      if (missing.length === 0) return;
-      for (const id of missing) lastRequested.add(id);
-      const found = await Promise.all(
-        missing.map(
-          async (id) =>
-            [id, (await deps.lastAssistantText(id).catch(() => undefined)) ?? ''] as const
-        )
-      );
-      publish({ last: { ...data.last, ...Object.fromEntries(found) } });
-    },
-
-    /** Drops cached per-session lookups after the session changed. */
+    /** Drops the Done lookups of a session after it ran again. */
     invalidate(sessionID: string): void {
-      lastRequested.delete(sessionID);
       extraRequested.delete(sessionID);
-      const { [sessionID]: _last, ...last } = data.last;
       const { [sessionID]: _extra, ...extra } = data.extra;
-      publish({ last, extra });
+      publish({ extra });
     },
 
     /** Moves a session between the lists after the server accepted an archive or restore. */

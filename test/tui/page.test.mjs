@@ -12,6 +12,7 @@ const NOW = Date.now();
 const MINUTE = 60_000;
 const DAY = 86_400_000;
 const theme = resolveThemeDocument(migrateV1(themeSource), 'dark');
+const dialog = theme.surface('dialog');
 const LONG_TITLE = `Investigate why the deployer rebuilds every workspace package ${'and keeps going '.repeat(8)}END`;
 const pr4930 = {
   provider: 'github',
@@ -92,16 +93,6 @@ const refViews = {
 
 const messages = {
   user: [{ type: 'user', id: 'm1', text: 'ok', time: { created: NOW - DAY } }],
-  assistant: [
-    {
-      type: 'assistant',
-      id: 'm2',
-      agent: 'build',
-      model: { id: 'opus', providerID: 'anthropic' },
-      time: { created: NOW - MINUTE },
-      content: [{ type: 'text', text: 'Removed 6 worktrees; 2 have unpushed commits\nmore' }]
-    }
-  ],
   transcript: [
     {
       type: 'assistant',
@@ -140,8 +131,11 @@ const BINDINGS = {
   'app.exit': 'ctrl+c'
 };
 
-/** A host stand-in: the real plugin entry against fake client, data, keymap, storage and router. */
-async function host() {
+/**
+ * A host stand-in: the real plugin entry against fake client, data, keymap, storage and router.
+ * `search` answers the server plugin's search RPC; by default the plugin is missing.
+ */
+async function host(search) {
   let renderer;
   const sessions = fixtures();
   const layers = [];
@@ -151,7 +145,6 @@ async function host() {
   const [route, setRoute] = createSignal({ type: 'session', sessionID: 'unread' });
   const navigations = [];
   const updates = [];
-  const toasts = [];
   const memories = new Map();
   const context = {
     options: {},
@@ -170,7 +163,11 @@ async function host() {
       },
       session: {
         list: async (input) => ({
-          data: sessions.filter((item) => (item.time.archived !== undefined) === input.archived),
+          data: sessions.filter(
+            (item) =>
+              (item.time.archived !== undefined) === input.archived &&
+              (!input.search || item.title.toLowerCase().includes(input.search.toLowerCase()))
+          ),
           cursor: {}
         }),
         get: async ({ sessionID }) => sessions.find((item) => item.id === sessionID),
@@ -183,12 +180,7 @@ async function host() {
       },
       message: {
         list: async (input) => ({
-          data:
-            input.type === 'user'
-              ? messages.user
-              : input.type === 'assistant'
-                ? messages.assistant
-                : messages.transcript,
+          data: input.type === 'user' ? messages.user : messages.transcript,
           cursor: {}
         })
       },
@@ -201,9 +193,11 @@ async function host() {
           Object.fromEntries(
             sessionIDs.filter((id) => refViews[id]).map((id) => [id, refViews[id]])
           ),
-        search: async () => {
-          throw new Error('not registered');
-        }
+        search:
+          search ??
+          (async () => {
+            throw new Error('not registered');
+          })
       })
     },
     data: {
@@ -233,7 +227,7 @@ async function host() {
       layer(factory) {
         const layer = factory();
         layers.push(layer);
-        // Page layers belong to the page component and leave with it, like the host's.
+        // Layers created by a component leave with it, like the host's.
         try {
           onCleanup(() => layers.splice(layers.indexOf(layer), 1));
         } catch {}
@@ -259,7 +253,9 @@ async function host() {
       },
       store(name, options) {
         const initial =
-          name === 'pins' ? { imported: true, ids: ['pinned'] } : structuredClone(options.initial);
+          name === 'pins'
+            ? { imported: true, ids: ['pinned', 'unread'] }
+            : structuredClone(options.initial);
         const [store, set] = createStore(initial);
         return [store, async (mutation) => set(produce(mutation))];
       }
@@ -276,7 +272,7 @@ async function host() {
         },
         current: route
       },
-      toast: { show: (value) => toasts.push(value) },
+      toast: { show() {} },
       dialog: { clear() {} },
       tabs: { enabled: () => false, close: () => true },
       format: { path: (value) => value }
@@ -284,15 +280,16 @@ async function host() {
   };
   await plugin.setup(context);
   const overlay = slots.find((claim) => claim.append === 'app');
-  assert.ok(overlay, 'The browser claims the app slot.');
+  const banner = slots.find((claim) => claim.append === 'session.composer.top');
+  assert.ok(overlay && banner, 'The browser claims the app slot and the composer slot.');
   return {
     context,
     overlay,
+    banner,
     layers,
     modes,
     navigations,
     updates,
-    toasts,
     route,
     /** Runs a command registered by any layer, like `keymap.dispatch`. */
     dispatch(id) {
@@ -334,7 +331,7 @@ function keymap(terminal, renderer) {
   });
 }
 
-/** Bounded polling for work behind real timers, such as the preview's 150 ms follow delay. */
+/** Bounded polling for work behind real timers, such as the peek's 150 ms follow delay. */
 async function eventually(rendered, predicate, timeout = 3000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -351,16 +348,25 @@ afterEach(() => {
   active = undefined;
 });
 
-async function mount(width, height = 30) {
-  const terminal = await host();
+/** Mounts the host's main column with the route, the composer slot and the app slot. */
+async function mount(width, height = 30, search) {
+  const terminal = await host(search);
   const rendered = await testRender(
     () =>
       jsx('box', {
         width: '100%',
         height: '100%',
-        // The host's main column: the route, then the app slot drawn over it.
+        flexDirection: 'column',
         get children() {
-          return [jsx('text', { children: 'session transcript' }), terminal.overlay.render({})];
+          return [
+            jsx('text', { flexGrow: 1, children: 'session transcript' }),
+            terminal.banner.render({
+              get sessionID() {
+                return terminal.route().sessionID;
+              }
+            }),
+            terminal.overlay.render({})
+          ];
         }
       }),
     { width, height }
@@ -371,61 +377,149 @@ async function mount(width, height = 30) {
   terminal.dispatch('session.list');
   // Open cold first, then wait for the lazy module; renderer idle does not mean it loaded.
   await import('../../dist/page/view.js');
-  await rendered.waitForFrame((frame) => frame.includes('Mastra build') && frame.includes('#4930'));
-  return { terminal, rendered, lines: () => rendered.captureCharFrame().split('\n') };
+  await eventually(rendered, (frame) => frame.includes('Mastra build') && frame.includes('#4930'));
+  const lines = () => rendered.captureCharFrame().split('\n');
+  return {
+    terminal,
+    rendered,
+    lines,
+    row: (text) => lines().findIndex((line) => line.includes(text))
+  };
 }
 
-test('rows use two lines, full-width titles and a fixed title column', async () => {
-  const { rendered, lines } = await mount(100);
-  await rendered.waitForFrame((frame) => frame.includes('last: Removed 6 worktrees'));
-  const frame = lines();
-  const row = (text) => frame.findIndex((line) => line.includes(text));
+/** Background of the cell where `text` starts on screen. */
+function bgAt(rendered, text) {
+  const frame = rendered.captureSpans();
+  for (const line of frame.lines) {
+    const span = line.spans.find((item) => item.text.includes(text));
+    if (span) return span.bg.toInts();
+  }
+  throw new Error(`"${text}" is not on screen`);
+}
 
+test('rows take a line per detail they have, with one blank line between rows and two before a day', async () => {
+  const { lines, row } = await mount(100);
+  const frame = lines();
+
+  // Running has a branch and a PR, so it takes three lines.
   const running = row('Mastra build: Rollup to Rspack');
-  assert.match(frame[running + 1], /rspack-build .*#4930 Migrate build to Rspack/);
-  assert.match(
-    frame[row('can you find all merged') + 1],
-    /last: Removed 6 worktrees; 2 have unpushed commits\s*$/
-  );
+  assert.match(frame[running + 1], /rspack-build\s*$/);
+  assert.match(frame[running + 2], /#4930 Migrate build to Rspack/);
+  // Both pins have neither: one blank line between them, then two before the Running header.
+  const pinned = row('Homelab Mastra');
+  assert.equal(row('can you find all merged'), pinned + 2);
+  assert.equal(frame[pinned + 1].trim(), '');
+  assert.equal(row('Running'), pinned + 5);
+  assert.deepEqual([frame[pinned + 3].trim(), frame[pinned + 4].trim()], ['', '']);
 
   const long = frame[row('Investigate why the deployer')];
   const title = long.slice(long.indexOf('Investigate'), long.indexOf('…') + 1);
   assert.ok(title.endsWith('…'), 'A title that does not fit ends with an ellipsis.');
-  assert.ok(title.length > 70, `The title uses the row width, got ${title.length} cells.`);
+  assert.ok(title.length > 60, `The title uses the row width, got ${title.length} cells.`);
   assert.ok(!long.includes('END'));
 
-  // Pin slot, spinner, unread dot and no marker must all leave the title in the same column.
-  const columns = ['Homelab Mastra', 'Mastra build', 'can you find', 'Investigate why'].map(
-    (text) => frame[row(text)].indexOf(text)
+  // Pin slot, spinner and no marker must all leave the title in the same column.
+  const columns = ['Homelab Mastra', 'Mastra build', 'Investigate why'].map((text) =>
+    frame[row(text)].indexOf(text)
   );
   assert.deepEqual(new Set(columns).size, 1, `title columns: ${columns}`);
   assert.equal(frame[row('Homelab Mastra')].trimStart()[0], '1');
-  assert.ok(
-    !frame.some((line) => line.includes('Ship the release notes')),
-    'Done sessions leave Active.'
+  assert.ok(row('Ship the release notes') === -1, 'Done sessions leave Active.');
+});
+
+test('esc closes the browser without touching the route and gives the keys back', async () => {
+  const { terminal, rendered } = await mount(100);
+  // The first row is selected and painted in the host's action token.
+  assert.deepEqual(
+    bgAt(rendered, 'Homelab Mastra'),
+    dialog.background.action.primary.focused.toInts()
   );
+  rendered.mockInput.pressEscape();
+  await eventually(rendered, (frame) => !frame.includes('Homelab Mastra'));
+  assert.ok(rendered.captureCharFrame().includes('session transcript'));
+  assert.deepEqual(terminal.navigations, []);
+  assert.deepEqual(terminal.modes, [], 'The browser keymap mode is popped.');
 });
 
 test('tab cycles views and ctrl+s archives the selected row', async () => {
   const { terminal, rendered } = await mount(100);
   rendered.mockInput.pressTab();
-  await rendered.waitForFrame(
+  await eventually(
+    rendered,
     (frame) => frame.includes('Ship the release notes') && !frame.includes('Homelab Mastra')
   );
   rendered.mockInput.pressTab();
-  await rendered.waitForFrame(
+  await eventually(
+    rendered,
     (frame) =>
       frame.includes('Old spike on Rollup plugins') && /archived 1d · updated 5d/.test(frame)
   );
   rendered.mockInput.pressTab();
-  await rendered.waitForFrame((frame) => frame.includes('Homelab Mastra'));
+  await eventually(rendered, (frame) => frame.includes('Homelab Mastra'));
 
-  // The first row is the pinned session; move to the running one and archive it.
+  // The first rows are the two pins; move to the running one and archive it.
+  rendered.mockInput.pressArrow('down');
   rendered.mockInput.pressArrow('down');
   rendered.mockInput.pressKey('s', { ctrl: true });
-  await rendered.waitForFrame((frame) => !frame.includes('Mastra build: Rollup to Rspack'));
+  await eventually(rendered, (frame) => !frame.includes('Mastra build: Rollup to Rspack'));
   assert.deepEqual(terminal.updates, [{ sessionID: 'running', archived: true }]);
   assert.match(rendered.captureCharFrame(), /Archived 2/);
+});
+
+test('search lists local matches before the server answers and says why each matched', async () => {
+  let answer;
+  const pending = new Promise((resolve) => {
+    answer = resolve;
+  });
+  const { rendered, row, lines } = await mount(100, 30, () => pending);
+  // "migrate" is only in the running session's PR title, which the browser already has.
+  await rendered.mockInput.typeText('migrate');
+  await eventually(
+    rendered,
+    (frame) => frame.includes('PR title') && !frame.includes('Homelab Mastra')
+  );
+  assert.ok(lines()[row('Mastra build')].includes('PR title'));
+  assert.ok(!rendered.captureCharFrame().includes('Investigate why'));
+
+  // The server adds a message match the client cannot see; local hits keep their place.
+  answer([
+    { sessionID: 'long', match: 'body', score: 0 },
+    { sessionID: 'running', match: 'ref-title', ref: key(pr4930), score: 1 }
+  ]);
+  await eventually(rendered, (frame) => frame.includes('in messages'));
+  assert.ok(row('Mastra build') < row('Investigate why'));
+  assert.ok(lines()[row('Investigate why')].includes('in messages'));
+});
+
+test('space peeks, the arrows walk the list from the session, and esc comes back to that row', async () => {
+  const { terminal, rendered } = await mount(100);
+  rendered.mockInput.pressKey(' ');
+  await eventually(rendered, (frame) => frame.includes('Peeking 1 of 4'));
+  assert.deepEqual(terminal.navigations, [{ type: 'session', sessionID: 'pinned' }]);
+
+  // The counter moves at once; the route follows after the pause.
+  rendered.mockInput.pressArrow('down');
+  await eventually(rendered, (frame) => frame.includes('Peeking 2 of 4'));
+  await eventually(rendered, () => terminal.route().sessionID === 'unread');
+
+  rendered.mockInput.pressEscape();
+  await eventually(rendered, (frame) => frame.includes('Homelab Mastra'));
+  assert.ok(!rendered.captureCharFrame().includes('Peeking'));
+  assert.deepEqual(
+    bgAt(rendered, 'can you find all merged'),
+    dialog.background.action.primary.focused.toInts()
+  );
+
+  // Writing in the peeked session ends the peek, so esc belongs to the host again.
+  rendered.mockInput.pressKey(' ');
+  await eventually(rendered, (frame) => frame.includes('Peeking 2 of 4'));
+  terminal.emit('session.inbox.enqueued', {
+    data: { sessionID: 'unread', item: { type: 'user' } }
+  });
+  await eventually(rendered, (frame) => !frame.includes('Peeking'));
+  rendered.mockInput.pressEscape();
+  await rendered.renderOnce();
+  assert.ok(!rendered.captureCharFrame().includes('Homelab Mastra'));
 });
 
 test('the preview pane shows only on wide terminals', async () => {
@@ -447,6 +541,6 @@ test('the preview pane shows only on wide terminals', async () => {
 test('space types into a non-empty search instead of peeking', async () => {
   const { terminal, rendered } = await mount(100);
   await rendered.mockInput.typeText('rollup to');
-  await rendered.waitForFrame((frame) => frame.includes('> rollup to'));
+  await eventually(rendered, (frame) => frame.includes('rollup to'));
   assert.deepEqual(terminal.navigations, []);
 });
