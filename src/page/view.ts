@@ -29,11 +29,13 @@ import { ICONS } from './icons.js';
 import { PAGE, type PageProps } from './page.js';
 import { firstLine, Preview } from './preview.js';
 import {
+  cells,
   detailLine,
   detailSegments,
   formatAge,
   formatCost,
   type RowModel,
+  rightColumn,
   titleLine
 } from './row.js';
 import {
@@ -84,6 +86,7 @@ export default function SessionPage(props: PageProps) {
     });
   const scope = (): PageScope => (prefs.allProjects ? 'all' : 'project');
   const [listHeight, setListHeight] = createSignal(0);
+  const [listWidth, setListWidth] = createSignal(0);
   const [now, setNow] = createSignal(Date.now());
   const [frame, setFrame] = createSignal(0);
   const [deleting, setDeleting] = createSignal<string>();
@@ -581,9 +584,9 @@ export default function SessionPage(props: PageProps) {
         deleting() === session.id
           ? `Press ${shortcut('session.delete', 'ctrl+d')} again to delete`
           : info.title || 'Untitled session',
-      right: [formatAge(now() - info.time.updated), formatCost(info.cost)]
-        .filter(Boolean)
-        .join('  '),
+      right: rightColumn(formatAge(now() - info.time.updated), formatCost(info.cost)),
+      // The row box pads one cell on each side.
+      width: listWidth() - 2,
       detail: detailSegments({
         options: props.options,
         theme: theme(),
@@ -616,15 +619,17 @@ export default function SessionPage(props: PageProps) {
         const value = line();
         if (value.kind === 'blank') return jsx('box', { height: 1, flexShrink: 0 });
         if (value.kind === 'header') {
-          return jsx('text', {
+          return jsx('box', {
             height: 1,
             flexShrink: 0,
             paddingLeft: 1,
-            attributes: TextAttributes.BOLD,
-            get fg() {
-              return theme().text.muted;
-            },
-            children: value.title
+            children: jsx('text', {
+              attributes: TextAttributes.BOLD,
+              get fg() {
+                return theme().text.muted;
+              },
+              children: value.title
+            })
           });
         }
         const initial = value.session;
@@ -686,28 +691,33 @@ export default function SessionPage(props: PageProps) {
           )
         ]
       }),
-      jsx('text', {
+      jsx('box', {
         flexGrow: 1,
         flexShrink: 1,
         minWidth: 0,
         paddingLeft: 4,
-        wrapMode: 'none',
-        truncate: true,
-        get children() {
-          return VIEWS.flatMap((view, index) => {
-            const current = memory.view === view && !data.search;
-            const icon =
-              view === 'done' ? `${ICONS.done} ` : view === 'archived' ? `${ICONS.archived} ` : '';
-            return [
-              ...(index > 0 ? [span('    ', () => theme().text.muted)] : []),
-              span(
-                `${icon}${VIEW_LABELS[view]} ${counts()[view]}`,
-                () => (current ? theme().text.base : theme().text.muted),
-                current
-              )
-            ];
-          });
-        }
+        children: jsx('text', {
+          wrapMode: 'none',
+          get children() {
+            return VIEWS.flatMap((view, index) => {
+              const current = memory.view === view && !data.search;
+              const icon =
+                view === 'done'
+                  ? `${ICONS.done} `
+                  : view === 'archived'
+                    ? `${ICONS.archived} `
+                    : '';
+              return [
+                ...(index > 0 ? [span('    ', () => theme().text.muted)] : []),
+                span(
+                  `${icon}${VIEW_LABELS[view]} ${counts()[view]}`,
+                  () => (current ? theme().text.base : theme().text.muted),
+                  current
+                )
+              ];
+            });
+          }
+        })
       }),
       jsx('text', {
         flexShrink: 0,
@@ -783,9 +793,11 @@ export default function SessionPage(props: PageProps) {
     minWidth: 0,
     ref: (value: BoxRenderable) => {
       listBox = value;
-      setListHeight(value.height);
     },
-    onSizeChange: () => setListHeight(listBox?.height ?? 0),
+    onSizeChange: () => {
+      setListHeight(listBox?.height ?? 0);
+      setListWidth(listBox?.width ?? 0);
+    },
     onMouseScroll: (event: MouseEvent) => {
       const direction = event.scroll?.direction;
       if (direction !== 'up' && direction !== 'down') return;
@@ -794,17 +806,20 @@ export default function SessionPage(props: PageProps) {
       remember({ scroll: next });
     },
     children: [
-      jsx('text', {
+      jsx('box', {
         paddingLeft: 1,
+        flexShrink: 0,
         get visible() {
           return listMessage() !== undefined;
         },
-        get fg() {
-          return listMessage()?.error ? theme().text.feedback.error.base : theme().text.muted;
-        },
-        get children() {
-          return listMessage()?.text ?? '';
-        }
+        children: jsx('text', {
+          get fg() {
+            return listMessage()?.error ? theme().text.feedback.error.base : theme().text.muted;
+          },
+          get children() {
+            return listMessage()?.text ?? '';
+          }
+        })
       }),
       createComponent(Index, {
         get each() {
@@ -815,6 +830,7 @@ export default function SessionPage(props: PageProps) {
     ]
   });
 
+  const previewWidth = () => Math.floor(dimensions().width * props.options.previewWidth);
   const preview = jsx('box', {
     flexDirection: 'row',
     flexShrink: 0,
@@ -822,7 +838,7 @@ export default function SessionPage(props: PageProps) {
       return wide();
     },
     get width() {
-      return Math.floor(dimensions().width * props.options.previewWidth);
+      return previewWidth();
     },
     border: ['left'],
     get borderColor() {
@@ -832,6 +848,8 @@ export default function SessionPage(props: PageProps) {
       context,
       options: props.options,
       selected: () => (wide() ? memory.selected : undefined),
+      // Left border plus one cell of padding on each side.
+      width: () => previewWidth() - 3,
       session: (sessionID) => {
         const found = rows().find((session) => session.id === sessionID);
         return found ? live(found) : context.data.session.get(sessionID);
@@ -865,20 +883,32 @@ export default function SessionPage(props: PageProps) {
     );
     return items;
   });
-  const footer = jsx('text', {
+  const footer = jsx('box', {
     height: 1,
     flexShrink: 0,
     paddingLeft: 1,
     paddingRight: 1,
-    wrapMode: 'none',
-    truncate: true,
-    get children() {
-      return footerItems().flatMap(([key, label], index) => [
-        ...(index > 0 ? [span('  ', () => theme().text.muted)] : []),
-        span(key, () => theme().text.base),
-        span(` ${label}`, () => theme().text.muted)
-      ]);
-    }
+    children: jsx('text', {
+      wrapMode: 'none',
+      get children() {
+        // Whole hints only: a hint cut in half reads as a different key.
+        let room = dimensions().width - 2;
+        const shown = footerItems().filter(([key, label], index) => {
+          const size = cells(`${index > 0 ? '  ' : ''}${key} ${label}`);
+          if (size > room) {
+            room = -1;
+            return false;
+          }
+          room -= size;
+          return true;
+        });
+        return shown.flatMap(([key, label], index) => [
+          ...(index > 0 ? [span('  ', () => theme().text.muted)] : []),
+          span(key, () => theme().text.base),
+          span(` ${label}`, () => theme().text.muted)
+        ]);
+      }
+    })
   });
 
   return jsx('box', {

@@ -20,6 +20,8 @@ export interface RowModel {
   title: string;
   /** Age and cost, right-aligned on the first line. */
   right: string;
+  /** Cells inside the row's padding, measured from the list. */
+  width: number;
   detail: Segment[];
   selected: boolean;
   /** The first delete press turned this row into a confirmation. */
@@ -57,6 +59,11 @@ export function formatAge(ms: number): string {
 /** Cost in dollars, or nothing for sessions that cost less than a cent. */
 export function formatCost(cost: number): string {
   return cost >= 0.005 ? `$${cost.toFixed(2)}` : '';
+}
+
+/** Age and cost padded to fixed widths, so both line up down the list. */
+export function rightColumn(age: string, cost: string): string {
+  return `${age.padStart(4)}  ${cost.padStart(7)}`;
 }
 
 /**
@@ -140,6 +147,10 @@ function lineBox(
   });
 }
 
+// Marker column plus the gap before the right column.
+const MARKER_WIDTH = 2;
+const RIGHT_GAP = 2;
+
 /** First row line: marker column, title at the full remaining width, then age and cost. */
 export function titleLine(
   theme: () => ResolvedTheme,
@@ -151,7 +162,7 @@ export function titleLine(
     // A fixed 2-cell box keeps the title column still whether the marker is a digit, a spinner
     // or a dot, and whatever width the font gives those glyphs.
     jsx('box', {
-      width: 2,
+      width: MARKER_WIDTH,
       flexShrink: 0,
       children: jsx('text', {
         wrapMode: 'none',
@@ -168,17 +179,17 @@ export function titleLine(
       flexShrink: 1,
       minWidth: 0,
       wrapMode: 'none',
-      truncate: true,
       get fg() {
         return fg(theme().text.base);
       },
       get children() {
-        return model().title;
+        const current = model();
+        const room = current.width - MARKER_WIDTH - RIGHT_GAP - cells(current.right);
+        return fitText(current.title, room);
       }
     }),
     jsx('text', {
       flexShrink: 0,
-      paddingLeft: 1,
       wrapMode: 'none',
       get fg() {
         return fg(theme().text.muted);
@@ -196,23 +207,66 @@ export function detailLine(
   model: () => RowModel,
   events: RowEvents
 ): JSX.Element {
-  return lineBox(
-    theme,
-    model,
-    events,
+  return lineBox(theme, model, events, [
+    jsx('box', { width: MARKER_WIDTH, flexShrink: 0 }),
     jsx('text', {
       flexGrow: 1,
       flexShrink: 1,
       minWidth: 0,
-      paddingLeft: 2,
       wrapMode: 'none',
-      truncate: true,
       get children() {
-        const override = rowColors(theme(), model()).fg;
-        return model().detail.map((segment) =>
+        const current = model();
+        const override = rowColors(theme(), current).fg;
+        return fitSegments(current.detail, current.width - MARKER_WIDTH).map((segment) =>
           jsx('span', { style: { fg: override ?? segment.fg }, children: segment.text })
         );
       }
     })
-  );
+  ]);
+}
+
+type Bun = { stringWidth(text: string): number };
+const bun = (globalThis as { Bun?: Bun }).Bun;
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/** Terminal cells a string takes. Bun measures wide and zero-width characters; Node counts code units. */
+export function cells(text: string): number {
+  return bun ? bun.stringWidth(text) : text.length;
+}
+
+/**
+ * Cuts text to `width` cells with a trailing ellipsis. OpenTUI's own truncation cuts in the
+ * middle with three dots, which hides the end of a title instead of its tail.
+ */
+export function fitText(text: string, width: number): string {
+  if (width <= 0) return '';
+  if (cells(text) <= width) return text;
+  let used = 0;
+  let out = '';
+  for (const { segment } of graphemes.segment(text)) {
+    const size = cells(segment);
+    if (used + size > width - 1) break;
+    out += segment;
+    used += size;
+  }
+  return `${out}…`;
+}
+
+/** Cuts colored segments to `width` cells, ending the last visible one with an ellipsis. */
+function fitSegments(segments: readonly Segment[], width: number): Segment[] {
+  const total = segments.reduce((sum, segment) => sum + cells(segment.text), 0);
+  if (total <= width) return [...segments];
+  const out: Segment[] = [];
+  let left = width;
+  for (const segment of segments) {
+    const size = cells(segment.text);
+    if (size < left) {
+      out.push(segment);
+      left -= size;
+      continue;
+    }
+    out.push({ ...segment, text: fitText(segment.text, left) });
+    break;
+  }
+  return out;
 }

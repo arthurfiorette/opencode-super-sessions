@@ -26,7 +26,7 @@ import { type Ref, refKey } from '../refs/ref.js';
 import { trackedRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { refColor, refIcon, STATE_WORDS } from './icons.js';
-import { formatAge, formatCost } from './row.js';
+import { cells, fitText, formatAge, formatCost } from './row.js';
 
 /** Inputs of the preview pane. */
 export interface PreviewProps {
@@ -38,6 +38,8 @@ export interface PreviewProps {
   refs(sessionID: string): SessionRefView | undefined;
   branch(session: SessionInfo): string | undefined;
   running(sessionID: string): boolean;
+  /** Cells available for text inside the pane. */
+  width(): number;
 }
 
 const FOLLOW_DELAY = 150;
@@ -84,13 +86,12 @@ export function Preview(props: PreviewProps): JSX.Element {
       height: 1,
       flexShrink: 0,
       wrapMode: 'none',
-      truncate: true,
       attributes,
       get fg() {
         return fg();
       },
       get children() {
-        return children();
+        return fitText(children(), props.width());
       }
     });
 
@@ -135,21 +136,20 @@ export function Preview(props: PreviewProps): JSX.Element {
         height: 1,
         flexShrink: 0,
         wrapMode: 'none',
-        truncate: true,
         get children() {
           if (entry.kind === 'label') {
             return jsx('span', { style: { fg: muted() }, children: entry.text });
           }
           const fg = refColor(props.options, entry.status, theme(), context.themeMode);
+          const indent = entry.nested ? '    ' : '  ';
+          const number = `${refIcon(entry.ref.kind, entry.status)} #${entry.ref.number}`;
+          const rest = `  ${entry.status ? STATE_WORDS[entry.status] : 'unknown'}  ${entry.title}`;
           return [
-            jsx('span', { style: { fg: muted() }, children: entry.nested ? '    ' : '  ' }),
-            jsx('span', {
-              style: { fg },
-              children: `${refIcon(entry.ref.kind, entry.status)} #${entry.ref.number}`
-            }),
+            jsx('span', { style: { fg: muted() }, children: indent }),
+            jsx('span', { style: { fg }, children: number }),
             jsx('span', {
               style: { fg: muted() },
-              children: `  ${entry.status ? STATE_WORDS[entry.status] : 'unknown'}  ${entry.title}`
+              children: fitText(rest, props.width() - cells(indent + number))
             })
           ];
         }
@@ -188,16 +188,20 @@ export function Preview(props: PreviewProps): JSX.Element {
           })
         });
       }
-      return jsx('text', {
+      const indent = block.kind === 'tool' ? 2 : 0;
+      return jsx('box', {
         flexShrink: 0,
-        paddingLeft: block.kind === 'tool' ? 2 : 0,
-        wrapMode: 'none',
-        truncate: true,
-        attributes: block.kind === 'label' ? TextAttributes.BOLD : 0,
-        get fg() {
-          return block.kind === 'label' ? theme().text.base : theme().text.muted;
-        },
-        children: block.text
+        paddingLeft: indent,
+        children: jsx('text', {
+          wrapMode: 'none',
+          attributes: block.kind === 'label' ? TextAttributes.BOLD : 0,
+          get fg() {
+            return block.kind === 'label' ? theme().text.base : theme().text.muted;
+          },
+          get children() {
+            return fitText(block.text, props.width() - indent);
+          }
+        })
       });
     }
   });
