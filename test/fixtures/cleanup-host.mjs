@@ -117,6 +117,22 @@ try {
   assert.equal(decision(dirty)?.reason, 'has local changes');
   assert.ok(existsSync(merged), 'The dry run removes nothing.');
 
+  // A sweep that finds a removal before the user ever confirmed asks instead of removing. A
+  // deleted session starts one.
+  const asked = new Promise((resolve) => {
+    const off = rpc.events.on('cleanup.confirm', (event) => {
+      off();
+      resolve(event.data.worktrees);
+    });
+  });
+  const throwaway = await host.sessions.create({ location });
+  await host.sessions.remove({ sessionID: throwaway.id });
+  assert.deepEqual(
+    (await asked).map((entry) => entry.directory),
+    [merged]
+  );
+  assert.ok(existsSync(merged), 'A sweep removes nothing before the first confirmation.');
+
   // Asked for both: the server checks again and removes only the one that qualifies.
   const result = await rpc['cleanup.run']({ directories: [merged, dirty] }, { location });
   assert.deepEqual(result.removed, [merged]);
