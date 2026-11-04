@@ -29,8 +29,9 @@ export interface RankInput {
   titleHits?: string[];
 }
 
-// Same leading words t3code strips, so `pr 12`, `pull #12` and `#12` all mean ref 12.
-const BARE_QUERY = /^(?:(?:pull request|pull|pr|issue)\s*)?#?\s*(\d+)$/u;
+// Same leading words t3code strips, so `pr 12`, `pull #12` and `#12` all mean ref 12. GitLab's
+// `mr !12` and `!12` mean the same.
+const BARE_QUERY = /^(?:(?:pull request|pull|pr|merge request|mr|issue)\s*)?[#!]?\s*(\d+)$/u;
 
 // Higher tiers always sort first; `updated` only orders sessions within one tier.
 const TIERS: Record<'exact-title' | 'title' | 'ref-number' | 'ref-title', number> = {
