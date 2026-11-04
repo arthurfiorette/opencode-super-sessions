@@ -15,6 +15,7 @@ const fakeGh = fileURLToPath(new URL('./fake-gh.mjs', import.meta.url));
 // failed mock leaves `gh-fixture`, which is on no PATH, so GitHub is never reached either way.
 const processModule = await import('node:child_process');
 const { default: defaultExport, ...namedExports } = processModule;
+/** `child_process.spawn` that runs fake-gh.mjs for `gh-fixture` and the real command otherwise. */
 function spawn(command, args, options) {
   if (command !== 'gh-fixture') return processModule.spawn(command, args, options);
   return processModule.spawn(process.execPath, [fakeGh, ...args], options);

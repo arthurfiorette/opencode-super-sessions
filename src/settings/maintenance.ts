@@ -41,11 +41,15 @@ export function installMaintenance(
   isBusy: () => boolean
 ): Maintenance {
   const clientID = randomUUID();
+  /** The server plugin's RPC client. */
   const rpc = () => context.client.rpc(SuperSessions);
+  /** RPC call options: this TUI's Location, else the host's default one. */
   const options = () => ({ location: context.location ?? context.data.location.default() });
+  /** Shows a toast. */
   const toast = (message: string, variant: 'info' | 'success' | 'warning' | 'error' = 'info') =>
     context.ui.toast.show({ message, variant });
   const [last, setLast] = createSignal<{ ids: string[]; at: number }>();
+  /** The sessions of the last auto-archive while it can still be undone. */
   const recent = () => {
     const value = last();
     return value !== undefined && Date.now() - value.at < UNDO_WINDOW ? value.ids : [];

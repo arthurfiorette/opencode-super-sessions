@@ -52,6 +52,7 @@ function setup(provider: ForgeProvider, hosts = createForgeHosts({ gitlab: { hos
     writes: createWriteQueue(),
     hosts
   } as unknown as Runtime;
+  /** The stored links as `kind number`, sorted. */
   const linked = () =>
     readSessionRefs(metadata)
       .links.map((link) => `${link.ref.kind} ${link.ref.number}`)
@@ -92,7 +93,9 @@ test('gh is asked only about hosts the user works with, and other refs are store
   const hosts = createForgeHosts({ gitlab: { hosts: [] } });
   const { runtime, session, linked } = setup(provider, hosts);
   // Assistant text can name any host with a `github` label; gh would send the user's token there.
+  /** Assistant text naming PR `number` by its URL on `host`. */
   const text = (host: string, number: number) => `see https://${host}/acme/app/pull/${number}`;
+  /** Runs mention detection over {@link text}. */
   const mention = (host: string, number: number) =>
     linkDetected(runtime, session, 'ses_1', detectInText([github], text(host, number)), 'mention');
 

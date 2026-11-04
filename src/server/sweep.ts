@@ -138,6 +138,7 @@ function createSweeper(runtime: Runtime): Sweeper {
   // The worktree list of the last confirmation request, so each TUI is asked once per list.
   let asked: string | undefined;
 
+  /** The Location that sweeps and emits: the first one still attached. */
   const owner = () => live[0];
 
   /** Runs `task` after every queued sweep, dry run and removal. */
@@ -153,18 +154,21 @@ function createSweeper(runtime: Runtime): Sweeper {
     return [...presence.values()];
   };
 
+  /** The cleanup state, read from storage once per process. An unreadable value starts empty. */
   const loadState = async (context: Plugin.Context): Promise<CleanupState> => {
     if (state !== undefined) return state;
     const stored = await context.storage.get('cleanup').catch(() => undefined);
     state = readCleanupState(stored);
     return state;
   };
+  /** Writes the cleanup state back. Never rejects; a failed write only logs. */
   const saveState = (context: Plugin.Context) =>
     state === undefined
       ? Promise.resolve()
       : context.storage
           .set('cleanup', state as unknown as Parameters<Plugin.Context['storage']['set']>[1])
           .catch((error: unknown) => warn('Saving cleanup state failed', error));
+  /** Sessions the user restored from auto-archive, read from storage once per process. */
   const loadExcluded = async (context: Plugin.Context) => {
     if (excluded !== undefined) return excluded;
     const stored = await context.storage.get('archive-excluded').catch(() => undefined);
@@ -223,6 +227,7 @@ function createSweeper(runtime: Runtime): Sweeper {
     const settings = runtime.settings.current();
     const sessions = await listSessions(context);
     const byID = new Map(sessions.map((info) => [info.id, info]));
+    /** The top-level session `id` belongs to, following parent links. */
     const rootOf = (id: string) => {
       let info = byID.get(id);
       // Bounded: a malformed parent chain must not loop forever.
@@ -624,6 +629,7 @@ function readCleanupState(value: unknown): CleanupState {
           )
         )
       : {};
+  /** The string entries of a stored list; anything else reads as empty. */
   const strings = (list: unknown) =>
     Array.isArray(list) ? list.filter((item): item is string => typeof item === 'string') : [];
   return {

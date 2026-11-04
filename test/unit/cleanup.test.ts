@@ -261,6 +261,7 @@ test('a session belongs to the deepest worktree that contains its resolved direc
 });
 
 test('pull requests count as merged when one merged and the rest are merged or closed', () => {
+  /** Pull request `number` of acme/app. */
   const pr = (number: number): Ref => ({
     provider: 'github',
     host: 'github.com',
