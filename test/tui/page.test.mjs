@@ -102,21 +102,30 @@ const BINDINGS = {
   'app.exit': 'ctrl+c'
 };
 
+// Directories under GONE no longer exist, like a worktree the cleanup removed before a restart.
+const GONE = '/gone/';
+
+/** The host's answer for a Location whose directory is missing. */
+const missing = (directory) =>
+  Object.assign(new Error(`Location not found: ${directory}`), { _tag: 'LocationNotFoundError' });
+
 /**
  * A host stand-in: the real plugin entry against fake client, data, keymap, storage and router.
  * The server plugin is missing, so its search RPC throws unless `search` stands in for it.
+ * `extra` sessions join the fixtures.
  */
 async function host(
   version = '2.2.5',
   search = async () => {
     throw new Error('not registered');
-  }
+  },
+  extra = []
 ) {
   let renderer;
   const toasts = [];
   // Commands the plugin hands to the host keymap, as `[id, input]`.
   const dispatched = [];
-  const sessions = fixtures();
+  const sessions = [...fixtures(), ...extra];
   const layers = [];
   const slots = [];
   const modes = [];
@@ -128,8 +137,16 @@ async function host(
   // `session.fork` calls, and the select dialogs the plugin opened, each with its `resolve`.
   const forks = [];
   const selects = [];
-  const views = async ({ sessionIDs }) =>
-    Object.fromEntries(sessionIDs.filter((id) => refViews[id]).map((id) => [id, refViews[id]]));
+  // Set, `session.list` never answers, like a busy server.
+  let stalled = false;
+  // RPCs reach the server plugin through a Location, which a missing directory does not have.
+  const views = async ({ sessionIDs }, options) => {
+    const directory = options?.location?.directory ?? '/repo';
+    if (directory.startsWith(GONE)) throw missing(directory);
+    return Object.fromEntries(
+      sessionIDs.filter((id) => refViews[id]).map((id) => [id, refViews[id]])
+    );
+  };
   const context = {
     app: { name: 'opencode', version, channel: 'latest' },
     options: {},
@@ -141,20 +158,24 @@ async function host(
     },
     client: {
       location: {
-        get: async () => ({
-          directory: '/repo',
-          project: { id: 'proj', directory: '/repo', canonical: '/repo' }
-        })
+        // Every directory is a checkout of one project: the main one or a worktree.
+        get: async ({ location: { directory } }) => {
+          if (directory.startsWith(GONE)) throw missing(directory);
+          return { directory, project: { id: 'proj', directory, canonical: '/repo' } };
+        }
       },
       session: {
-        list: async (input) => ({
-          data: sessions.filter(
-            (item) =>
-              (item.time.archived !== undefined) === input.archived &&
-              (!input.search || item.title.toLowerCase().includes(input.search.toLowerCase()))
-          ),
-          cursor: {}
-        }),
+        list: async (input) => {
+          if (stalled) await new Promise(() => {});
+          return {
+            data: sessions.filter(
+              (item) =>
+                (item.time.archived !== undefined) === input.archived &&
+                (!input.search || item.title.toLowerCase().includes(input.search.toLowerCase()))
+            ),
+            cursor: {}
+          };
+        },
         get: async ({ sessionID }) => sessions.find((item) => item.id === sessionID),
         update: async () => {},
         remove: async () => {},
@@ -201,7 +222,7 @@ async function host(
       on: () => () => {},
       session: {
         list: () => sessions,
-        get: () => undefined,
+        get: (id) => sessions.find((item) => item.id === id),
         cost: () => 0,
         status: (id) => (id === 'running' ? 'running' : 'idle'),
         family: (id) => [id],
@@ -291,10 +312,14 @@ async function host(
     toasts,
     dispatched,
     route,
+    navigate: setRoute,
     pages,
     scans,
     forks,
     selects,
+    stallLists() {
+      stalled = true;
+    },
     /** Runs a command registered by any layer, like `keymap.dispatch`. */
     dispatch(id) {
       const command = layers
@@ -550,6 +575,98 @@ test('server message hits go under "In messages" and leave the local rows in pla
   assert.ok(
     spanOf('can you find all merged')?.bg.equals(dialog.background.action.primary.focused),
     'The title match stays selected.'
+  );
+});
+
+/** Renders the overlay alone and opens the browser cold. */
+async function openBrowser(terminal) {
+  const rendered = await testRender(() => terminal.overlay.render({}), { width: 100, height: 30 });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  return rendered;
+}
+
+// Opening over a session in another worktree of the same project dropped the cached lists, showed
+// "Loading sessions…" and drew the same rows again.
+test('reopening over a session in another worktree of the project draws the cached rows at once', async () => {
+  const terminal = await host(undefined, undefined, [
+    {
+      ...session('worktree', 'Rspack config in a worktree'),
+      location: { directory: '/repo/.worktrees/rspack' }
+    }
+  ]);
+  const rendered = await openBrowser(terminal);
+  await eventually(rendered, (frame) => frame.includes('#4930'));
+  terminal.dispatch('session.list');
+  terminal.navigate({ type: 'session', sessionID: 'worktree' });
+  // Dropping the cache would leave the list on "Loading sessions…" from here on.
+  terminal.stallLists();
+  terminal.dispatch('session.list');
+  // The header names the project once the location lookup that decides about the cache is in.
+  const frames = [];
+  await eventually(rendered, (frame) => {
+    frames.push(frame);
+    return frame.includes('Super Sessions for mastra') && frame.includes('#4930');
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await rendered.renderOnce();
+  frames.push(rendered.captureCharFrame());
+  assert.match(frames.at(-1), /Mastra build[\s\S]*#4930[\s\S]*Rspack config in a worktree/);
+  assert.ok(frames.every((frame) => !frame.includes('Loading sessions')));
+});
+
+// After a restart the host no longer resolves the directory of a worktree the cleanup removed,
+// and the browser opened over a session there said "Could not load sessions."
+test('the browser opened over a session whose directory is gone lists its project', async () => {
+  const terminal = await host(undefined, undefined, [
+    { ...session('gone', 'Session in a removed worktree'), location: { directory: `${GONE}wt` } }
+  ]);
+  terminal.navigate({ type: 'session', sessionID: 'gone' });
+  const rendered = await openBrowser(terminal);
+  await eventually(
+    rendered,
+    (frame) => frame.includes('Session in a removed worktree') && frame.includes('#4930')
+  );
+});
+
+// The search survived closing, so the next open showed a list filtered by a query the user had
+// left behind. Coming back from a peek keeps it: the user is walking through the results.
+test('a new open starts with an empty search, and coming back from a peek keeps it', async () => {
+  const terminal = await host();
+  // The keys dialog peeks, since `space` types into a search that is not empty.
+  terminal.context.ui.dialog.select = async ({ options }) =>
+    options.findIndex((option) => option.title === 'Peek session');
+  const rendered = await openBrowser(terminal);
+  await eventually(rendered, (frame) => frame.includes('Mastra build'));
+  await rendered.mockInput.typeText('worktrees');
+  await eventually(rendered, (frame) => !frame.includes('Mastra build'));
+  /** Runs one of the browser's own keys, past the peek keys that share them. */
+  const press = (bind) =>
+    terminal.layers
+      .filter((layer) => layer.mode === 'super-sessions')
+      .flatMap((layer) => layer.commands)
+      .find((command) => command.bind === bind)
+      .run();
+  press('down');
+  press('ctrl+/');
+  await eventually(rendered, (frame) => !frame.includes('can you find all merged'));
+  terminal.dispatch('super-sessions.peek.return');
+  await eventually(
+    rendered,
+    (frame) =>
+      frame.includes('worktrees') &&
+      frame.includes('can you find all merged') &&
+      !frame.includes('Mastra build')
+  );
+
+  terminal.dispatch('session.list');
+  await eventually(rendered, (frame) => !frame.includes('can you find all merged'));
+  terminal.dispatch('session.list');
+  await eventually(
+    rendered,
+    (frame) => frame.includes('Search sessions, #numbers') && frame.includes('Mastra build')
   );
 });
 

@@ -109,6 +109,19 @@ export function projectScope(info: LocationPublicInfo): Exclude<SearchScope, { t
 }
 
 /**
+ * "This project" for a session, read from what the host stored on it instead of its directory. It
+ * gives what {@link projectScope} gives for the session's directory: the host stores the project
+ * and the directory's path inside it on creation (packages/core/src/session.ts:308) and reads an
+ * empty path back as no `subpath` (packages/core/src/session/info.ts:47). For a directory that is
+ * gone, such as a removed worktree, where `location.get` fails with `LocationNotFoundError`
+ * (packages/server/src/location.ts:27).
+ */
+export function sessionScope(info: SessionInfo): Exclude<SearchScope, { type: 'all' }> {
+  if (info.projectID === 'global') return { type: 'directory', directory: info.location.directory };
+  return { type: 'project', project: info.projectID, subpath: info.subpath ?? '' };
+}
+
+/**
  * `session.list` filters for a scope in the browser's list. The host matches `subpath` exactly
  * (packages/core/src/session/store.ts:154), so an empty subpath lists the project root's sessions
  * only, like the built-in list.

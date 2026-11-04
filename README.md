@@ -54,7 +54,7 @@ These open and close it:
 
 `/sessions-classic` and "Classic session list" in the palette open the built-in list instead.
 
-The browser remembers the search, view, selection and scroll position until you quit OpenCode, so it reopens where you left it.
+The browser remembers the view, selection and scroll position until you quit OpenCode, so it reopens where you left it. The search starts empty on every open, except when you come back from a [peek](#peek), which keeps it.
 
 ### Views
 
@@ -152,7 +152,7 @@ The transcript below draws messages the way OpenCode's session view does and fol
 `space`, while the search is empty, shows the selected session in place of the browser. A banner above the prompt reads `Peeking 3 of 12   ↑↓ switch   esc back to list`.
 
 - `up` and `down` move to the previous or next session of the browser's list while the prompt is empty. With text in the prompt, the arrows edit the prompt as usual.
-- `esc` reopens the browser on the session you peeked last.
+- `esc` reopens the browser on the session you peeked last, with the search you peeked from.
 - Sending a message in the session, or going to another screen, ends the peek. `enter` in the browser opens a session without peeking.
 
 While you peek at a running session, `esc` returns to the list instead of interrupting it. Send a message or open the session with `enter` to get the usual `esc` back.

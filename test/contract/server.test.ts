@@ -18,6 +18,7 @@ import {
   projectScope,
   regenerateTitle,
   sessionPrompts,
+  sessionScope,
   setArchived
 } from '../../src/host/session-api.js';
 import { shellCall } from '../../src/host/tool-hook.js';
@@ -388,6 +389,29 @@ test('session.list scopes by project subpath, directory, title, root sessions an
     [...first.data, ...second.data].map((item) => item.id).sort(),
     [top.id, nested.id].sort()
   );
+});
+
+// After a restart, the browser can open over a session in a worktree the cleanup removed: its
+// directory no longer resolves, so "this project" comes from the session itself.
+test('a session scopes the list like its directory: root, subdirectory, worktree, no git', async () => {
+  const repo = directory('scope-repo');
+  git(repo, 'init', '-q');
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'scope init');
+  const { project } = await host.location.get({ location: { directory: repo } });
+  const worktree = await host.worktree.create({ projectID: project.id, name: 'scope' });
+  for (const target of [
+    repo,
+    directory('scope-repo', 'pkg'),
+    worktree.directory,
+    directory('scope-loose')
+  ]) {
+    const session = await host.sessions.create({ location: { directory: target } });
+    assert.deepEqual(
+      sessionScope(session),
+      projectScope(await host.location.get({ location: { directory: target } })),
+      target
+    );
+  }
 });
 
 test('worktree list marks the main checkout, and remove without force keeps a dirty worktree', async () => {

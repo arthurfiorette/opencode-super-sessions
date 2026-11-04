@@ -448,6 +448,16 @@ export interface PageData {
 export const SEARCH_DELAY = 150;
 // The RPC accepts at most 200 ids per call.
 const RPC_BATCH = 200;
+// How long a load from empty data holds the lists back for their refs and Done lookups, so they
+// draw once. On a 42-session project the refs RPC took 115 ms on a cold daemon and the Done
+// lookups about 50 ms; a slow server delays the lists by at most this much.
+const COLD_DEADLINE = 400;
+
+/** Refs and Done lookups a load found before its lists were published. */
+interface Found {
+  refs?: Record<string, SessionRefView>;
+  extra?: Record<string, DoneExtra>;
+}
 
 /** Data before the first load. */
 function initialData(): PageData {
@@ -522,33 +532,32 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
     changed(data);
   };
 
-  /**
-   * Fetches cached refs for every loaded session, then the Done lookups for candidates. A load
-   * superseded while its refs were in flight drops them: they may be older than the newer
-   * load's answer, and a reset in between means they belong to another scope.
-   */
-  const loadRefs = async (ids: string[], token: number) => {
+  /** Fetches cached refs for the given sessions. A batch that fails is left out. */
+  const fetchRefs = async (ids: string[]) => {
     const batches = [];
     for (let start = 0; start < ids.length; start += RPC_BATCH) {
       batches.push(ids.slice(start, start + RPC_BATCH));
     }
     const results = await Promise.allSettled(batches.map((batch) => deps.refs(batch)));
-    if (token !== loadToken) return;
-    const refs = { ...data.refs };
+    const refs: Record<string, SessionRefView> = {};
     for (const result of results)
       if (result.status === 'fulfilled') Object.assign(refs, result.value);
-    publish({ refs });
-    await classify();
+    return refs;
   };
 
-  /** Runs the pending and last-message lookups for sessions that could be Done. */
-  const classify = async () => {
-    const candidates = data.active.filter(
+  /**
+   * Runs the pending and last-message lookups for the given sessions that could be Done under
+   * `refs` and were not looked up yet. Resolves to undefined when there were none.
+   */
+  const lookups = async (
+    sessions: readonly SessionInfo[],
+    refs: Readonly<Record<string, SessionRefView>>
+  ) => {
+    const candidates = sessions.filter(
       (session) =>
-        !extraRequested.has(session.id) &&
-        doneCandidate(session, data.refs, deps.running(session.id))
+        !extraRequested.has(session.id) && doneCandidate(session, refs, deps.running(session.id))
     );
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) return undefined;
     for (const session of candidates) extraRequested.add(session.id);
     const found = await Promise.all(
       candidates.map(async (session) => {
@@ -559,7 +568,36 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
         return [session.id, { pending, lastUserMessageAt }] as const;
       })
     );
-    publish({ extra: { ...data.extra, ...Object.fromEntries(found) } });
+    return Object.fromEntries(found);
+  };
+
+  /** Runs the Done lookups for the loaded sessions and publishes what they found. */
+  const classify = async () => {
+    const found = await lookups(data.active, data.refs);
+    if (found !== undefined) publish({ extra: { ...data.extra, ...found } });
+  };
+
+  /**
+   * Fetches cached refs for the loaded sessions, then the Done lookups, publishing each as it
+   * arrives once `shown()` holds; before that, `found` keeps them for the first publish. A load
+   * superseded on the way drops them: they may be older than the newer load's answer, and a
+   * reset in between means they belong to another scope.
+   */
+  const loadRefs = async (
+    sessions: readonly SessionInfo[],
+    ids: string[],
+    token: number,
+    shown: () => boolean,
+    found: Found
+  ) => {
+    const refs = await fetchRefs(ids);
+    if (token !== loadToken) return;
+    found.refs = refs;
+    if (shown()) publish({ refs: { ...data.refs, ...refs } });
+    const extra = await lookups(sessions, { ...data.refs, ...refs });
+    if (token !== loadToken || extra === undefined) return;
+    found.extra = extra;
+    if (shown()) publish({ extra: { ...data.extra, ...extra } });
   };
 
   /**
@@ -616,20 +654,45 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
   return {
     snapshot: () => data,
 
-    /** Loads both session lists for a scope. Earlier loads still in flight are ignored. */
+    /**
+     * Loads both session lists for a scope. Earlier loads still in flight are ignored. A load
+     * from empty data holds the lists back until their refs and Done lookups are in, for at most
+     * {@link COLD_DEADLINE} ms, so rows do not grow PR lines and then leave for Done right after
+     * they appear. A reload publishes the lists at once: the rows on screen keep their refs.
+     */
     async load(scope: PageScope): Promise<void> {
       const token = ++loadToken;
+      const cold = data.status === 'loading';
       try {
         const [active, archived] = await Promise.all([
           deps.list({ archived: false, scope }),
           deps.list({ archived: true, scope })
         ]);
         if (token !== loadToken) return;
-        publish({ status: 'ready', active, archived });
-        await loadRefs(
-          [...active, ...archived].map((session) => session.id),
-          token
-        );
+        const ids = [...active, ...archived].map((session) => session.id);
+        let shown = !cold;
+        if (shown) publish({ status: 'ready', active, archived });
+        const found: Found = {};
+        const loading = loadRefs(active, ids, token, () => shown, found);
+        if (!shown) {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const deadline = new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, COLD_DEADLINE);
+          });
+          // A failure shows up when `loading` is awaited below, after the lists are published.
+          await Promise.race([loading, deadline]).catch(() => {});
+          clearTimeout(timer);
+          if (token !== loadToken) return;
+          shown = true;
+          publish({
+            status: 'ready',
+            active,
+            archived,
+            ...(found.refs ? { refs: { ...data.refs, ...found.refs } } : {}),
+            ...(found.extra ? { extra: { ...data.extra, ...found.extra } } : {})
+          });
+        }
+        await loading;
       } catch {
         if (token === loadToken) publish({ status: 'error' });
       }
