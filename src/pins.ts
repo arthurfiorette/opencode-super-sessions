@@ -7,7 +7,7 @@ import type { Plugin } from '@opencode/plugin/tui';
 export interface Pins {
   /** Pinned session ids in pin order. Reactive when read in a Solid computation. */
   ids(): readonly string[];
-  /** The first nine pins that still exist as root sessions, for the quick switch slots. */
+  /** The first nine pins, for the quick switch slots. */
   slots(): string[];
   /** Whether the session is pinned. */
   has(sessionID: string): boolean;
@@ -40,16 +40,9 @@ export function createPins(context: Plugin.Context): Pins {
   });
   return {
     ids: () => store.ids,
-    slots() {
-      // Same rule as the host's quick switch: only sessions the TUI knows as roots get a slot.
-      const roots = new Set(
-        context.data.session
-          .list()
-          .filter((session) => session.parentID === undefined)
-          .map((session) => session.id)
-      );
-      return store.ids.filter((id) => roots.has(id)).slice(0, 9);
-    },
+    // The host filters its slots by `data.session.list()`, but that only holds sessions this
+    // TUI has synced, so most pins would lose their slot. Deleted sessions are pruned instead.
+    slots: () => store.ids.slice(0, 9),
     has: (sessionID) => store.ids.includes(sessionID),
     toggle: (sessionID) =>
       update((draft) => {

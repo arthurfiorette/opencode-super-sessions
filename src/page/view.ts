@@ -666,8 +666,9 @@ export default function SessionPage(props: PageProps) {
   const wide = () => dimensions().width >= PREVIEW_MIN_COLUMNS;
   const span = (text: string | (() => string), fg: () => unknown, bold = false) =>
     jsx('span', {
+      // Text nodes take colors and attributes only through `style`.
       get style() {
-        return { fg: fg(), ...(bold ? { attributes: TextAttributes.BOLD } : {}) };
+        return { fg: fg(), bold };
       },
       get children() {
         return typeof text === 'function' ? text() : text;
@@ -867,14 +868,16 @@ export default function SessionPage(props: PageProps) {
       ['↵', 'open'],
       ['space', 'peek'],
       ['ctrl+s', memory.view === 'archived' ? 'restore' : 'archive'],
+      // Before the session actions: on narrow terminals the hints that do not fit are dropped,
+      // and switching views is how the Done and Archived views are found at all.
+      ['tab', 'view'],
       [shortcut('session.rename', 'ctrl+r'), 'rename'],
       [shortcut('super-sessions.retitle', 'ctrl+t'), 'retitle'],
       [
         shortcut('session.pin.toggle', 'ctrl+f'),
         current && props.pins.has(current.id) ? 'unpin' : 'pin'
       ],
-      [shortcut('session.delete', 'ctrl+d'), 'delete'],
-      ['tab', 'view']
+      [shortcut('session.delete', 'ctrl+d'), 'delete']
     ];
     if (memory.view === 'done' && !data.search)
       items.push([shortcut('super-sessions.archive.done', 'ctrl+y'), 'archive all']);
