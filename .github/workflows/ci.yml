@@ -21,14 +21,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup pnpm
+      - name: Set up pnpm
         uses: pnpm/setup@v3
         with:
           runtime: node@24.16.0
           cache: true
           install: true
 
-      - name: Setup Bun for native TUI tests
+      - name: Set up Bun for native TUI tests
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
