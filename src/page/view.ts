@@ -1859,8 +1859,8 @@ function tabLabel(view: PageView, icons: boolean): string {
 
 /** Why a search listed the session, for the muted note on its title line. */
 function matchLabel(reason: SearchReason | undefined, refs: Parameters<typeof findRef>[0]): string {
-  if (reason === undefined || reason.match === 'title') return '';
-  if (reason.match === 'body') return 'in messages';
+  // Body hits sit under the "In messages" header, which already says why they matched.
+  if (reason === undefined || reason.match === 'title' || reason.match === 'body') return '';
   const ref = reason.ref === undefined ? undefined : findRef(refs, reason.ref);
   const kind = ref === undefined ? 'ref' : refKind(ref);
   if (reason.match === 'ref-title') return `${kind} title`;

@@ -131,7 +131,7 @@ Typing filters the loaded sessions at once. 150 ms after the last keystroke, the
 
 A number never matches as the start of a longer one, so `12` does not find `#123`. URLs and `owner/repo#123` need the server plugin. Message search covers your prompts and the assistant's replies, in subagent sessions too, and needs at least one word of three or more characters.
 
-Title and ref matches are grouped like the Active view: Running first, then `Today` and one group per earlier day of the last update. Inside a group, title matches come first, then ref number matches and ref title matches, newest first. Sessions found only by their message text go last, newest first, under a muted `In messages` header, so the server's answer adds them below the rows you are looking at. A muted label on the right says why a session matched, such as `PR #12`, `issue title`, `MR !3` or `in messages`. The pull request or issue that matched is drawn on the row even when the row would not show it otherwise.
+Title and ref matches are grouped like the Active view: Running first, then `Today` and one group per earlier day of the last update. Inside a group, title matches come first, then ref number matches and ref title matches, newest first. Sessions found only by their message text go last, newest first, under a muted `In messages` header, so the server's answer adds them below the rows you are looking at. A muted label on the right says why a session matched a pull request or issue, such as `PR #12`, `issue title` or `MR !3`. The pull request or issue that matched is drawn on the row even when the row would not show it otherwise.
 
 The Archived view searches archived sessions; Active and Done search the others.
 
