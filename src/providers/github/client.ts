@@ -1,3 +1,4 @@
+import { enterpriseTokens } from '../../environment.js';
 import { createLimiter, run } from '../../process.js';
 import type { Availability, ForgeError } from '../provider.js';
 import { type GraphQLResponse, parseAuthStatus, parseGraphQLOutput } from './output.js';
@@ -37,7 +38,11 @@ export function createGitHubClient(options: { ghPath: string }): GitHubClient {
         const result = await run(
           options.ghPath,
           ['api', 'graphql', `--hostname=${host}`, '--include', '--input', '-'],
-          { timeoutMs: TIMEOUT_MS, input: JSON.stringify({ query, variables }), env: GH_ENV }
+          {
+            timeoutMs: TIMEOUT_MS,
+            input: JSON.stringify({ query, variables }),
+            env: { ...GH_ENV, ...enterpriseTokens(host) }
+          }
         );
         return parseGraphQLOutput(result, Date.now());
       }),
@@ -48,7 +53,7 @@ export function createGitHubClient(options: { ghPath: string }): GitHubClient {
         const result = await run(
           options.ghPath,
           ['auth', 'status', '--active', `--hostname=${host}`],
-          { timeoutMs: TIMEOUT_MS, env: GH_ENV }
+          { timeoutMs: TIMEOUT_MS, env: { ...GH_ENV, ...enterpriseTokens(host) } }
         );
         return parseAuthStatus(result);
       })

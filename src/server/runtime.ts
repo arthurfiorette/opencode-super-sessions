@@ -21,6 +21,7 @@ import {
   isHandledEvent,
   type LifecycleEvent
 } from './events.js';
+import { createForgeHosts, type ForgeHosts } from './hosts.js';
 import { createWriteQueue, type WriteQueue } from './queue.js';
 import {
   applySettings,
@@ -38,7 +39,10 @@ export interface Runtime {
   readonly definitions: ForgeDefinition[];
   readonly providers: ReadonlyMap<ProviderId, ForgeProvider>;
   readonly cache: SnapshotCache;
+  /** Resolves session checkouts, and adds each recognized remote's host to {@link hosts}. */
   readonly repos: RepoResolver;
+  /** The hosts forges are asked about. */
+  readonly hosts: ForgeHosts;
   readonly writes: WriteQueue;
   readonly branches: BranchCache;
   readonly events: EventHub;
@@ -154,6 +158,15 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
     if (next.providers !== previous.providers) forges = createForges(options);
   });
   const cache = watchMerges(createSnapshotCache(), () => runtime.onMerged?.());
+  const hosts = createForgeHosts(base);
+  const repos: RepoResolver = {
+    async resolve(directory) {
+      const info = await forges.repos.resolve(directory);
+      if (info.repo !== undefined) hosts.learn(info.repo);
+      if (info.headRepo !== undefined) hosts.learn(info.headRepo);
+      return info;
+    }
+  };
   let bodyIndex: Promise<BodyIndex> | undefined;
 
   const runtime: Runtime = {
@@ -166,9 +179,8 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
     get providers() {
       return forges.providers;
     },
-    get repos() {
-      return forges.repos;
-    },
+    repos,
+    hosts,
     settings,
     cache,
     writes: createWriteQueue(warn),

@@ -1,16 +1,23 @@
 import assert from 'node:assert/strict';
+import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createLimiter, run } from '../../src/process.js';
 
-test('children see gh credentials and stdin but not unrelated daemon secrets', async (t) => {
+test('children run in the home directory and see gh credentials and stdin but not daemon secrets', async (t) => {
   process.env.SUPER_SESSIONS_TEST_SECRET = 'leak';
   process.env.GH_SUPER_SESSIONS_TEST = 'kept';
+  // Only a call to an enterprise host gets this one; see enterpriseTokens.
+  process.env.GH_ENTERPRISE_TOKEN = 'enterprise';
   t.after(() => {
     delete process.env.SUPER_SESSIONS_TEST_SECRET;
     delete process.env.GH_SUPER_SESSIONS_TEST;
+    delete process.env.GH_ENTERPRISE_TOKEN;
   });
 
+  // Windows looks a bare command name up in the working directory first, so a child started in
+  // a project directory could run a binary the agent wrote there.
   const script = `
     let input = '';
     process.stdin.on('data', (chunk) => { input += chunk; });
@@ -18,7 +25,9 @@ test('children see gh credentials and stdin but not unrelated daemon secrets', a
       const env = process.env;
       console.log(JSON.stringify({
         input,
+        cwd: require('node:fs').realpathSync(process.cwd()),
         secret: env.SUPER_SESSIONS_TEST_SECRET ?? null,
+        enterprise: env.GH_ENTERPRISE_TOKEN ?? null,
         gh: env.GH_SUPER_SESSIONS_TEST ?? null,
         extra: env.GH_PROMPT_DISABLED ?? null
       }));
@@ -32,7 +41,9 @@ test('children see gh credentials and stdin but not unrelated daemon secrets', a
   assert.equal(result.code, 0);
   assert.deepEqual(JSON.parse(result.stdout), {
     input: '{"query":"{ viewer { login } }"}',
+    cwd: realpathSync(homedir()),
     secret: null,
+    enterprise: null,
     gh: 'kept',
     extra: '1'
   });
