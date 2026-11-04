@@ -104,11 +104,11 @@ On GitHub, successful, neutral and skipped check runs and successful statuses co
 
 ### Pull requests view
 
-Each row is a pull request: its icon and number in the state color, its [review and CI icons](#review-and-ci-icons), its title, and how many sessions track it. The search filters these rows by number (`12`, `#12` or `!12`) and title.
+Each row is a pull request: a muted `-` in the marker column, its icon and number in the state color, its [review and CI icons](#review-and-ci-icons), its title, and how many sessions track it. The search filters these rows by number (`12`, `#12` or `!12`) and title.
 
-`enter` opens the newest session that tracks the selected pull request, `space` peeks it, and `ctrl+g` opens the pull request in your web browser. The keys that change one session (archive, Done, rename, pin, delete, link) are off in this view. The footer reads `enter open  space peek  ctrl+g open PR  ctrl+/ keys`.
+`enter` or a double click opens the newest session that tracks the selected pull request, `space` peeks it, `ctrl+g` opens the pull request in your web browser, and `f5` reloads it with its checks. The keys that change one session (archive, Done, rename, pin, delete, link) are off in this view. The footer reads `enter open  space peek  ctrl+g open PR  ctrl+/ keys`.
 
-The preview shows the title and state, `head -> base`, the author, the review verdict and unresolved threads, every CI check with its status, the issues the pull request closes and the ones its sessions track, the description, and the sessions that worked on it. `right` moves the arrow keys to those sessions, `enter` opens one, and `left` or `esc` goes back. Author, branches, checks and description are fetched for the selected pull request only, and cached as long as its state.
+The preview shows the title and state, `head -> base`, the author, the review verdict and unresolved threads, every CI check with its status, the issues the pull request closes and the ones its sessions track, the description, and the sessions that worked on it. A check is a link to its page, such as the job's log: hovering makes its name bold, a click opens it and a ctrl+click copies it. `right` moves the arrow keys to the sessions, `enter` opens one, and `left` or `esc` goes back. Author, branches, checks and description are fetched for the selected pull request only, and cached as long as its state.
 
 ### Pins
 
@@ -139,7 +139,7 @@ The header holds the title and these sections:
 
 - Context: tokens in the context window and their share of the model's limit, the cost so far, and whether the session is running, idle, interrupted or failed.
 - Session: the project (only when it differs from the browser's), the worktree directory (only when it is not the project root) and the branch (only when it is not the default branch).
-- Work: every tracked pull request and issue, the main pull request first with a `branch` note when it is the branch's pull request. Open pull requests show their [review and CI icons](#review-and-ci-icons) after the number, and lines under each give the review (`changes requested` in red, `approved` in green, `review required` muted), the unresolved threads in yellow, and each failed check with a red x, at most five and then `+N more`. A failed check opens its log and `+N more` the pull request's checks page. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
+- Work: every tracked pull request and issue, the main pull request first with a `branch` note when it is the branch's pull request. Open pull requests show their [review and CI icons](#review-and-ci-icons) after the number, and lines under each give the review (`changes requested` in red, `approved` in green, `review required` muted), the unresolved threads in yellow, and each failed check with a red x, at most five and then `+N more`; pending checks are not listed. A click on a failed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
 
 The transcript below draws messages the way OpenCode's session view does and follows your `cli.json` session settings (scrollbar, thinking, markdown, verbosity, grouping). It starts at the latest message; scrolling up loads older ones.
 
@@ -159,7 +159,7 @@ While you peek at a running session, `esc` returns to the list instead of interr
 
 ### Copying links
 
-A ctrl+click on any link the plugin draws copies its URL instead of opening it: Work rows in the preview and the sidebar, rows of the Pull requests view, and checks in its preview. The copy goes through the terminal (OSC 52) and a toast confirms it, or says the terminal refused.
+A ctrl+click on any link the plugin draws copies its URL instead of opening it: Work rows and failed check lines in the preview and the sidebar, rows of the Pull requests view, and checks in its preview. The copy goes through the terminal (OSC 52) and a toast confirms it, or says the terminal refused.
 
 Some terminals keep ctrl+click for themselves:
 
@@ -173,7 +173,7 @@ Some terminals keep ctrl+click for themselves:
 
 ### Keys
 
-The footer always shows the same hints: `space peek`, `ctrl+s archive`, `ctrl+q done` and `ctrl+/ keys` on the left, `ctrl+a all projects` on the right. While the Work rows have the arrow keys it reads `enter open` and `left back`. Every other action is in the keys dialog: `ctrl+/`, or `?` while the search is empty, lists each browser action with its key, like OpenCode's command palette. Type to filter it, and `enter` runs the action on the selected session.
+The footer always shows the same hints: `space peek`, `ctrl+s archive`, `ctrl+q done` and `ctrl+/ keys` on the left, `ctrl+a all projects` on the right. While the Work rows have the arrow keys it reads `enter open`, `c copy` and `left back`. Every other action is in the keys dialog: `ctrl+/`, or `?` while the search is empty, lists each browser action with its key, like OpenCode's command palette. Type to filter it, and `enter` runs the action on the selected session.
 
 Keys are written the way OpenCode writes them. Keys marked "yours" belong to an OpenCode command the browser reuses, so the browser, its footer and the keys dialog follow your own keybinds for that command.
 
@@ -185,6 +185,7 @@ Keys are written the way OpenCode writes them. Keys marked "yours" belong to an 
 | `enter`                       | Open the session; in the Pull requests view, its newest session                                                                |
 | `space`                       | [Peek](#peek), while the search is empty                                                                                       |
 | `right`                       | Move to the [Work links](#work-links), or to the sessions of a pull request                                                    |
+| `c`                           | Copy the selected Work link's URL, while the Work links have the arrow keys                                                    |
 | `esc`                         | Close the browser                                                                                                              |
 | `ctrl+/`, `?`                 | The keys dialog. `?` types into a search that is not empty                                                                     |
 | `tab` / `shift+tab`           | Next or previous view                                                                                                          |
@@ -198,7 +199,7 @@ Keys are written the way OpenCode writes them. Keys marked "yours" belong to an 
 | `ctrl+y`                      | Archive every Done session after confirmation. Done view, not while searching                                                  |
 | `ctrl+l`                      | Link a pull request or issue: a URL, `owner/repo#N` or `#N`                                                                    |
 | `ctrl+g`                      | Open the main pull request, or else the first issue, in your web browser. In the Pull requests view, the selected pull request |
-| `f5`                          | Reload the selected session's refs and branch from GitHub or GitLab, or the selected pull request in the Pull requests view    |
+| `f5`                          | Reload the selected row from GitHub or GitLab, past the caches (see below)                                                     |
 | `ctrl+p`                      | OpenCode's command palette; `esc` returns to the browser                                                                       |
 | `ctrl+o`                      | [Settings](#settings)                                                                                                          |
 | `ctrl+c`, `<leader>q` (yours) | Clear the search, then close the browser (`app.exit`)                                                                          |
@@ -207,7 +208,19 @@ Most terminals send `ctrl+/` as `ctrl+_`; the browser takes both.
 
 The quit keys never exit OpenCode from the browser. With the default keys `ctrl+d` deletes there, because `session.delete` wins over `app.exit` inside the browser.
 
-Hovering a row tints it without selecting it, so the preview stays on the selected session. A left click selects a row and a double click (two clicks within 400 ms) opens it, like `enter`. The mouse wheel scrolls the list or the preview under the pointer. A click outside the panel or on `esc` closes the browser.
+`f5` asks GitHub or GitLab again for the selected row, past the caches: the session's pull requests and issues, its branch's pull request and its git checkout, or in the Pull requests view the pull request and its checks. A toast says `Reloading…` when the answer takes longer than 300 ms, and names the forge when it fails. While the forge's rate limit is spent, the plugin still waits for the reset.
+
+### Mouse
+
+| Action                       | In the list                                                                                    |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| Hover                        | Tints the row; the selection and the preview stay where they are                               |
+| Left click                   | Selects the row, like the arrow keys                                                           |
+| Double click (within 400 ms) | Opens the session, like `enter`; in the Pull requests view, its newest session                 |
+| ctrl+click                   | In the Pull requests view, copies the pull request's URL (see [Copying links](#copying-links)) |
+| Wheel                        | Scrolls the list or the preview under the pointer, without selecting                           |
+
+Work rows, checks and failed check lines are links: a click opens them in your web browser and a ctrl+click copies them. A click on a view name switches to it, and a click on `esc` or outside the panel closes the browser.
 
 ## Sidebar
 
@@ -245,7 +258,7 @@ The PR line shows one pull request: the branch's pull request, else the newest o
 
 ### Review and CI status
 
-For open and draft pull requests the plugin reads the review decision, how many review threads are resolved, and the combined CI result of the head commit. List rows show only what needs attention. The preview and the sidebar show all of it, `review required` included.
+For open and draft pull requests the plugin reads the review decision, how many review threads are resolved, and the combined CI result of the head commit with its passed and total counts. List rows show them as [icons](#review-and-ci-icons) on the PR line. The preview's Work rows and the sidebar add a line for the review and one for unresolved threads, and list the failed checks by name; those names come from the pull request's check list, which the plugin fetches only for failing pull requests of the session on screen.
 
 States are cached: open and draft pull requests for 2 minutes, closed ones for 15 minutes, merged ones and closed issues for good, and errors for 30 seconds. While the browser is open it refreshes the visible rows every 60 seconds, and the sidebar refreshes its session every 60 seconds. `gh pr merge`, `gh pr close`, `gh issue close`, `glab mr merge`, `glab mr close` and `glab issue close` refresh the session's refs right away. When the forge reports its rate limit is spent, the plugin waits for the reset and keeps showing the last known state.
 
@@ -281,7 +294,7 @@ Open the settings with `ctrl+o` in the browser, `/super-sessions settings`, or "
 | Group         | Setting                              | Values, default first                  | Meaning                                                                                                  |
 | ------------- | ------------------------------------ | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | List          | Default scope                        | this project, all projects             | Which sessions the browser lists. Changing it also drops an earlier `ctrl+a` choice                      |
-|               | PR and issue line                    | on, off                                | Whether rows show the PR, status and issues lines                                                        |
+|               | PR and issue line                    | on, off                                | Whether rows show the PR and issues lines                                                                |
 |               | Title scrolling on hover             | follow animations, off, on             | Whether a cut title in the sidebar and preview Work rows scrolls while the mouse is over it              |
 | Preview       | Preview pane                         | on, off                                | Whether the browser shows the preview                                                                    |
 |               | Preview width                        | 40%; 30% to 60% in 5% steps            | The preview's share of the browser width                                                                 |
@@ -371,7 +384,7 @@ Options go in the plugin entry's `options`. Unknown options are rejected. With a
 | `previewWidth`            | `0.4`           | The preview's share of the browser width, from `0.2` to `0.7`                              |
 | `preview`                 | `true`          | Show the preview                                                                           |
 | `scope`                   | `"project"`     | Default scope: `"project"` or `"all"`                                                      |
-| `rows.refs`               | `true`          | Show the PR, status and issues lines on rows                                               |
+| `rows.refs`               | `true`          | Show the PR and issues lines on rows                                                       |
 | `titleScroll`             | `"auto"`        | Scroll cut titles on hover: `"auto"` follows OpenCode's `animations`, or `"on"` or `"off"` |
 | `untestedHosts`           | `false`         | Take over the session list on OpenCode versions newer than the tested one                  |
 | `autoArchiveDays`         | Unset (off)     | Auto-archive Done sessions after this many days, from `0` to `365`                         |
@@ -430,6 +443,8 @@ If the browser fails, it closes and opens the built-in list. If the pull request
 - GitHub Enterprise Server hosts without a `github` label in their name are not recognized.
 - Squash and rebase merges are cleaned up only when the pull request's head commit is in your local repository, for example because the branch was pushed from this clone.
 - Auto-archive and the first cleanup confirmation need an open terminal.
+- Copying a link needs a terminal that accepts OSC 52 clipboard writes, and ctrl+click reaches the plugin only in terminals that pass it through (see [Copying links](#copying-links)).
+- The check list holds the first 100 checks of a pull request; failed checks past those are not listed. The CI counts on the icons cover all of them.
 
 ## Uninstall
 
