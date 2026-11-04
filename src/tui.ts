@@ -6,6 +6,8 @@ import { type Options, parseOptions } from './config.js';
 import { installBrowser } from './page/page.js';
 import { createPins, type Pins } from './pins.js';
 import { type Availability, SuperSessions } from './rpc.js';
+import { installSettings } from './settings/install.js';
+import type { TuiSettings } from './settings/store.js';
 import { installSidebar } from './sidebar.js';
 
 const TITLE = 'Super Sessions';
@@ -39,6 +41,8 @@ export default Plugin.define({
     const pins = createPins(context);
     const browser = installBrowser(context, options, pins);
     const uninstallSidebar = installSidebar(context, options);
+    // Settings dialog, its stores, and the TUI half of auto-archive and cleanup.
+    const settings = installSettings(context, options, pins);
 
     // Must stay synchronous: the keymap only falls through to the built-in dialog when `run`
     // returns a literal `false`, and a Promise counts as handled.
@@ -73,7 +77,7 @@ export default Plugin.define({
         group: 'Session',
         palette: true,
         slash: { name: 'archive' },
-        run: () => setCurrentArchived(context, options, true)
+        run: () => setCurrentArchived(context, settings.tui, true)
       },
       {
         id: 'super-sessions.unarchive.current',
@@ -81,43 +85,63 @@ export default Plugin.define({
         group: 'Session',
         palette: true,
         slash: { name: 'unarchive' },
-        run: () => setCurrentArchived(context, options, false)
+        run: () => setCurrentArchived(context, settings.tui, false)
       },
       {
         id: 'super-sessions.status',
         title: 'Super Sessions status',
         group: 'Session',
         palette: true,
-        slash: { name: 'super-sessions' },
-        run: () => showStatus(context)
-      }
-    ];
-    const suffix = options.archiveSuffix;
-    if (suffix !== undefined) {
-      commands.push({
-        id: 'super-sessions.archive.marked',
-        title: `Archive sessions ending in "${suffix}"`,
-        group: 'Session',
-        palette: true,
-        slash: { name: 'archive-marked' },
-        run: () => archiveMarked(context, suffix)
-      });
-    }
-    // Priority 1 puts these IDs above the host's own commands, so the user's configured keys,
-    // the slash names and the palette entries all reach this plugin first.
-    context.keymap.layer(() => ({ mode: 'global', priority: 1, commands }));
-
-    const offRenamed =
-      suffix === undefined
-        ? undefined
-        : context.data.on('session.renamed', (event) => {
-            const title = event.data.title;
-            if (!title.endsWith(suffix)) return;
-            void archiveWithTitle(context, event.data.sessionID, stripSuffix(title, suffix));
+        // Takes an argument so `/super-sessions settings` reaches the dialog; plain
+        // `/super-sessions` still shows the status.
+        slash: { name: 'super-sessions', arguments: true },
+        run: (input) => {
+          const argument = input?.trim() ?? '';
+          if (argument === 'settings') return settings.open();
+          if (argument === 'undo') return void settings.maintenance.undo();
+          if (argument === '' || argument === 'status') return showStatus(context);
+          context.ui.toast.show({
+            message: `Unknown argument "${argument}". Try /super-sessions settings or undo.`,
+            variant: 'warning'
           });
+        }
+      },
+      ...settings.commands
+    ];
+    // Priority 1 puts these IDs above the host's own commands, so the user's configured keys,
+    // the slash names and the palette entries all reach this plugin first. The layer factory is
+    // reactive, so the marked-archive entry follows the suffix setting.
+    context.keymap.layer(() => {
+      const suffix = settings.tui.archiveSuffix();
+      return {
+        mode: 'global',
+        priority: 1,
+        commands: [
+          ...commands,
+          {
+            id: 'super-sessions.archive.marked',
+            title: suffix ? `Archive sessions ending in "${suffix}"` : 'Archive marked sessions',
+            group: 'Session',
+            palette: true,
+            enabled: suffix !== undefined,
+            slash: { name: 'archive-marked' },
+            run: () => (suffix === undefined ? undefined : archiveMarked(context, suffix))
+          }
+        ]
+      };
+    });
+
+    // Read at event time, so turning suffix archiving on or off in the dialog applies at once.
+    const offRenamed = context.data.on('session.renamed', (event) => {
+      const suffix = settings.tui.archiveSuffix();
+      const title = event.data.title;
+      if (suffix === undefined || !title.endsWith(suffix)) return;
+      void archiveWithTitle(context, event.data.sessionID, stripSuffix(title, suffix));
+    });
 
     return () => {
-      offRenamed?.();
+      offRenamed();
+      settings.dispose();
       pins.dispose();
       browser.dispose();
       uninstallSidebar();
@@ -153,7 +177,11 @@ function quickSwitch(context: Plugin.Context, pins: Pins): KeymapCommand[] {
 }
 
 /** Archives or restores the root of the session on screen. */
-async function setCurrentArchived(context: Plugin.Context, options: Options, archived: boolean) {
+async function setCurrentArchived(
+  context: Plugin.Context,
+  settings: TuiSettings,
+  archived: boolean
+) {
   const route = context.ui.router.current();
   if (route.type !== 'session') {
     context.ui.toast.show({ message: 'Open a session first.', variant: 'warning' });
@@ -174,7 +202,7 @@ async function setCurrentArchived(context: Plugin.Context, options: Options, arc
     message: archived ? 'Session archived' : 'Session restored',
     variant: 'success'
   });
-  if (archived && options.closeTabOnArchive) context.ui.tabs.close(sessionID);
+  if (archived && settings.closeTabOnArchive()) context.ui.tabs.close(sessionID);
 }
 
 /** Shows forge availability from the server plugin. */
