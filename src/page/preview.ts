@@ -117,8 +117,7 @@ export function Preview(props: PreviewProps): JSX.Element {
     spinner,
     selectedRef: () => props.selectedRef?.(),
     width: () => props.width(),
-    marquee,
-    agentColor: (value: SessionInfo, agent: string) => agentColor(context, theme(), value, agent)
+    marquee
   });
 
   let scroll: ScrollBoxRenderable | undefined;

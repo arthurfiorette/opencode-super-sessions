@@ -42,17 +42,24 @@ export function refIcon(kind: RefKind, status: RefStatus | undefined): string {
   return ICONS.issueOpen;
 }
 
-// The theme has no orange token (`SemanticHue` is accent, interactive and neutral), so the title
-// fade ends on the gruvbox oranges, which read on both kinds of background.
+// The theme has no orange or yellow token (`SemanticHue` is accent, interactive and neutral), so
+// the title fade ends on the gruvbox orange and falls back to the gruvbox yellow, which read on
+// both kinds of background.
 const TITLE_ORANGE = { dark: '#fe8019', light: '#af3a03' } as const;
+const TITLE_YELLOW = { dark: '#fabd2f', light: '#b57614' } as const;
+// Below this RGB distance (channels in 0..1) the two ends look like one color.
+const MIN_FADE = 0.2;
 
 /**
- * One color per character of `text`, fading left to right from the theme's warning yellow to
- * orange, interpolated in RGB. A single character takes the yellow end.
+ * One color per character of `text`, fading left to right from the theme's warning color to
+ * orange, interpolated in RGB. Themes whose warning color is already orange, gruvbox among them,
+ * start from yellow instead, or the fade would be flat. A single character takes the first end.
  */
 export function titleGradient(text: string, theme: ResolvedTheme, mode: 'dark' | 'light'): RGBA[] {
-  const from = theme.text.feedback.warning.base;
   const to = RGBA.fromHex(TITLE_ORANGE[mode]);
+  const warning = theme.text.feedback.warning.base;
+  const distance = Math.hypot(warning.r - to.r, warning.g - to.g, warning.b - to.b);
+  const from = distance < MIN_FADE ? RGBA.fromHex(TITLE_YELLOW[mode]) : warning;
   const count = Array.from(text).length;
   return Array.from({ length: count }, (_, index) => {
     const t = count > 1 ? index / (count - 1) : 0;

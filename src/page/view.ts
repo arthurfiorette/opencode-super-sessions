@@ -1276,8 +1276,10 @@ export function PeekBanner(props: PeekBannerProps) {
     flexShrink: 0,
     paddingLeft: 2,
     paddingRight: 2,
+    // The warning pair keeps the label readable in dark and light themes (5.8:1 and 5.4:1 in
+    // gruvbox, against 3.5:1 on the raised background), so the banner reads as a state.
     get backgroundColor() {
-      return theme().background.raised.high;
+      return theme().background.feedback.warning.base;
     },
     children: jsx('text', {
       wrapMode: 'none',
@@ -1287,7 +1289,7 @@ export function PeekBanner(props: PeekBannerProps) {
             const position = props.position();
             return position ? `Peeking ${position.index} of ${position.total}` : 'Peeking';
           },
-          (value) => value.text.base,
+          (value) => value.text.feedback.warning.base,
           true
         ),
         span(
