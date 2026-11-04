@@ -1,3 +1,4 @@
+import type { SessionInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import type { KeymapCommand, Route } from '@opencode/plugin/tui/context';
 import {
@@ -12,13 +13,15 @@ import {
 } from 'solid-js';
 import { COMMAND_GROUP } from '../commands.js';
 import type { Options } from '../config.js';
+import { type HistoryScanner, listSessions } from '../history-scan.js';
 import { isUserPrompt } from '../host/events.js';
 import { BASE_MODE, CLASSIC_LIST, DIALOG_MODE, OVER_PROMPT, SESSION_LIST } from '../host/keymap.js';
+import { listFilters, projectScope } from '../host/session-api.js';
 import { editorHasText, SLOTS } from '../host/tui.js';
 import type { Pins } from '../pins.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import { type BrowserModel, createBrowserModel } from './model.js';
-import { moveSelection } from './state.js';
+import { moveSelection, type PageScope } from './state.js';
 
 /** Everything the browser view needs from the plugin entry. */
 export interface PageProps {
@@ -26,6 +29,8 @@ export interface PageProps {
   options: Options;
   pins: Pins;
   model: BrowserModel;
+  /** Scans the history of sessions the user previews, peeks or opens. */
+  history: HistoryScanner;
   /** Closes the browser. */
   close(): void;
   /** Closes the browser and shows the session, with `esc` coming back to the browser. */
@@ -47,6 +52,11 @@ export interface Browser {
   open(): void;
   close(): void;
   toggle(): void;
+  /**
+   * Every root session, archived ones included, in the scope the browser lists now: this
+   * project or all projects.
+   */
+  scopeSessions(): Promise<{ scope: PageScope; sessions: SessionInfo[] }>;
   /** Removes the overlay, the peek keys and banner, and the cached lists. */
   dispose(): void;
 }
@@ -65,7 +75,12 @@ const Banner = lazy(() => import('./view.js').then((module) => ({ default: modul
  * and draws the browser there as an overlay while it is open. The route underneath stays
  * mounted, so closing the browser costs nothing to redraw.
  */
-export function installBrowser(context: Plugin.Context, options: Options, pins: Pins): Browser {
+export function installBrowser(
+  context: Plugin.Context,
+  options: Options,
+  pins: Pins,
+  history: HistoryScanner
+): Browser {
   const router = context.ui.router;
   const [origin, setOrigin] = createSignal<Route>();
   // `fail` is defined below; the model only calls it later, from a memo.
@@ -87,7 +102,14 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
     setCursor(undefined);
   };
 
-  const close = () => setOrigin(undefined);
+  // Scans that only the preview asked for stop with the browser. Opening or peeking a session
+  // closes the browser first and asks for its scan again right after, which keeps that one.
+  const close = () => {
+    history.cancelPreviews();
+    setOrigin(undefined);
+  };
+  // A scan can link refs, which the open browser shows on the session's row and preview.
+  const offScanned = history.onScanned((sessionID) => void model.controller.refresh([sessionID]));
   // Set by `fail` until the next open, so one crash reports once.
   let failing = false;
   const open = () => {
@@ -104,6 +126,7 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
   const show = (sessionID: string) => {
     setPeeked(sessionID);
     router.navigate({ type: 'session', sessionID });
+    history.open(sessionID);
   };
   const peek = (sessionID: string) => {
     close();
@@ -174,6 +197,9 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
           () => {
             const route = router.current();
             if (route.type !== 'session' || route.sessionID !== peeked()) endPeek();
+            // Sessions opened anywhere, the quick switch keys and tabs included. Deferred, so
+            // the session the TUI starts on is not scanned until the user moves.
+            if (route.type === 'session') history.open(route.sessionID);
           },
           { defer: true }
         )
@@ -188,7 +214,7 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
             return undefined;
           },
           get children() {
-            return lazyNode(View, { context, options, pins, model, close, peek, fail });
+            return lazyNode(View, { context, options, pins, model, history, close, peek, fail });
           }
         });
       });
@@ -257,9 +283,19 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
     open,
     close,
     toggle: () => (origin() === undefined ? open() : close()),
+    async scopeSessions() {
+      const scope = model.scope();
+      // "This project" is the project under the browser, which follows the route while it is
+      // closed, as when the next open would set it.
+      if (origin() === undefined) model.setOrigin(copyRoute(router.current()));
+      const filters =
+        scope === 'all' ? {} : listFilters(projectScope(await model.resolveLocation()));
+      return { scope, sessions: await listSessions(context.client, filters) };
+    },
     dispose: () => {
       endPeek();
       offInbox();
+      offScanned();
       unclaimOverlay();
       unclaimBanner();
       model.dispose();

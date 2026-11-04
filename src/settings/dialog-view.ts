@@ -140,7 +140,9 @@ export default function SettingsDialog(props: SettingsDialogProps) {
   /** Enter or a click: run the action, open the custom prompt, or step forward. */
   const activate = (row = current()) => {
     if (row === undefined) return;
-    if (row.side === 'action') return props.runCleanup();
+    if (row.side === 'action') {
+      return row.key === 'history.scan' ? props.scanAll() : props.runCleanup();
+    }
     if (row.side === 'tui' && row.prompt) return props.promptSuffix();
     void change(1, row);
   };

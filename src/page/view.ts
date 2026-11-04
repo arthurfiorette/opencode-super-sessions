@@ -324,6 +324,9 @@ export default function SessionBrowser(props: PageProps) {
     if (sessionID === undefined) return;
     props.close();
     context.ui.router.navigate({ type: 'session', sessionID });
+    // The route may not change, as for the session the browser opened over; closing dropped
+    // its preview scan, so ask again.
+    props.history.open(sessionID);
   };
   const setView = (view: PageView) =>
     model.setMemory((draft) => {
@@ -1215,7 +1218,8 @@ export default function SessionBrowser(props: PageProps) {
       return ref ? refKey(ref) : undefined;
     },
     // The session view's surface, not the dialog's, so the transcript looks as it does there.
-    theme: () => context.theme
+    theme: () => context.theme,
+    onLoaded: (sessionID, page) => props.history.preview(sessionID, page)
   });
   // A full-height column beside the list, with `esc` on the line of the browser's header.
   const preview = jsx('box', {

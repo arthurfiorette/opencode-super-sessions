@@ -87,6 +87,9 @@ async function host(version = '2.2.5') {
   const modes = [];
   const [route, setRoute] = createSignal({ type: 'session', sessionID: 'unread' });
   const memories = new Map();
+  // Sessions whose transcript pages were read, and the `history.scan` calls.
+  const pages = [];
+  const scans = [];
   const views = async ({ sessionIDs }) =>
     Object.fromEntries(sessionIDs.filter((id) => refViews[id]).map((id) => [id, refViews[id]]));
   const context = {
@@ -119,16 +122,23 @@ async function host(version = '2.2.5') {
         remove: async () => {}
       },
       message: {
-        list: async () => ({
-          data: [{ type: 'user', id: 'm1', text: 'ok', time: { created: NOW - DAY } }],
-          cursor: {}
-        })
+        list: async (input) => {
+          if (input.type === undefined) pages.push(input.sessionID);
+          return {
+            data: [{ type: 'user', id: 'm1', text: 'ok', time: { created: NOW - DAY } }],
+            cursor: {}
+          };
+        }
       },
       rpc: () => ({
         // Settings and maintenance listen for server events from setup on.
         events: { on: () => () => {} },
         refs: views,
         refresh: views,
+        'history.scan': async (input) => {
+          scans.push(input);
+          return { skipped: false };
+        },
         search: async () => {
           throw new Error('not registered');
         }
@@ -224,6 +234,8 @@ async function host(version = '2.2.5') {
     toasts,
     dispatched,
     route,
+    pages,
+    scans,
     /** Runs a command registered by any layer, like `keymap.dispatch`. */
     dispatch(id) {
       const command = layers
@@ -284,6 +296,33 @@ test('session.list opens the browser cold and lists active sessions with their r
   await import('../../dist/page/view.js');
   await eventually(rendered, (frame) => frame.includes('Mastra build') && frame.includes('#4930'));
   assert.doesNotMatch(rendered.captureCharFrame(), /Old spike on Rollup plugins/);
+});
+
+// Old sessions are read only once the user selects one: no history reads on startup, and the
+// scan reuses the page the preview loaded.
+test('the selected session is scanned from the preview page, and nothing is scanned before', async () => {
+  const terminal = await host();
+  const rendered = await testRender(() => terminal.overlay.render({}), {
+    width: 140,
+    height: 30
+  });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  await rendered.renderOnce();
+  assert.deepEqual(terminal.pages, []);
+  assert.deepEqual(terminal.scans, []);
+
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  await eventually(rendered, () => terminal.scans.length > 0);
+  const [scan] = terminal.scans;
+  assert.deepEqual(scan, {
+    sessionID: scan.sessionID,
+    items: [{ type: 'prompt', key: 'm1', text: 'ok', created: NOW - DAY }],
+    done: true,
+    lastMessageID: 'm1'
+  });
+  assert.deepEqual(terminal.pages, [scan.sessionID]);
 });
 
 // On a release CI never ran, the host's own list must answer its keys, and the user must learn
