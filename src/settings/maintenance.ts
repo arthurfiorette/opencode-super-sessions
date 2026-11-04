@@ -53,6 +53,11 @@ export function installMaintenance(
   // Lists the user already declined in this TUI, so a sweep does not ask again every time.
   const declined = new Set<string>();
   const timers: ReturnType<typeof setTimeout>[] = [];
+  /** Keeps a timer for dispose. Unref'd: background upkeep never holds the process open. */
+  const keep = (timer: ReturnType<typeof setTimeout>) => {
+    timer.unref?.();
+    timers.push(timer);
+  };
 
   /** Sessions the TUI shows: the route's session and every open tab. */
   const openSessions = () => {
@@ -65,6 +70,7 @@ export function installMaintenance(
   const report = () => {
     clearTimeout(presenceTimer);
     presenceTimer = setTimeout(() => {
+      presenceTimer = undefined;
       // Inside `then`, so any failure stays a rejected promise instead of a throw in a timer.
       void Promise.resolve()
         .then(() =>
@@ -75,13 +81,14 @@ export function installMaintenance(
         )
         .catch(() => {});
     }, PRESENCE_DELAY);
+    presenceTimer.unref?.();
   };
   // A root of its own: the effect must outlive any component, and it reads only stores.
   const disposeRoot = createRoot((dispose) => {
     createEffect(on(() => [pins.ids().join(','), openSessions().join(',')], report));
     return dispose;
   });
-  timers.push(setInterval(report, HEARTBEAT));
+  keep(setInterval(report, HEARTBEAT));
 
   /** Claims due sessions, rechecks each one here, archives it and reports back. */
   const claim = async () => {
@@ -129,7 +136,7 @@ export function installMaintenance(
     const key = worktrees.map((worktree) => worktree.directory).join('\n');
     if (worktrees.length === 0 || declined.has(key)) return;
     if (isBusy()) {
-      timers.push(setTimeout(() => void confirm(worktrees), BUSY_RETRY));
+      keep(setTimeout(() => void confirm(worktrees), BUSY_RETRY));
       return;
     }
     const accepted = await context.ui.dialog.confirm({
@@ -170,8 +177,8 @@ export function installMaintenance(
       toast(`Removed ${count(event.data.directories.length, 'worktree')}`, 'success')
     )
   ];
-  timers.push(setInterval(() => void claim(), CLAIM_INTERVAL));
-  timers.push(
+  keep(setInterval(() => void claim(), CLAIM_INTERVAL));
+  keep(
     setTimeout(() => {
       void claim();
       void startupCheck();

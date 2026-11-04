@@ -12,7 +12,13 @@ test('session.list toggles the browser synchronously and falls through for the c
       store: () => [{ imported: true, ids: [] }, async () => {}] as const,
       memory: () => [{}, () => {}] as const
     },
-    data: { on: () => () => {}, session: { list: () => [] } },
+    // Settings and maintenance subscribe to server events and report open sessions from setup on.
+    client: { rpc: () => ({ events: { on: () => () => {} } }) },
+    data: {
+      on: () => () => {},
+      session: { list: () => [], root: (id: string) => id },
+      location: { default: () => ({ directory: '/repo' }) }
+    },
     keymap: {
       layer(factory: () => KeymapLayer) {
         layers.push(factory());
@@ -24,7 +30,7 @@ test('session.list toggles the browser synchronously and falls through for the c
       router: { current: () => ({ type: 'home' }) },
       dialog: { clear() {} },
       toast: { show() {} },
-      tabs: { enabled: () => false }
+      tabs: { enabled: () => false, list: () => [] }
     }
   };
   await plugin.setup(context as unknown as Plugin.Context);

@@ -29,6 +29,7 @@ import { useCliSettings } from '../cli-settings.js';
 import { createMarquee } from '../marquee.js';
 import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
+import { tuiSettingsFor } from '../settings/store.js';
 import { ICONS } from './icons.js';
 import { type PageProps, type PeekBannerProps, routeKey } from './page.js';
 import { Preview } from './preview.js';
@@ -971,7 +972,7 @@ export default function SessionBrowser(props: PageProps) {
    * The preview's share of the panel; the list column takes the rest. A fixed split, so the
    * columns stay put whatever sessions the list holds.
    */
-  const split = (): number => props.options.previewWidth;
+  const split = (): number => tuiSettingsFor(context)?.previewWidth() ?? props.options.previewWidth;
   /** Cells of the preview column, its blank first cell included. */
   const previewWidth = () => Math.floor(panelWidth() * split());
   const pane = createComponent(Preview, {
