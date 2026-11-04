@@ -3,7 +3,6 @@ import { MouseButton, type MouseEvent, type RGBA } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import type { JSX } from 'solid-js';
 import type { Options } from '../config.js';
-import { marqueeText } from '../marquee.js';
 import { type Ref, type RefReview, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
@@ -33,8 +32,11 @@ export interface RowModel {
   running: boolean;
   /** The first delete press turned this row into a confirmation. */
   deleting: boolean;
-  /** Marquee offset while the pointer hovers a title that does not fit. */
-  scroll: number | undefined;
+  /**
+   * The selected row's title wrapped at the title column (see {@link wrapTitle}); undefined for
+   * other rows, which cut the title to one line.
+   */
+  wrapped: string[] | undefined;
   /** Background of every line of the row when not selected; undefined keeps the panel's. */
   stripe: RGBA | undefined;
 }
@@ -322,10 +324,7 @@ export function titleLine(
         const color = current.running ? runningColor(theme()) : theme().text.base;
         return jsx('span', {
           style: { fg: fg(color), bold: current.selected },
-          children:
-            current.scroll !== undefined && current.scroll > 0
-              ? marqueeText(current.title, room, current.scroll)
-              : fitText(current.title, room)
+          children: current.wrapped?.[0] ?? fitText(current.title, room)
         });
       }
     }),
@@ -341,6 +340,69 @@ export function titleLine(
       }
     })
   ]);
+}
+
+/**
+ * A later line of the selected row's wrapped title, starting in the title's column. The age
+ * stays on the first line.
+ */
+export function wrapLine(
+  index: number,
+  theme: () => ResolvedTheme,
+  model: () => RowModel,
+  events: RowEvents
+): JSX.Element {
+  return lineBox(theme, model, events, [
+    jsx('box', { width: MARKER_WIDTH, flexShrink: 0 }),
+    jsx('text', {
+      flexGrow: 1,
+      flexShrink: 1,
+      minWidth: 0,
+      wrapMode: 'none',
+      get children() {
+        const current = model();
+        const color = current.running ? runningColor(theme()) : theme().text.base;
+        return jsx('span', {
+          style: { fg: rowColors(theme(), current).fg ?? color, bold: current.selected },
+          children: current.wrapped?.[index] ?? ''
+        });
+      }
+    })
+  ]);
+}
+
+/**
+ * Word-wraps a title to lines of at most `width` cells. A word longer than a line is split
+ * where the line ends.
+ */
+export function wrapTitle(text: string, width: number): string[] {
+  if (width <= 0) return [text];
+  const lines: string[] = [];
+  let line = '';
+  /** Appends `piece`, starting a new line first when it does not fit. */
+  const push = (piece: string, space: boolean) => {
+    const joined = line && space ? `${line} ${piece}` : `${line}${piece}`;
+    if (cells(joined) <= width) {
+      line = joined;
+      return;
+    }
+    if (line) lines.push(line);
+    line = '';
+    if (cells(piece) <= width) {
+      line = piece;
+      return;
+    }
+    for (const { segment } of graphemes.segment(piece)) {
+      if (line && cells(line + segment) > width) {
+        lines.push(line);
+        line = '';
+      }
+      line += segment;
+    }
+  };
+  for (const word of text.split(/\s+/).filter(Boolean)) push(word, true);
+  if (line || lines.length === 0) lines.push(line);
+  return lines;
 }
 
 /**

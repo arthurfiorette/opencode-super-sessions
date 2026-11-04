@@ -117,7 +117,8 @@ export const SETTINGS: readonly SettingRow[] = [
     key: 'titleScroll',
     group: 'List',
     title: 'Title scrolling on hover',
-    description: 'Whether a long title scrolls while the mouse is over its row',
+    description:
+      'Whether a long title in the sidebar and preview Work rows scrolls while the mouse is over it',
     values: ['auto', 'off', 'on'],
     labels: ['follow animations', 'off', 'on'],
     keywords: ['marquee', 'animation']

@@ -29,7 +29,6 @@ import { useCliSettings } from '../cli-settings.js';
 import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
 import { regenerateTitle, setArchived } from '../host/session-api.js';
 import { dialogTheme, sessionBackground } from '../host/theme.js';
-import { createMarquee } from '../marquee.js';
 import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import { tuiSettingsFor } from '../settings/store.js';
@@ -50,9 +49,12 @@ import {
   runningColor,
   type Segment,
   titleLine,
-  titleRoom
+  titleRoom,
+  wrapLine,
+  wrapTitle
 } from './row.js';
 import {
+  anchorScroll,
   keepSelection,
   type Line,
   layoutLines,
@@ -134,7 +136,6 @@ export default function SessionBrowser(props: PageProps) {
   const [projectID, setProjectID] = createSignal<string>();
   const cli = useCliSettings();
   const settings = tuiSettingsFor(context);
-  const marquee = createMarquee({ animated: () => settings.titleScroll(cli.animations) });
   let input: InputRenderable | undefined;
   let listBox: BoxRenderable | undefined;
   let panelBox: BoxRenderable | undefined;
@@ -167,8 +168,39 @@ export default function SessionBrowser(props: PageProps) {
           matched: reason(session)?.ref
         })
       : NO_DETAILS;
+  /** The age, or the archive and update ages in the Archived view, on the title line. */
+  const rightOf = (session: SessionInfo) => {
+    const info = live(session);
+    const now = model.now();
+    const archivedAt =
+      memory.view === 'archived' && !data.search
+        ? (session.time.archived ?? info.time.archived)
+        : undefined;
+    return archivedAt === undefined
+      ? // Padded to the widest age (`11mo`), so labels before it line up down the list.
+        formatAge(now - info.time.updated).padStart(4)
+      : `archived ${formatAge(now - archivedAt)} · updated ${formatAge(now - info.time.updated)}`;
+  };
+  /**
+   * The selected row's title wrapped at its column, or undefined for a row that keeps one cut
+   * line: every other row, and the selected one while it asks to confirm a delete.
+   */
+  const wrappedOf = (session: SessionInfo): string[] | undefined => {
+    if (memory.selected !== session.id || deleting() === session.id) return undefined;
+    const room = titleRoom({
+      // The row box pads one cell on each side.
+      width: listWidth() - 2,
+      label: matchLabel(reason(session), data.refs[session.id]),
+      right: rightOf(session)
+    });
+    return wrapTitle(live(session).title || 'Untitled session', room);
+  };
   const lines = createMemo(() =>
-    layoutLines(model.groups(), (session) => detailKinds(detailsOf(session)))
+    layoutLines(
+      model.groups(),
+      (session) => detailKinds(detailsOf(session)),
+      (session) => wrappedOf(session)?.length ?? 1
+    )
   );
   const visible = createMemo(() => lines().slice(memory.scroll, memory.scroll + listHeight()));
 
@@ -186,13 +218,22 @@ export default function SessionBrowser(props: PageProps) {
       if (keep !== untrack(() => memory.selected)) remember({ selected: keep });
     })
   );
+  // The selected title wraps, so rows change height as the selection moves. The selected row's
+  // title keeps its screen line where it can, then the whole row is scrolled into view.
+  // Another view, query or scope is a different list, where the old screen line means nothing.
+  let laidOut: { list: string; lines: Line[] } = { list: '', lines: [] };
   createEffect(() => {
-    const scroll = scrollFor(
-      lines(),
-      memory.selected,
-      untrack(() => memory.scroll),
-      listHeight()
+    const next = lines();
+    const selected = memory.selected;
+    const list = `${memory.view}\n${memory.query}\n${scope()}`;
+    const anchored = anchorScroll(
+      laidOut.list === list ? laidOut.lines : [],
+      next,
+      selected,
+      untrack(() => memory.scroll)
     );
+    laidOut = { list, lines: next };
+    const scroll = scrollFor(next, selected, anchored, listHeight());
     if (scroll !== untrack(() => memory.scroll)) remember({ scroll });
   });
   createEffect(
@@ -286,8 +327,8 @@ export default function SessionBrowser(props: PageProps) {
     });
   const select = (sessionID: string | undefined) => remember({ selected: sessionID });
   const move = (delta: number) => select(moveSelection(rows(), memory.selected, delta));
-  // Rows take one to four lines; counting four per row keeps the jump on screen.
-  const pageRows = () => Math.max(1, Math.floor(listHeight() / 4));
+  // Rows on screen now, from the real line heights, so a page jump never skips past one.
+  const pageRows = () => Math.max(1, visible().filter((line) => line.kind === 'title').length - 1);
   const open = (sessionID = memory.selected) => {
     if (sessionID === undefined) return;
     props.close();
@@ -612,21 +653,10 @@ export default function SessionBrowser(props: PageProps) {
     }, 1);
   });
 
-  // The pointer leaves one line of a row and enters the next in two events; leaving waits a tick
-  // so moving within a row does not restart its marquee.
-  let hovered: string | undefined;
-  const hover = (session: SessionInfo) => {
-    hovered = session.id;
-    select(session.id);
-    const current = rowModel(session);
-    marquee.enter(session.id, current.title, titleRoom(current));
-  };
-  const leave = (session: SessionInfo) => {
-    if (hovered === session.id) hovered = undefined;
-    setTimeout(() => {
-      if (hovered !== session.id) marquee.leave(session.id);
-    }, 0);
-  };
+  // Hover selects, and the selected title wraps. The scroll anchor keeps the hovered row's first
+  // line where the pointer is while the row above shrinks back to one line.
+  const hover = (session: SessionInfo) => select(session.id);
+  const leave = () => {};
 
   const markerOf = (session: SessionInfo): Segment | undefined => {
     const slot = slots().get(session.id);
@@ -671,36 +701,24 @@ export default function SessionBrowser(props: PageProps) {
     return shade.equals(panel) ? theme().decrease(panel) : shade;
   };
 
-  const rowModel = (session: SessionInfo): RowModel => {
-    const info = live(session);
-    const now = model.now();
-    const archivedAt =
-      memory.view === 'archived' && !data.search
-        ? (session.time.archived ?? info.time.archived)
-        : undefined;
-    return {
-      marker: markerOf(session),
-      title:
-        deleting() === session.id
-          ? `Press ${shortcut(HOST_COMMANDS.delete, 'ctrl+d')} again to delete`
-          : info.title || 'Untitled session',
-      label: matchLabel(reason(session), data.refs[session.id]),
-      right:
-        archivedAt === undefined
-          ? // Padded to the widest age (`11mo`), so labels before it line up down the list.
-            formatAge(now - info.time.updated).padStart(4)
-          : `archived ${formatAge(now - archivedAt)} · updated ${formatAge(now - info.time.updated)}`,
-      // The row box pads one cell on each side.
-      width: listWidth() - 2,
-      details: detailsOf(session),
-      selected: memory.selected === session.id,
-      // Pinned rows show their slot instead of the spinner, but their title still says it runs.
-      running: model.running(session.id),
-      deleting: deleting() === session.id,
-      scroll: marquee.active() === session.id ? marquee.offset() : undefined,
-      stripe: (stripes().get(session.id) ?? 0) % 2 === 1 ? stripe() : undefined
-    };
-  };
+  const rowModel = (session: SessionInfo): RowModel => ({
+    marker: markerOf(session),
+    title:
+      deleting() === session.id
+        ? `Press ${shortcut(HOST_COMMANDS.delete, 'ctrl+d')} again to delete`
+        : live(session).title || 'Untitled session',
+    label: matchLabel(reason(session), data.refs[session.id]),
+    right: rightOf(session),
+    // The row box pads one cell on each side.
+    width: listWidth() - 2,
+    details: detailsOf(session),
+    selected: memory.selected === session.id,
+    // Pinned rows show their slot instead of the spinner, but their title still says it runs.
+    running: model.running(session.id),
+    deleting: deleting() === session.id,
+    wrapped: wrappedOf(session),
+    stripe: (stripes().get(session.id) ?? 0) % 2 === 1 ? stripe() : undefined
+  });
 
   /** One list line. The node is rebuilt only when the line changes kind or session. */
   const renderLine = (line: () => Line) => {
@@ -710,7 +728,9 @@ export default function SessionBrowser(props: PageProps) {
         ? `h:${value.title}`
         : value.kind === 'blank'
           ? 'b'
-          : `${value.kind}:${value.session.id}`;
+          : value.kind === 'wrap'
+            ? `w${value.index}:${value.session.id}`
+            : `${value.kind}:${value.session.id}`;
     });
     return createMemo(() => {
       key();
@@ -742,10 +762,11 @@ export default function SessionBrowser(props: PageProps) {
         const row = createMemo(() => rowModel(session()));
         const events = {
           hover: () => hover(session()),
-          leave: () => leave(session()),
+          leave,
           open: () => open(session().id)
         };
         if (value.kind === 'title') return titleLine(theme, row, events);
+        if (value.kind === 'wrap') return wrapLine(value.index, theme, row, events);
         return detailsLine(value.kind, theme, row, events);
       });
     });

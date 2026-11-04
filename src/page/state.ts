@@ -35,7 +35,9 @@ export type DetailKind = 'pr' | 'status' | 'issues';
 export type Line =
   | { kind: 'blank' }
   | { kind: 'header'; title: string }
-  | { kind: 'title' | DetailKind; session: SessionInfo };
+  | { kind: 'title' | DetailKind; session: SessionInfo }
+  /** The `index`th line (1 and up) of a title that wraps, only on the selected row. */
+  | { kind: 'wrap'; session: SessionInfo; index: number };
 
 /** What the Done rule needs beyond refs. Fetched only for sessions that could be Done. */
 export interface DoneExtra {
@@ -192,22 +194,47 @@ export function rowsOf(groups: readonly Group[]): SessionInfo[] {
 }
 
 /**
- * Lays groups out as terminal lines. Each row is its title line plus the detail lines `details`
- * names. Rows follow each other with no gap, and one blank line comes before every group after
- * the first, like the host's session list.
+ * Lays groups out as terminal lines. Each row is its title, on `titleLines` lines, plus the
+ * detail lines `details` names. Rows follow each other with no gap, and one blank line comes
+ * before every group after the first, like the host's session list.
  */
 export function layoutLines(
   groups: readonly Group[],
-  details: (session: SessionInfo) => readonly DetailKind[]
+  details: (session: SessionInfo) => readonly DetailKind[],
+  titleLines: (session: SessionInfo) => number = () => 1
 ): Line[] {
   return groups.flatMap((group, index): Line[] => [
     ...(index > 0 ? [{ kind: 'blank' as const }] : []),
     ...(group.title === undefined ? [] : [{ kind: 'header' as const, title: group.title }]),
     ...group.sessions.flatMap((session): Line[] => [
       { kind: 'title', session },
+      ...Array.from({ length: Math.max(0, titleLines(session) - 1) }, (_, line) => ({
+        kind: 'wrap' as const,
+        session,
+        index: line + 1
+      })),
       ...details(session).map((kind) => ({ kind, session }))
     ])
   ]);
+}
+
+/**
+ * The first visible line that keeps the selected row's title on the same screen line after the
+ * list changed shape around it, such as the previous selection shrinking back to one line.
+ * Returns `scroll` unchanged when the row is new to either layout.
+ */
+export function anchorScroll(
+  previous: readonly Line[],
+  next: readonly Line[],
+  selected: string | undefined,
+  scroll: number
+): number {
+  const at = (lines: readonly Line[]) =>
+    lines.findIndex((line) => line.kind === 'title' && line.session.id === selected);
+  const before = at(previous);
+  const after = at(next);
+  if (before === -1 || after === -1) return scroll;
+  return Math.max(0, scroll + after - before);
 }
 
 /** Moves the selection by `delta` rows, clamped to the list. */
