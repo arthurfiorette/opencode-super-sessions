@@ -377,7 +377,9 @@ export default function SessionPage(props: PageProps) {
   const archive = async () => {
     const session = selected();
     if (!session) return;
-    const archived = live(session).time.archived === undefined;
+    // The row's own copy, not the live one: the controller moves it between lists right after
+    // each update, while the host's synced copy may still be catching up.
+    const archived = session.time.archived === undefined;
     try {
       await client.session.update({ sessionID: session.id, archived });
     } catch {
@@ -577,7 +579,10 @@ export default function SessionPage(props: PageProps) {
           : unread
             ? { text: '●', fg: theme().text.feedback.info.base }
             : undefined;
-    const archivedAt = memory.view === 'archived' && !data.search ? info.time.archived : undefined;
+    const archivedAt =
+      memory.view === 'archived' && !data.search
+        ? (session.time.archived ?? info.time.archived)
+        : undefined;
     return {
       marker,
       title:
