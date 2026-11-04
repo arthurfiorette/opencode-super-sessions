@@ -49,7 +49,7 @@ const view = {
                 decision: 'changes_requested',
                 checks: 'failing',
                 checksPassed: 1,
-                checksTotal: 2
+                checksTotal: 3
               }
             }
           : // Conflicts alone still earn the status line.
@@ -59,7 +59,7 @@ const view = {
   )
 };
 
-test('the Work rows load cold, put status icons and failed checks under the PR line, and a click on a row opens its own URL', async () => {
+test('the Work rows load cold, put the status icons and the first failed check on one line under the PR line, and a click on a row or a check opens its own URL', async () => {
   let claim;
   const answer = async ({ sessionIDs }) => Object.fromEntries(sessionIDs.map((id) => [id, view]));
   const details = async ({ ref }) => ({
@@ -68,7 +68,8 @@ test('the Work rows load cold, put status icons and failed checks under the PR l
       ref.number === 4930
         ? [
             { name: 'Lint', status: 'failure', url: 'https://ci.example/lint' },
-            { name: 'Build', status: 'success' }
+            { name: 'Build', status: 'success' },
+            { name: 'Typecheck', status: 'failure', url: 'https://ci.example/typecheck' }
           ]
         : []
   });
@@ -109,21 +110,31 @@ test('the Work rows load cold, put status icons and failed checks under the PR l
   try {
     // Mount cold first, then wait for the lazy module; renderer idle does not mean it loaded.
     await import('../../dist/sidebar-view.js');
-    await rendered.waitForFrame(
+    const frame = await rendered.waitForFrame(
       (frame) =>
-        // The PR line holds only the number and title; the icons go on the next line, without
-        // check counts, since the failed checks are listed under them.
         frame.includes('#4930 Migrate build to Rspack') &&
         frame.includes('#4871') &&
-        !frame.includes('1/2') &&
-        !frame.includes('changes requested') &&
-        frame.includes('\uf421') &&
-        frame.includes('Lint') &&
-        !frame.includes('Build')
+        frame.includes('Typecheck')
     );
+    const lines = frame.split('\n');
+    const pr = lines.findIndex((line) => line.includes('#4930'));
+    // The PR line holds only the number and title. Under it the review icon shares a line with
+    // the first failed check; the CI icon is left out since each check carries its own x.
+    assert.match(lines[pr + 1], /^ {2}\uf4d2 {2}\uf467 Lint\s*$/);
+    assert.equal(lines[pr + 2].indexOf('\uf467 Typecheck'), lines[pr + 1].indexOf('\uf467'));
+    assert.equal(frame.split('\uf467').length - 1, 2);
+    assert.ok(!frame.includes('Build') && !frame.includes('1/3'));
+    // Conflicts alone still earn the status line, without check lines.
+    assert.match(lines[lines.findIndex((line) => line.includes('#4871')) + 1], /^ {2}\uf421\s*$/);
+
+    await rendered.mockMouse.click(lines[pr + 1].indexOf('Lint') + 1, pr + 1);
+    await rendered.mockMouse.click(lines[pr + 1].indexOf('\uf4d2'), pr + 1);
     const second = rendered.renderer.root.findDescendantById('super-sessions-sidebar-ref-1');
     await rendered.mockMouse.click(second.x + 4, second.y);
-    assert.deepEqual(opened, ['https://github.com/mastra-ai/mastra/pull/4871']);
+    assert.deepEqual(opened, [
+      'https://ci.example/lint',
+      'https://github.com/mastra-ai/mastra/pull/4871'
+    ]);
   } finally {
     unregister();
     rendered.renderer.destroy();
