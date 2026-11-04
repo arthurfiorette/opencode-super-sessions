@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { mock } from 'node:test';
@@ -205,6 +206,28 @@ try {
       [12, 'manual'],
       [56, 'prompt']
     ]
+  );
+
+  // The same subscriber indexes the prompt text; these words appear in no title or ref.
+  const bodyHits = await until(
+    () => rpc.search({ query: 'while you are', scope, archived: false }, { location }),
+    (hits) => hits.length > 0
+  );
+  assert.deepEqual(
+    bodyHits.map((hit) => [hit.sessionID, hit.match]),
+    [[sessionID, 'body']]
+  );
+  // The index lives under the isolated data home, never the developer's.
+  assert.ok(
+    existsSync(
+      path.join(
+        process.env.XDG_DATA_HOME,
+        'opencode',
+        'plugins',
+        'opencode-super-sessions',
+        'search.db'
+      )
+    )
   );
 
   console.log('Configured OpenCode integration passed');
