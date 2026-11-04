@@ -1,7 +1,7 @@
 import type { Plugin } from '@opencode/plugin';
 import type { RpcHandlers } from '@opencode/plugin/promise/rpc';
 import { refKey } from '../refs/ref.js';
-import { dismissLink, mergeLinks } from '../refs/store.js';
+import { dismissLink, mergeLinks, setDone } from '../refs/store.js';
 import type { SuperSessions } from '../rpc.js';
 import { linksOf, parseReference, resolveCandidates, resolveRepo } from './links.js';
 import type { Runtime } from './runtime.js';
@@ -63,6 +63,13 @@ export function rpcHandlers(
 
     async unlink({ sessionID, key }) {
       await runtime.writes.update(context.session, sessionID, (refs) => dismissLink(refs, key));
+      return {};
+    },
+
+    async 'done.set'({ sessionID, done }) {
+      await runtime.writes.update(context.session, sessionID, (refs) =>
+        setDone(refs, done, Date.now())
+      );
       return {};
     },
 

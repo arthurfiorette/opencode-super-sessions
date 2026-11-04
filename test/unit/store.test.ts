@@ -58,6 +58,12 @@ test('merges links by priority without re-adding dismissed refs from detection',
       expected: refs([link(issue, 'prompt', 1)])
     },
     {
+      name: "detection keeps the user's Done mark",
+      current: { ...refs([]), done: true, doneAt: 7 },
+      incoming: [link(pr, 'created', 4)],
+      expected: { ...refs([link(pr, 'created', 4)]), done: true, doneAt: 7 }
+    },
+    {
       name: 'duplicates in one batch collapse',
       current: refs([]),
       incoming: [link(pr, 'mention', 4), link(pr, 'agent', 6)],

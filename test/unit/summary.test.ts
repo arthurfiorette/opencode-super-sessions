@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Ref, RefLink, RefSource, RefState } from '../../src/refs/ref.js';
 import { refKey } from '../../src/refs/ref.js';
-import { type DoneInput, isDone, rowRefs } from '../../src/refs/summary.js';
+import { type DoneInput, doneAt, isDone, rowRefs } from '../../src/refs/summary.js';
 import type { SessionRefView } from '../../src/rpc.js';
 
 const ref = (kind: Ref['kind'], number: number): Ref => ({
@@ -123,11 +123,31 @@ test('decides when a session is Done', () => {
       'mentions are not tracked',
       { ...idle, view: view([link(pr(1), 'mention')], [[pr(1), state('merged', 100)]]) },
       false
-    ]
+    ],
+    ['marked done without refs', { ...idle, view: { ...view([]), done: true } }, true],
+    [
+      'marked done while a question waits',
+      { ...idle, pending: true, view: { ...view([]), done: true } },
+      true
+    ],
+    [
+      'marked done but running',
+      { ...idle, running: true, view: { ...view([]), done: true } },
+      false
+    ],
+    [
+      'marked done but archived',
+      { ...idle, archived: true, view: { ...view([]), done: true } },
+      false
+    ],
+    ['marked not done with a merged PR', { ...idle, view: { ...merged, done: false } }, false]
   ];
   for (const [name, input, expected] of cases) {
     assert.equal(isDone(input), expected, name);
   }
+  // Auto-archive counts days from the mark, not from the merge.
+  assert.equal(doneAt({ ...merged, done: true, doneAt: 500 }), 500);
+  assert.equal(doneAt(merged), 100);
 });
 
 test('picks the main PR, every tracked issue and the overflow count', () => {

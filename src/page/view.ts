@@ -94,6 +94,9 @@ const ESC_GAP = 2;
 // Footer layout: side padding and the blank cells between two hints.
 const FOOTER_PADDING = 2;
 const HINT_GAP = 2;
+// Free in the host's default keymap and in the search input's own bindings: ctrl+e and ctrl+k
+// edit the line there, ctrl+n moves through host dialogs, ctrl+x is the host's leader.
+const DONE_KEY = 'ctrl+q';
 
 /** Which optional pieces the header row shows. */
 interface HeaderFit {
@@ -429,6 +432,25 @@ export default function SessionBrowser(props: PageProps) {
     }
     if (failed > 0) toast(`${failed} could not be archived.`, 'warning');
   };
+  /** Whether the session is in the Done view now, by the rule or the user's mark. */
+  const doneNow = (session: SessionInfo) =>
+    rowsOf(model.doneGroups()).some((row) => row.id === session.id);
+  /** Marks the selected session Done, or not Done when it is Done by any means. */
+  const toggleDone = async () => {
+    const session = selected();
+    if (!session) return;
+    const done = !doneNow(session);
+    try {
+      await model.rpc()['done.set']({ sessionID: session.id, done }, model.rpcOptions());
+    } catch {
+      toast(
+        done ? 'Could not mark the session done.' : 'Could not mark the session not done.',
+        'error'
+      );
+      return;
+    }
+    void controller.refresh([session.id]);
+  };
   const openRef = () => {
     const session = selected();
     const view = session ? data.refs[session.id] : undefined;
@@ -512,6 +534,11 @@ export default function SessionBrowser(props: PageProps) {
         title: memory.view === 'archived' ? 'Restore session' : 'Archive session',
         key: keyLabel('ctrl+s'),
         run: archive
+      },
+      {
+        title: current && doneNow(current) ? 'Mark not done' : 'Mark done',
+        key: keyLabel(DONE_KEY),
+        run: toggleDone
       },
       { title: 'Next view', key: 'tab', run: () => nextView(1) },
       { title: 'Previous view', key: keyLabel('shift+tab'), run: () => nextView(-1) },
@@ -684,6 +711,7 @@ export default function SessionBrowser(props: PageProps) {
       run: () => void model.toggleScope().catch(() => {})
     },
     { bind: 'ctrl+s', title: 'Archive or restore', run: () => void archive() },
+    { bind: DONE_KEY, title: 'Mark done or not done', run: () => void toggleDone() },
     { id: HOST_COMMANDS.rename, title: 'Rename session', run: () => void rename() },
     { id: HOST_COMMANDS.delete, title: 'Delete session', run: () => void remove() },
     {
