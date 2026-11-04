@@ -5,7 +5,9 @@ import { parseGraphQLOutput } from '../../src/providers/gitlab/output.js';
 import {
   buildSnapshotQuery,
   parseBranchResponse,
-  parseSnapshotResponse
+  parseSnapshotResponse,
+  type SnapshotEntry,
+  snapshotBatches
 } from '../../src/providers/gitlab/queries.js';
 import type { RefCandidate, RepoRef } from '../../src/providers/provider.js';
 import { refKey } from '../../src/refs/ref.js';
@@ -42,16 +44,30 @@ test('a batch resolves states, kinds and closed issues, and isolates missing ref
     candidate('gitlab-org/cli', 999999, 'issue'),
     candidate('gitlab-org/api/client-go', 1, 'pr'),
     candidate('arthurfiorette/does-not-exist-zz', 1, 'issue'),
-    candidate('GitLab-Org/CLI', 4275, 'pr')
+    candidate('GitLab-Org/CLI', 4275, 'pr'),
+    // Open, changes requested, five unresolved discussions and a failed head pipeline.
+    candidate('gitlab-org/cli', 4268, 'pr')
   ];
-  const response = parseGraphQLOutput(asRun(fixture('snapshot.json')), NOW);
-  assert.ok('data' in response);
-
-  const entries = parseSnapshotResponse(buildSnapshotQuery(candidates), candidates, response);
+  // One capture per batch: a batch over the anonymous complexity limit could not be captured.
+  const { batches: outputs } = fixture<{ batches: CapturedOutput[] }>('snapshot.json');
+  const batches = snapshotBatches(candidates);
+  assert.equal(batches.length, outputs.length);
+  const entries: Array<SnapshotEntry | undefined> = [];
+  for (const [index, positions] of batches.entries()) {
+    const batch = positions.map((position) => candidates[position] as RefCandidate);
+    const response = parseGraphQLOutput(asRun(outputs[index] as CapturedOutput), NOW);
+    assert.ok('data' in response);
+    const parsed = parseSnapshotResponse(buildSnapshotQuery(batch), batch, response);
+    for (const [offset, position] of positions.entries()) entries[position] = parsed[offset];
+  }
 
   assert.deepEqual(
     entries.map((entry) =>
-      'ref' in entry ? `${entry.ref.kind} ${entry.ref.number} ${entry.state.status}` : entry.reason
+      entry === undefined
+        ? 'missing'
+        : 'ref' in entry
+          ? `${entry.ref.kind} ${entry.ref.number} ${entry.state.status}`
+          : entry.reason
     ),
     [
       'pr 4275 merged',
@@ -64,12 +80,23 @@ test('a batch resolves states, kinds and closed issues, and isolates missing ref
       'not-found',
       'pr 1 merged',
       'not-found',
-      'pr 4275 merged'
+      'pr 4275 merged',
+      'pr 4268 open'
     ]
   );
 
   const [merged, issue] = entries;
+  const reviewed = entries.at(-1);
   assert.ok(merged && 'ref' in merged && issue && 'ref' in issue);
+  assert.ok(reviewed && 'ref' in reviewed);
+  assert.deepEqual(reviewed.state.review, {
+    decision: 'changes_requested',
+    threads: 5,
+    unresolved: 5,
+    checks: 'failing'
+  });
+  // Merged snapshots are never refetched, so they must not carry a review that would go stale.
+  assert.equal(merged.state.review, undefined);
   assert.equal(merged.state.mergedAt, Date.UTC(2026, 10, 2, 5, 41, 35));
   assert.deepEqual(merged.state.closes?.map(refKey), [refKey(issue.ref)]);
   assert.equal(issue.state.url, 'https://gitlab.com/gitlab-org/cli/-/work_items/8701');

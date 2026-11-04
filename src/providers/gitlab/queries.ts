@@ -1,18 +1,33 @@
-import type { Ref, RefState, RefStatus } from '../../refs/ref.js';
+import type { Ref, RefReview, RefState, RefStatus } from '../../refs/ref.js';
 import { isRecord } from '../include.js';
 import type { ForgeError, RefCandidate, RepoRef } from '../provider.js';
 import type { GraphQLError, GraphQLResponse } from './output.js';
 
 // GitLab rejects a whole document above 200 complexity points when anonymous (250 signed in).
 // Costs were measured on gitlab.com with `queryComplexity { score }`; the budget leaves room
-// for the query itself.
+// for the query itself and `metadata`. The review fields raised a merge request from 21 to 32,
+// so an all-merge-request batch holds 5 (scored 166 anonymously) instead of 8.
 const COMPLEXITY_BUDGET = 180;
 const PROJECT_COST = 2;
-const MERGE_REQUEST_COST = 21;
+const MERGE_REQUEST_COST = 32;
 const ISSUE_COST = 6;
 
 /** GraphQL field that lists the issues a merge request closes. Older GitLab servers lack it. */
 export const CLOSES_FIELD = 'workItemRelations';
+
+/**
+ * Fields the review summary reads. A server that lacks any of them (`enterprise` came in GitLab
+ * 15.6, `detailedMergeStatus` in 15.x) is asked again without the summary.
+ */
+export const REVIEW_FIELDS: readonly string[] = [
+  'enterprise',
+  'approved',
+  'approvedBy',
+  'detailedMergeStatus',
+  'resolvableDiscussionsCount',
+  'resolvedDiscussionsCount',
+  'headPipeline'
+];
 
 export type SnapshotEntry = { ref: Ref; state: RefState } | ForgeError;
 
@@ -31,10 +46,16 @@ export interface SnapshotDocument {
   paths: Array<CandidatePath | undefined>;
   /** Whether merge requests ask for the issues they close. */
   closes: boolean;
+  /** Whether merge requests ask for their review and pipeline summary. */
+  review: boolean;
 }
 
 const MERGE_REQUEST_FIELDS = 'state draft title webUrl mergedAt closedAt';
 const CLOSES_SELECTION = `${CLOSES_FIELD}(types: [CLOSES], first: 10) { nodes { workItem { iid namespace { fullPath } } } }`;
+// One approver is enough to tell "someone approved" from "nobody did". The discussion counts are
+// precomputed by GitLab, so no discussion is read.
+const REVIEW_SELECTION =
+  'approved approvedBy(first: 1) { nodes { id } } detailedMergeStatus resolvableDiscussionsCount resolvedDiscussionsCount headPipeline { status }';
 const ISSUE_FIELDS = 'state title webUrl closedAt';
 
 /**
@@ -72,13 +93,15 @@ export function snapshotBatches(candidates: RefCandidate[]): number[][] {
  * variables so user-typed text never becomes GraphQL syntax; numbers are inlined only after the
  * integer check. A candidate without a kind asks for both the merge request and the issue with
  * its number, because GitLab numbers them separately. Repeated candidates share aliases.
- * `closes: false` leaves out {@link CLOSES_FIELD} for servers that do not have it.
+ * `closes: false` leaves out {@link CLOSES_FIELD} and `review: false` the {@link REVIEW_FIELDS},
+ * for servers that do not have them.
  */
 export function buildSnapshotQuery(
   candidates: RefCandidate[],
-  options: { closes?: boolean } = {}
+  options: { closes?: boolean; review?: boolean } = {}
 ): SnapshotDocument {
   const closes = options.closes !== false;
+  const review = options.review !== false;
   const projects = new Map<
     string,
     { alias: string; mrs: Map<number, string>; issues: Map<number, string> }
@@ -114,9 +137,11 @@ export function buildSnapshotQuery(
     return path;
   });
 
-  const mergeRequestFields = closes
-    ? `${MERGE_REQUEST_FIELDS} ${CLOSES_SELECTION}`
-    : MERGE_REQUEST_FIELDS;
+  const mergeRequestFields = [
+    MERGE_REQUEST_FIELDS,
+    ...(closes ? [CLOSES_SELECTION] : []),
+    ...(review ? [REVIEW_SELECTION] : [])
+  ].join(' ');
   const selections = [...projects.values()].map((project) => {
     const items = [
       ...[...project.mrs].map(
@@ -129,8 +154,11 @@ export function buildSnapshotQuery(
     return `${project.alias}: project(fullPath: $${project.alias}) { ${items.join(' ')} }`;
   });
 
-  const query = `query(${declarations.join(', ')}) { ${selections.join(' ')} }`;
-  return { query, variables, paths, closes };
+  // `enterprise` is null when anonymous, and approvals then decide on their own.
+  const anyMergeRequest = [...projects.values()].some((project) => project.mrs.size > 0);
+  const metadata = review && anyMergeRequest ? 'metadata { enterprise } ' : '';
+  const query = `query(${declarations.join(', ')}) { ${metadata}${selections.join(' ')} }`;
+  return { query, variables, paths, closes, review };
 }
 
 /** Converts an ISO timestamp to epoch milliseconds; null or malformed values become undefined. */
@@ -156,6 +184,62 @@ function statusOf(node: Record<string, unknown>, kind: Ref['kind']): RefStatus |
   }
   if (node.state === 'opened' || node.state === 'locked') return 'open';
   return node.state === 'closed' ? 'completed' : undefined;
+}
+
+// `manual` waits on a person and `skipped` ran nothing, so neither says anything about the code.
+const CHECKS: Record<string, NonNullable<RefReview['checks']>> = {
+  SUCCESS: 'passing',
+  FAILED: 'failing',
+  CANCELED: 'failing',
+  CANCELING: 'failing',
+  CREATED: 'pending',
+  WAITING_FOR_RESOURCE: 'pending',
+  PREPARING: 'pending',
+  WAITING_FOR_CALLBACK: 'pending',
+  PENDING: 'pending',
+  RUNNING: 'pending',
+  SCHEDULED: 'pending'
+};
+
+/**
+ * Reads the review verdict, following t3code. `detailedMergeStatus` names only the first check
+ * blocking the merge, so a change request hidden behind a draft or a conflict is missed. Only
+ * Enterprise Edition holds `approved` to approval rules: Community Edition sets it once anyone
+ * approves. So an unapproved merge request needs review on Enterprise, or when someone approved
+ * without satisfying the rules; with `enterprise` unknown (anonymous reads) and no approver,
+ * nothing is said.
+ */
+function decisionOf(node: Record<string, unknown>, enterprise: unknown): RefReview['decision'] {
+  if (node.detailedMergeStatus === 'REQUESTED_CHANGES') return 'changes_requested';
+  const approvers = isRecord(node.approvedBy) ? node.approvedBy.nodes : undefined;
+  const approvals = Array.isArray(approvers) ? approvers.length : 0;
+  if (node.approved === false && (enterprise === true || approvals > 0)) return 'review_required';
+  return node.approved === true && approvals > 0 ? 'approved' : undefined;
+}
+
+/**
+ * Builds the review summary of an open or draft merge request. Merged and closed ones get none:
+ * their snapshot is never refetched, so a running pipeline would show forever.
+ */
+function reviewOf(
+  node: Record<string, unknown>,
+  status: RefStatus,
+  enterprise: unknown
+): RefReview | undefined {
+  if (status !== 'open' && status !== 'draft') return undefined;
+  const review: RefReview = {};
+  const decision = decisionOf(node, enterprise);
+  if (decision) review.decision = decision;
+  const threads = node.resolvableDiscussionsCount;
+  const resolved = node.resolvedDiscussionsCount;
+  if (Number.isSafeInteger(threads) && Number.isSafeInteger(resolved)) {
+    review.threads = threads as number;
+    review.unresolved = Math.max(0, (threads as number) - (resolved as number));
+  }
+  const pipeline = isRecord(node.headPipeline) ? node.headPipeline.status : undefined;
+  const checks = typeof pipeline === 'string' ? CHECKS[pipeline] : undefined;
+  if (checks) review.checks = checks;
+  return Object.keys(review).length > 0 ? review : undefined;
 }
 
 /** Turns `workItemRelations` nodes into issue refs on `host`. */
@@ -213,6 +297,9 @@ export function parseSnapshotResponse(
   candidates: RefCandidate[],
   response: GraphQLResponse
 ): SnapshotEntry[] {
+  const enterprise = isRecord(response.data.metadata)
+    ? response.data.metadata.enterprise
+    : undefined;
   return candidates.map((candidate, index): SnapshotEntry => {
     const path = document.paths[index];
     if (!path) return { reason: 'not-found' };
@@ -247,6 +334,8 @@ export function parseSnapshotResponse(
     };
     const mergedAt = epoch(node.mergedAt);
     const closedAt = epoch(node.closedAt);
+    const review =
+      kind === 'pr' && document.review ? reviewOf(node, status, enterprise) : undefined;
     const state: RefState = {
       status,
       title: node.title,
@@ -255,7 +344,8 @@ export function parseSnapshotResponse(
       ...(closedAt === undefined ? {} : { closedAt }),
       ...(kind === 'pr' && document.closes
         ? { closes: closingIssues(node[CLOSES_FIELD], candidate.host) }
-        : {})
+        : {}),
+      ...(review ? { review } : {})
     };
     return { ref, state };
   });

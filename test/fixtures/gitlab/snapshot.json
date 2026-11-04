@@ -1,103 +1,201 @@
 {
-  "source": "Live: anonymous POST to https://gitlab.com/api/graphql on 2026-11-04 with the document buildSnapshotQuery makes for the candidates in gitlab.test.ts. Body and rate limit headers are verbatim; the status line, exit code and stderr follow glab's api command source (exit 0 when the body has no errors).",
-  "code": 0,
-  "status": "HTTP/2.0 200 OK",
-  "headers": {
-    "Ratelimit-Limit": "500",
-    "Ratelimit-Name": "throttle_unauthenticated_api",
-    "Ratelimit-Observed": "4",
-    "Ratelimit-Remaining": "496",
-    "Ratelimit-Reset": "1793753220"
-  },
-  "stderr": "",
-  "body": {
-    "data": {
-      "p0": {
-        "m0": {
-          "state": "merged",
-          "draft": false,
-          "title": "docs(auth): correct OAuth client ID requirements for the Git credential helper",
-          "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4275",
-          "mergedAt": "2026-11-02T05:41:35Z",
-          "closedAt": null,
-          "workItemRelations": {
-            "nodes": [
-              { "workItem": { "iid": "8701", "namespace": { "fullPath": "gitlab-org/cli" } } }
-            ]
+  "source": "Live: anonymous POSTs to https://gitlab.com/api/graphql on 2026-11-04, one per batch snapshotBatches makes for the candidates in gitlab.test.ts, each with the document buildSnapshotQuery builds for it. Bodies and rate limit headers are verbatim; the status line, exit code and stderr follow glab's api command source (exit 0 when the body has no errors).",
+  "batches": [
+    {
+      "code": 0,
+      "status": "HTTP/2.0 200 OK",
+      "headers": {
+        "Ratelimit-Limit": "500",
+        "Ratelimit-Name": "throttle_unauthenticated_api",
+        "Ratelimit-Observed": "11",
+        "Ratelimit-Remaining": "489",
+        "Ratelimit-Reset": "1793764620"
+      },
+      "stderr": "",
+      "body": {
+        "data": {
+          "metadata": null,
+          "p0": {
+            "m0": {
+              "state": "merged",
+              "draft": false,
+              "title": "docs(auth): correct OAuth client ID requirements for the Git credential helper",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4275",
+              "mergedAt": "2026-11-02T05:41:35Z",
+              "closedAt": null,
+              "workItemRelations": {
+                "nodes": [
+                  { "workItem": { "iid": "8701", "namespace": { "fullPath": "gitlab-org/cli" } } }
+                ]
+              },
+              "approved": true,
+              "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
+              "detailedMergeStatus": "NOT_OPEN",
+              "resolvableDiscussionsCount": 1,
+              "resolvedDiscussionsCount": 1,
+              "headPipeline": { "status": "SUCCESS" }
+            },
+            "m1": {
+              "state": "opened",
+              "draft": true,
+              "title": "Draft: fix(df): combine Gap 1 and Gap 2 fixes for issue 637331 (PoC)",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4310",
+              "mergedAt": null,
+              "closedAt": null,
+              "workItemRelations": { "nodes": [] },
+              "approved": false,
+              "approvedBy": { "nodes": [] },
+              "detailedMergeStatus": "DRAFT_STATUS",
+              "resolvableDiscussionsCount": 3,
+              "resolvedDiscussionsCount": 0,
+              "headPipeline": { "status": "SUCCESS" }
+            },
+            "m2": {
+              "state": "closed",
+              "draft": true,
+              "title": "Draft: fix(df): combine Gap 1 + Gap 2 fixes for issue 637331 (PoC)",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4308",
+              "mergedAt": null,
+              "closedAt": "2026-11-03T15:14:04Z",
+              "workItemRelations": { "nodes": [] },
+              "approved": false,
+              "approvedBy": { "nodes": [] },
+              "detailedMergeStatus": "NOT_OPEN",
+              "resolvableDiscussionsCount": 4,
+              "resolvedDiscussionsCount": 0,
+              "headPipeline": { "status": "SUCCESS" }
+            },
+            "m3": null,
+            "m4": {
+              "state": "merged",
+              "draft": false,
+              "title": "fix(govern): don't skip a Claude Code transcript entry still being written",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4300",
+              "mergedAt": "2026-11-03T05:18:01Z",
+              "closedAt": null,
+              "workItemRelations": { "nodes": [] },
+              "approved": true,
+              "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
+              "detailedMergeStatus": "NOT_OPEN",
+              "resolvableDiscussionsCount": 1,
+              "resolvedDiscussionsCount": 1,
+              "headPipeline": { "status": "SUCCESS" }
+            },
+            "i0": {
+              "state": "closed",
+              "title": "docs: Recommend glab as the Git credential helper on OAuth-only instances",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/work_items/8701",
+              "closedAt": "2026-11-02T05:41:36Z"
+            },
+            "i1": {
+              "state": "opened",
+              "title": "Add a --manual policy to glab ci status for manual jobs",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/work_items/8713",
+              "closedAt": null
+            },
+            "i2": null
           }
-        },
-        "m1": {
-          "state": "opened",
-          "draft": true,
-          "title": "Draft: fix(df): combine Gap 1 and Gap 2 fixes for issue 637331 (PoC)",
-          "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4310",
-          "mergedAt": null,
-          "closedAt": null,
-          "workItemRelations": { "nodes": [] }
-        },
-        "m2": {
-          "state": "closed",
-          "draft": true,
-          "title": "Draft: fix(df): combine Gap 1 + Gap 2 fixes for issue 637331 (PoC)",
-          "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4308",
-          "mergedAt": null,
-          "closedAt": "2026-11-03T15:14:04Z",
-          "workItemRelations": { "nodes": [] }
-        },
-        "m3": null,
-        "m4": {
-          "state": "merged",
-          "draft": false,
-          "title": "fix(govern): don't skip a Claude Code transcript entry still being written",
-          "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4300",
-          "mergedAt": "2026-11-03T05:18:01Z",
-          "closedAt": null,
-          "workItemRelations": { "nodes": [] }
-        },
-        "i0": {
-          "state": "closed",
-          "title": "docs: Recommend glab as the Git credential helper on OAuth-only instances",
-          "webUrl": "https://gitlab.com/gitlab-org/cli/-/work_items/8701",
-          "closedAt": "2026-11-02T05:41:36Z"
-        },
-        "i1": {
-          "state": "opened",
-          "title": "Add a --manual policy to glab ci status for manual jobs",
-          "webUrl": "https://gitlab.com/gitlab-org/cli/-/work_items/8713",
-          "closedAt": null
-        },
-        "i2": null,
-        "i3": null
-      },
-      "p1": {
-        "m0": {
-          "state": "merged",
-          "draft": false,
-          "title": "Enhance the LDAP group synchronization",
-          "webUrl": "https://gitlab.com/gitlab-org/gitlab/-/merge_requests/1",
-          "mergedAt": null,
-          "closedAt": null,
-          "workItemRelations": { "nodes": [] }
-        },
-        "i0": {
-          "state": "closed",
-          "title": "500 error on MR approvers edit page",
-          "webUrl": "https://gitlab.com/gitlab-org/gitlab/-/work_items/1",
-          "closedAt": "2018-02-15T17:37:22Z"
         }
+      }
+    },
+    {
+      "code": 0,
+      "status": "HTTP/2.0 200 OK",
+      "headers": {
+        "Ratelimit-Limit": "500",
+        "Ratelimit-Name": "throttle_unauthenticated_api",
+        "Ratelimit-Observed": "12",
+        "Ratelimit-Remaining": "488",
+        "Ratelimit-Reset": "1793764620"
       },
-      "p2": {
-        "m0": {
-          "state": "merged",
-          "draft": false,
-          "title": "First release v0.1.0",
-          "webUrl": "https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/1",
-          "mergedAt": "2015-07-31T12:17:36Z",
-          "closedAt": null,
-          "workItemRelations": { "nodes": [] }
+      "stderr": "",
+      "body": {
+        "data": {
+          "metadata": null,
+          "p0": {
+            "m0": {
+              "state": "merged",
+              "draft": false,
+              "title": "Enhance the LDAP group synchronization",
+              "webUrl": "https://gitlab.com/gitlab-org/gitlab/-/merge_requests/1",
+              "mergedAt": null,
+              "closedAt": null,
+              "workItemRelations": { "nodes": [] },
+              "approved": true,
+              "approvedBy": { "nodes": [] },
+              "detailedMergeStatus": "NOT_OPEN",
+              "resolvableDiscussionsCount": 3,
+              "resolvedDiscussionsCount": 1,
+              "headPipeline": null
+            },
+            "i0": {
+              "state": "closed",
+              "title": "500 error on MR approvers edit page",
+              "webUrl": "https://gitlab.com/gitlab-org/gitlab/-/work_items/1",
+              "closedAt": "2018-02-15T17:37:22Z"
+            }
+          },
+          "p1": {
+            "m0": {
+              "state": "merged",
+              "draft": false,
+              "title": "docs(auth): correct OAuth client ID requirements for the Git credential helper",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4275",
+              "mergedAt": "2026-11-02T05:41:35Z",
+              "closedAt": null,
+              "workItemRelations": {
+                "nodes": [
+                  { "workItem": { "iid": "8701", "namespace": { "fullPath": "gitlab-org/cli" } } }
+                ]
+              },
+              "approved": true,
+              "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
+              "detailedMergeStatus": "NOT_OPEN",
+              "resolvableDiscussionsCount": 1,
+              "resolvedDiscussionsCount": 1,
+              "headPipeline": { "status": "SUCCESS" }
+            },
+            "m1": {
+              "state": "opened",
+              "draft": false,
+              "title": "fix: clarify deploy-token help text",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4268",
+              "mergedAt": null,
+              "closedAt": null,
+              "workItemRelations": {
+                "nodes": [
+                  { "workItem": { "iid": "8705", "namespace": { "fullPath": "gitlab-org/cli" } } }
+                ]
+              },
+              "approved": false,
+              "approvedBy": { "nodes": [] },
+              "detailedMergeStatus": "REQUESTED_CHANGES",
+              "resolvableDiscussionsCount": 5,
+              "resolvedDiscussionsCount": 0,
+              "headPipeline": { "status": "FAILED" }
+            },
+            "i0": null
+          },
+          "p2": {
+            "m0": {
+              "state": "merged",
+              "draft": false,
+              "title": "First release v0.1.0",
+              "webUrl": "https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/1",
+              "mergedAt": "2015-07-31T12:17:36Z",
+              "closedAt": null,
+              "workItemRelations": { "nodes": [] },
+              "approved": true,
+              "approvedBy": { "nodes": [] },
+              "detailedMergeStatus": "NOT_OPEN",
+              "resolvableDiscussionsCount": 0,
+              "resolvedDiscussionsCount": 0,
+              "headPipeline": null
+            }
+          },
+          "p3": null
         }
-      },
-      "p3": null
+      }
     }
-  }
+  ]
 }

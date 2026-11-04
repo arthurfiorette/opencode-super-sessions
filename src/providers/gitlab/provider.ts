@@ -13,6 +13,7 @@ import {
   CLOSES_FIELD,
   parseBranchResponse,
   parseSnapshotResponse,
+  REVIEW_FIELDS,
   type SnapshotEntry,
   snapshotBatches
 } from './queries.js';
@@ -42,6 +43,8 @@ export function createGitLabProvider(options: {
   const blockedUntil = new Map<string, number>();
   // Hosts whose GitLab predates the field that lists the issues a merge request closes.
   const withoutCloses = new Set<string>();
+  // Hosts whose GitLab predates a field the review summary reads.
+  const withoutReview = new Set<string>();
 
   /** Returns the rate limit error to report while `host` is backing off, if it is. */
   const blocked = (host: string): ForgeError | undefined => {
@@ -70,16 +73,28 @@ export function createGitLabProvider(options: {
   };
 
   /**
-   * Fetches one batch on one host. A server without {@link CLOSES_FIELD} rejects the whole
-   * document, so the batch is asked again without it and the host is remembered.
+   * Fetches one batch on one host. A server without {@link CLOSES_FIELD} or one of the
+   * {@link REVIEW_FIELDS} rejects the whole document and names every unknown field at once, so
+   * the batch is asked again once without them and the host is remembered.
    */
   const snapshotBatch = async (host: string, batch: RefCandidate[]): Promise<SnapshotEntry[]> => {
-    let document = buildSnapshotQuery(batch, { closes: !withoutCloses.has(host) });
+    /** Builds the document with only the optional fields `host` is known to have. */
+    const build = () =>
+      buildSnapshotQuery(batch, {
+        closes: !withoutCloses.has(host),
+        review: !withoutReview.has(host)
+      });
+    let document = build();
     let response = await query(host, document.query, document.variables);
-    if (!('data' in response) && response.missingFields?.includes(CLOSES_FIELD)) {
-      withoutCloses.add(host);
-      document = buildSnapshotQuery(batch, { closes: false });
-      response = await query(host, document.query, document.variables);
+    const missing = 'data' in response ? undefined : response.missingFields;
+    if (missing) {
+      if (missing.includes(CLOSES_FIELD)) withoutCloses.add(host);
+      if (missing.some((field) => REVIEW_FIELDS.includes(field))) withoutReview.add(host);
+      const retry = build();
+      if (retry.closes !== document.closes || retry.review !== document.review) {
+        document = retry;
+        response = await query(host, document.query, document.variables);
+      }
     }
     if ('data' in response) return parseSnapshotResponse(document, batch, response);
     const error = plainError(response);
