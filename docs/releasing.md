@@ -12,7 +12,7 @@ Complete a successful publish within two days of creating the trusted publisher,
 
 ## Prepare and publish
 
-1. Open the session page in a real OpenCode TUI and check archiving and pull request tracking with `gh` logged in to GitHub. Record this separately from the stubbed `gh` tests.
+1. Open the session browser in a real OpenCode TUI and check archiving and pull request tracking with `gh` logged in to GitHub. Record this separately from the stubbed `gh` tests.
 2. Update the package version and lockfile. Document the release's behavior and any migration requirements.
 3. Run `pnpm install --frozen-lockfile` and `pnpm check` with the declared Node and pnpm versions.
 4. Commit and push. Wait for all CI jobs to pass.
