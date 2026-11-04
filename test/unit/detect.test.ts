@@ -115,6 +115,20 @@ test('links only the refs a shell command created', () => {
       command: 'gh pr create --fill',
       output: 'https://gitlab.com/acme/app/pull/3\n',
       expected: []
+    },
+    {
+      // glab prints the title line and an indented URL on a terminal, the bare URL otherwise.
+      name: 'glab mr create on a terminal',
+      command: 'glab mr create --fill --yes',
+      output:
+        '\nCreating merge request for feat into main in acme/platform/api\n\n!51 Add login (feat)\n https://gitlab.com/acme/platform/api/-/merge_requests/51\n',
+      expected: ['pr 51']
+    },
+    {
+      name: 'glab issue create linking a work item URL',
+      command: 'glab issue create -t Bug -d Broken',
+      output: 'https://gitlab.com/acme/app/-/work_items/9\n',
+      expected: ['issue 9']
     }
   ];
   for (const { name, command, output, expected } of cases) {
@@ -156,4 +170,14 @@ test('prompts add bare numbers only with a base repository', () => {
     detectInPrompt(definitions, text, repo).map((ref) => `${ref.number} ${ref.kind ?? '?'}`);
   assert.deepEqual(found(base), ['28957 issue', '3 ?']);
   assert.deepEqual(found(), ['28957 issue']);
+});
+
+test('owner/repo#N, valid on GitHub and GitLab, goes to the session forge or else the first', () => {
+  const gitlabBase: RepoRef = { provider: 'gitlab', host: 'gitlab.com', repo: 'acme/app' };
+  const found = (repo?: RepoRef) =>
+    detectInPrompt(definitions, 'continue acme/app#12', repo).map(
+      (ref) => `${ref.provider} ${ref.kind ?? '?'}`
+    );
+  assert.deepEqual(found(gitlabBase), ['gitlab issue']);
+  assert.deepEqual(found(), ['github ?']);
 });

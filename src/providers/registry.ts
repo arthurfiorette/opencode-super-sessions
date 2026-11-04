@@ -1,9 +1,10 @@
 import type { Ref } from '../refs/ref.js';
 import { github } from './github/definition.js';
+import { gitlab } from './gitlab/definition.js';
 import type { ForgeDefinition, RepoRef } from './provider.js';
 
 /** Every supported forge, in the order they are tried. */
-export const definitions: ForgeDefinition[] = [github];
+export const definitions: ForgeDefinition[] = [github, gitlab];
 
 /** Recognizes a git remote URL with the first forge that claims it. */
 export function recognizeRemote(url: string): RepoRef | undefined {

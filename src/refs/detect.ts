@@ -1,5 +1,5 @@
 import type { ForgeDefinition, RefCandidate, RepoRef } from '../providers/provider.js';
-import { refKey } from './ref.js';
+import { type ProviderId, refKey } from './ref.js';
 
 // Shell detection is ported from t3code's PullRequestSyncReactor (commit e1cd7f0).
 
@@ -97,11 +97,37 @@ function numberKey(candidate: RefCandidate): string {
   return `${candidate.provider}:${candidate.host}/${candidate.repo}#${candidate.number}`.toLowerCase();
 }
 
-/** Drops duplicates, and kind-less candidates when the same number also appeared with a kind. */
-function dedupe(candidates: RefCandidate[]): RefCandidate[] {
+/**
+ * Picks one forge per `repo#N` when several read the same text, as `acme/app#12` is valid on
+ * GitHub and GitLab alike: `preferred` (the session's forge) when it found it, else the first.
+ * The same path and number on two forges in one text is the cost, and it is rare.
+ */
+function forgeOwners(
+  candidates: RefCandidate[],
+  preferred: ProviderId | undefined
+): Map<string, ProviderId> {
+  const owners = new Map<string, ProviderId>();
+  for (const candidate of candidates) {
+    const key = `${candidate.repo}#${candidate.number}`.toLowerCase();
+    const owner = owners.get(key);
+    if (owner === undefined || (owner !== preferred && candidate.provider === preferred)) {
+      owners.set(key, candidate.provider);
+    }
+  }
+  return owners;
+}
+
+/**
+ * Drops duplicates, candidates another forge owns (see {@link forgeOwners}), and kind-less
+ * candidates when the same number also appeared with a kind.
+ */
+function dedupe(candidates: RefCandidate[], preferred?: ProviderId): RefCandidate[] {
+  const owners = forgeOwners(candidates, preferred);
   const kinded = new Set(candidates.filter((c) => c.kind !== undefined).map(numberKey));
   const seen = new Set<string>();
   return candidates.filter((candidate) => {
+    const owner = owners.get(`${candidate.repo}#${candidate.number}`.toLowerCase());
+    if (owner !== candidate.provider) return false;
     const key = numberKey(candidate);
     if (candidate.kind === undefined && kinded.has(key)) return false;
     const full = `${key}/${candidate.kind ?? ''}`;
@@ -156,7 +182,8 @@ export function detectCreated(
     for (const definition of definitions) {
       const ref = definition.parseUrl(url);
       if (ref === undefined || !createdKinds.has(`${definition.id}:${ref.kind}`)) continue;
-      const named = new RegExp(`(?:^|(?<=[\\s#/=("']))${ref.number}(?=$|[\\s);&|/"'])`, 'u');
+      // `!` covers GitLab's merge request spelling, as in `echo !12`.
+      const named = new RegExp(`(?:^|(?<=[\\s#!/=("']))${ref.number}(?=$|[\\s);&|/"'])`, 'u');
       if (!named.test(otherScript)) created.set(refKey(ref), ref);
       break;
     }
@@ -172,14 +199,20 @@ export function isCloseCommand(definitions: ForgeDefinition[], command: string):
   );
 }
 
+/** URLs and `owner/repo#N` references every forge reads in `text`, before {@link dedupe}. */
+function scanAll(definitions: ForgeDefinition[], text: string): RefCandidate[] {
+  return definitions.flatMap((definition) => definition.scanText(text));
+}
+
 /** URLs and `owner/repo#N` references in assistant text. Never bare `#N`. */
 export function detectInText(definitions: ForgeDefinition[], text: string): RefCandidate[] {
-  return dedupe(definitions.flatMap((definition) => definition.scanText(text)));
+  return dedupe(scanAll(definitions, text));
 }
 
 /**
  * References in a user prompt: everything {@link detectInText} finds plus bare `#N` resolved
  * against `base`. Without a base, bare numbers are ignored because nothing says which repo.
+ * A reference several forges read goes to the base's forge.
  */
 export function detectInPrompt(
   definitions: ForgeDefinition[],
@@ -192,5 +225,5 @@ export function detectInPrompt(
       : definitions
           .filter((definition) => definition.id === base.provider)
           .flatMap((definition) => definition.scanBareNumbers(text, base));
-  return dedupe([...detectInText(definitions, text), ...bare]);
+  return dedupe([...scanAll(definitions, text), ...bare], base?.provider);
 }
