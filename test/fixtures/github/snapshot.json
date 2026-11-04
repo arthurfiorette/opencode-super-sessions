@@ -1,17 +1,17 @@
 {
-  "_comment": "Captured from gh 2.103.3 against github.com with the document buildSnapshotQuery builds; only rate limit headers kept.",
+  "_comment": "Captured on 2026-11-04 from gh 2.103.3 against github.com (authenticated, read-only) with the document buildSnapshotQuery builds for the candidates in github.test.ts; only rate limit headers kept.",
   "code": 1,
   "status": "HTTP/2.0 200 OK",
   "headers": {
     "X-Ratelimit-Limit": "5000",
-    "X-Ratelimit-Remaining": "4847",
-    "X-Ratelimit-Reset": "1793753200",
+    "X-Ratelimit-Remaining": "4884",
+    "X-Ratelimit-Reset": "1793765070",
     "X-Ratelimit-Resource": "graphql",
-    "X-Ratelimit-Used": "153"
+    "X-Ratelimit-Used": "116"
   },
   "body": {
     "data": {
-      "rateLimit": { "remaining": 4847, "resetAt": "2026-11-04T00:46:40Z" },
+      "rateLimit": { "remaining": 4884, "resetAt": "2026-11-04T04:04:30Z" },
       "r0": {
         "i0": {
           "__typename": "PullRequest",
@@ -21,9 +21,13 @@
           "url": "https://github.com/cli/cli/pull/14815",
           "mergedAt": "2026-10-26T18:02:47Z",
           "closedAt": "2026-10-26T18:02:47Z",
+          "reviewDecision": "APPROVED",
           "closingIssuesReferences": {
             "nodes": [{ "number": 14814, "repository": { "nameWithOwner": "cli/cli" } }]
-          }
+          },
+          "latestReviews": { "nodes": [{ "state": "COMMENTED" }, { "state": "APPROVED" }] },
+          "reviewThreads": { "totalCount": 1, "nodes": [{ "isResolved": true }] },
+          "commits": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "SUCCESS" } } }] }
         },
         "i1": {
           "__typename": "Issue",
@@ -44,7 +48,19 @@
           "url": "https://github.com/cli/cli/pull/14927",
           "mergedAt": null,
           "closedAt": null,
-          "closingIssuesReferences": { "nodes": [] }
+          "reviewDecision": "REVIEW_REQUIRED",
+          "closingIssuesReferences": { "nodes": [] },
+          "latestReviews": { "nodes": [{ "state": "COMMENTED" }] },
+          "reviewThreads": {
+            "totalCount": 4,
+            "nodes": [
+              { "isResolved": false },
+              { "isResolved": false },
+              { "isResolved": false },
+              { "isResolved": false }
+            ]
+          },
+          "commits": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "FAILURE" } } }] }
         },
         "i3": {
           "__typename": "PullRequest",
@@ -54,9 +70,13 @@
           "url": "https://github.com/cli/cli/pull/14914",
           "mergedAt": null,
           "closedAt": null,
+          "reviewDecision": "REVIEW_REQUIRED",
           "closingIssuesReferences": {
             "nodes": [{ "number": 14856, "repository": { "nameWithOwner": "cli/cli" } }]
-          }
+          },
+          "latestReviews": { "nodes": [] },
+          "reviewThreads": { "totalCount": 0, "nodes": [] },
+          "commits": { "nodes": [{ "commit": { "statusCheckRollup": null } }] }
         },
         "i4": {
           "__typename": "PullRequest",
@@ -66,9 +86,13 @@
           "url": "https://github.com/cli/cli/pull/14904",
           "mergedAt": null,
           "closedAt": "2026-11-02T05:24:58Z",
+          "reviewDecision": "REVIEW_REQUIRED",
           "closingIssuesReferences": {
             "nodes": [{ "number": 13906, "repository": { "nameWithOwner": "cli/cli" } }]
-          }
+          },
+          "latestReviews": { "nodes": [{ "state": "COMMENTED" }] },
+          "reviewThreads": { "totalCount": 0, "nodes": [] },
+          "commits": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "SUCCESS" } } }] }
         },
         "i5": {
           "__typename": "Issue",
@@ -88,7 +112,34 @@
           "closedAt": "2024-12-06T20:49:46Z",
           "closedByPullRequestsReferences": { "nodes": [] }
         },
-        "i7": null
+        "i7": null,
+        "i8": {
+          "__typename": "PullRequest",
+          "state": "OPEN",
+          "isDraft": true,
+          "title": "Add repository and worktree identities",
+          "url": "https://github.com/cli/cli/pull/14921",
+          "mergedAt": null,
+          "closedAt": null,
+          "reviewDecision": "REVIEW_REQUIRED",
+          "closingIssuesReferences": { "nodes": [] },
+          "latestReviews": { "nodes": [{ "state": "COMMENTED" }] },
+          "reviewThreads": {
+            "totalCount": 9,
+            "nodes": [
+              { "isResolved": false },
+              { "isResolved": false },
+              { "isResolved": false },
+              { "isResolved": false },
+              { "isResolved": false },
+              { "isResolved": false },
+              { "isResolved": false },
+              { "isResolved": false },
+              { "isResolved": false }
+            ]
+          },
+          "commits": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "FAILURE" } } }] }
+        }
       },
       "r1": null
     },
@@ -96,7 +147,7 @@
       {
         "type": "NOT_FOUND",
         "path": ["r1"],
-        "locations": [{ "line": 1, "column": 852 }],
+        "locations": [{ "line": 1, "column": 941 }],
         "message": "Could not resolve to a Repository with the name 'arthurfiorette/does-not-exist-zz'."
       },
       {

@@ -35,7 +35,9 @@ test('a batch with a missing number and a missing repository still resolves ever
     candidate('cli/cli', 10000),
     candidate('cli/cli', 999999),
     candidate('arthurfiorette/does-not-exist-zz', 1),
-    candidate('CLI/CLI', 14815)
+    candidate('CLI/CLI', 14815),
+    // Open draft with nine unresolved review threads and a failing head commit.
+    candidate('cli/cli', 14921, 'pr')
   ];
   const response = parseGraphQLOutput(asRun(fixture('snapshot.json')), NOW);
   assert.ok('data' in response, 'a non-zero exit with data must not fail the whole document');
@@ -56,12 +58,23 @@ test('a batch with a missing number and a missing repository still resolves ever
       'issue 10000 not_planned',
       'not-found',
       'not-found',
-      'pr 14815 merged'
+      'pr 14815 merged',
+      'pr 14921 draft'
     ]
   );
 
   const [merged, issue] = entries;
+  const reviewed = entries.at(-1);
   assert.ok(merged && 'ref' in merged && issue && 'ref' in issue);
+  assert.ok(reviewed && 'ref' in reviewed);
+  assert.deepEqual(reviewed.state.review, {
+    decision: 'review_required',
+    threads: 9,
+    unresolved: 9,
+    checks: 'failing'
+  });
+  // Merged snapshots are never refetched, so they must not carry a review that would go stale.
+  assert.equal(merged.state.review, undefined);
   assert.equal(merged.state.mergedAt, Date.UTC(2026, 9, 26, 18, 2, 47));
   assert.deepEqual(merged.state.closes?.map(refKey), [refKey(issue.ref)]);
   assert.deepEqual(issue.state.closedBy?.map(refKey), [refKey(merged.ref)]);

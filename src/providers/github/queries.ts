@@ -1,4 +1,4 @@
-import type { Ref, RefState, RefStatus } from '../../refs/ref.js';
+import type { Ref, RefReview, RefState, RefStatus } from '../../refs/ref.js';
 import type { ForgeError, RefCandidate, RepoRef } from '../provider.js';
 import type { GraphQLError, GraphQLResponse } from './output.js';
 
@@ -16,10 +16,15 @@ export interface SnapshotDocument {
 }
 
 // `rateLimit` is free to query and tells the provider when the quota runs out before a request fails.
+// GitHub has no count of unresolved threads, so threads are read as nodes; 100 is the page
+// maximum. At 25 refs the document measured 3,375 nodes (limit 500,000) and cost 1 point.
 const SNAPSHOT_FRAGMENTS = `
 fragment PullRequestFields on PullRequest {
-  state isDraft title url mergedAt closedAt
+  state isDraft title url mergedAt closedAt reviewDecision
   closingIssuesReferences(first: 10) { nodes { number repository { nameWithOwner } } }
+  latestReviews(first: 20) { nodes { state } }
+  reviewThreads(first: 100) { totalCount nodes { isResolved } }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 }
 fragment IssueFields on Issue {
   state stateReason title url closedAt
@@ -115,6 +120,71 @@ function linkedRefs(connection: unknown, host: string, kind: Ref['kind']): Ref[]
   });
 }
 
+const DECISIONS: Record<string, NonNullable<RefReview['decision']>> = {
+  APPROVED: 'approved',
+  CHANGES_REQUESTED: 'changes_requested',
+  REVIEW_REQUIRED: 'review_required'
+};
+
+const CHECKS: Record<string, NonNullable<RefReview['checks']>> = {
+  SUCCESS: 'passing',
+  FAILURE: 'failing',
+  ERROR: 'failing',
+  PENDING: 'pending',
+  EXPECTED: 'pending'
+};
+
+/**
+ * Reads the review verdict. `reviewDecision` only counts reviews that branch protection asks for,
+ * so it is null in repositories without required reviews and ignores app approvals; then the
+ * reviewers' latest opinions decide, as in t3code, with a change request winning over approvals.
+ */
+function decisionOf(node: Record<string, unknown>): RefReview['decision'] {
+  const summary =
+    typeof node.reviewDecision === 'string' ? DECISIONS[node.reviewDecision] : undefined;
+  if (summary === 'approved' || summary === 'changes_requested') return summary;
+  const reviews = isRecord(node.latestReviews) ? node.latestReviews.nodes : undefined;
+  const states = new Set(
+    Array.isArray(reviews)
+      ? reviews.map((review) => (isRecord(review) ? review.state : undefined))
+      : []
+  );
+  if (states.has('CHANGES_REQUESTED')) return 'changes_requested';
+  if (states.has('APPROVED')) return 'approved';
+  return summary;
+}
+
+/** Reads `commits(last: 1)`'s rollup state; null when the head commit has no checks or statuses. */
+function headRollup(commits: unknown): string | undefined {
+  const nodes = isRecord(commits) ? commits.nodes : undefined;
+  const last = Array.isArray(nodes) ? nodes[0] : undefined;
+  const commit = isRecord(last) ? last.commit : undefined;
+  const rollup = isRecord(commit) ? commit.statusCheckRollup : undefined;
+  return isRecord(rollup) && typeof rollup.state === 'string' ? rollup.state : undefined;
+}
+
+/**
+ * Builds the review summary of an open or draft pull request. Merged and closed ones get none:
+ * their snapshot is never refetched, so pending checks or open threads would show forever.
+ * Past 100 threads only the first page is counted, so `unresolved` is then a lower bound.
+ */
+function reviewOf(node: Record<string, unknown>, status: RefStatus): RefReview | undefined {
+  if (status !== 'open' && status !== 'draft') return undefined;
+  const review: RefReview = {};
+  const decision = decisionOf(node);
+  if (decision) review.decision = decision;
+  const threads = node.reviewThreads;
+  if (isRecord(threads) && typeof threads.totalCount === 'number' && Array.isArray(threads.nodes)) {
+    review.threads = threads.totalCount;
+    review.unresolved = threads.nodes.filter(
+      (thread) => isRecord(thread) && thread.isResolved === false
+    ).length;
+  }
+  const checks = CHECKS[headRollup(node.commits) ?? ''];
+  if (checks) review.checks = checks;
+  return Object.keys(review).length > 0 ? review : undefined;
+}
+
 /** Maps a GraphQL error type to the reason reported for the entry it nulled out. */
 function reasonOf(error: GraphQLError | undefined): ForgeError {
   if (!error || error.type === 'NOT_FOUND') return { reason: 'not-found' };
@@ -163,6 +233,7 @@ export function parseSnapshotResponse(
     };
     const mergedAt = epoch(node.mergedAt);
     const closedAt = epoch(node.closedAt);
+    const review = isPullRequest ? reviewOf(node, status) : undefined;
     const state: RefState = {
       status,
       title: node.title,
@@ -171,7 +242,8 @@ export function parseSnapshotResponse(
       ...(closedAt === undefined ? {} : { closedAt }),
       ...(isPullRequest
         ? { closes: linkedRefs(node.closingIssuesReferences, candidate.host, 'issue') }
-        : { closedBy: linkedRefs(node.closedByPullRequestsReferences, candidate.host, 'pr') })
+        : { closedBy: linkedRefs(node.closedByPullRequestsReferences, candidate.host, 'pr') }),
+      ...(review ? { review } : {})
     };
     return { ref, state };
   });
