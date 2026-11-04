@@ -8,11 +8,13 @@ export type PageScope = 'project' | 'all';
 /** Views in `tab` order. */
 export const VIEWS: readonly PageView[] = ['active', 'done', 'archived'];
 
-/** Page state kept in `storage.memory`, so returning with `<leader>l` after a peek restores it. */
+/**
+ * Page state kept in `storage.memory`, so returning with `<leader>l` after a peek restores it.
+ * The project scope is not here: it is a durable preference.
+ */
 export interface PageMemory {
   query: string;
   view: PageView;
-  scope: PageScope;
   selected: string | undefined;
   /** First visible list line. */
   scroll: number;
