@@ -289,7 +289,7 @@ function createSweeper(runtime: Runtime): Sweeper {
     }
 
     const decisions: WorktreeDecision[] = [];
-    const facts = new Map<string, { projectID: string; facts: WorktreeFacts }>();
+    const facts = new Map<string, Gathered>();
     if (want.cleaning) {
       const cleanup = await loadState(context);
       // Remember where sessions live now, so a later deletion maps to its worktree.
@@ -355,7 +355,11 @@ function createSweeper(runtime: Runtime): Sweeper {
           referenced: git.referenced,
           head
         };
-        facts.set(worktree.directory, { projectID: worktree.projectID, facts: fact });
+        facts.set(worktree.directory, {
+          projectID: worktree.projectID,
+          ...(worktree.base === undefined ? {} : { base: worktree.base }),
+          facts: fact
+        });
         decisions.push(decideWorktree(fact, settings, now));
       }
     }
@@ -391,12 +395,51 @@ function createSweeper(runtime: Runtime): Sweeper {
   };
 
   /**
-   * Removes worktrees the decision selected, checking git status again right before each one:
-   * the agent or the user may have written files since the facts were read.
+   * The facts of a worktree read again right before its removal. The sweep read them seconds or
+   * minutes earlier, and since then the agent may have written or committed, a session may have
+   * started, resumed or asked a question there, and a TUI may have opened or pinned one. A
+   * session the sweep did not see counts as active, so it keeps the worktree.
    */
+  const freshFacts = async (context: Plugin.Context, entry: Gathered): Promise<WorktreeFacts> => {
+    const clients = reports(Date.now());
+    const pinned = new Set(clients.flatMap((client) => client.pinned));
+    const open = new Set(clients.flatMap((client) => client.open));
+    const known = new Map(entry.facts.sessions.map((session) => [session.id, session]));
+    const listed = await context.session.list({
+      directory: entry.facts.directory,
+      parentID: null,
+      limit: 200
+    });
+    const ids = [...new Set([...known.keys(), ...listed.data.map((info) => info.id)])];
+    const sessions = await Promise.all(
+      ids.map(async (id): Promise<WorktreeSession> => {
+        const info = await context.session.get({ sessionID: id });
+        return {
+          ...(known.get(id) ?? { id, done: false }),
+          archived: info.time.archived !== undefined,
+          updated: info.time.updated,
+          running: isBusy(info),
+          pending: await hasPending(runtime, context, id),
+          open: open.has(id),
+          pinned: pinned.has(id)
+        };
+      })
+    );
+    const git = await readWorktreeGit(entry.facts.directory, entry.base);
+    return {
+      ...entry.facts,
+      sessions,
+      changed: git.changed,
+      ahead: git.ahead,
+      contained: git.contained,
+      referenced: git.referenced
+    };
+  };
+
+  /** Removes worktrees the decision selected, deciding each one again on {@link freshFacts}. */
   const removeAll = async (
     context: Plugin.Context,
-    gathered: { facts: Map<string, { projectID: string; facts: WorktreeFacts }> },
+    gathered: { facts: Map<string, Gathered> },
     removals: WorktreeDecision[]
   ) => {
     const settings = runtime.settings.current();
@@ -408,12 +451,17 @@ function createSweeper(runtime: Runtime): Sweeper {
         kept.push({ directory: decision.directory, reason: 'not a worktree OpenCode knows' });
         continue;
       }
-      const fresh = await readWorktreeGit(decision.directory, undefined);
-      const recheck = decideWorktree(
-        { ...entry.facts, changed: fresh.changed },
-        settings,
-        Date.now()
-      );
+      let recheck: WorktreeDecision;
+      try {
+        recheck = decideWorktree(await freshFacts(context, entry), settings, Date.now());
+      } catch (error) {
+        warn(`Checking worktree ${decision.directory} again failed`, error);
+        kept.push({
+          directory: decision.directory,
+          reason: 'its sessions could not be read again'
+        });
+        continue;
+      }
       if (recheck.action !== 'remove') {
         kept.push({ directory: decision.directory, reason: recheck.reason });
         continue;
@@ -600,6 +648,14 @@ async function listSessions(context: Plugin.Context): Promise<SessionInfo[]> {
     cursor = page.cursor.next ?? undefined;
   } while (cursor && sessions.length < MAX_SESSIONS);
   return sessions;
+}
+
+/** One worktree's facts from a sweep, with what removing it and reading it again need. */
+interface Gathered {
+  projectID: string;
+  /** The default branch ref, for reading `ahead` and `contained` again. */
+  base?: string;
+  facts: WorktreeFacts;
 }
 
 /** A worktree OpenCode knows, with the default branch ref its project compares against. */
