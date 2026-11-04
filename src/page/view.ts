@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import path from 'node:path';
 import type { LocationPublicInfo, SessionInfo } from '@opencode/client';
 import type { KeymapCommand } from '@opencode/plugin/tui/context';
@@ -22,6 +21,7 @@ import {
   untrack
 } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
+import { openUrl, refUrl } from '../browser.js';
 import { refKey } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import { type SearchScope, SuperSessions } from '../rpc.js';
@@ -488,10 +488,8 @@ export default function SessionPage(props: PageProps) {
       toast('No pull request or issue on this session.');
       return;
     }
-    const url =
-      view.states[refKey(primary)]?.url ??
-      `https://${primary.host}/${primary.repo}/${primary.kind === 'pr' ? 'pull' : 'issues'}/${primary.number}`;
-    if (!openUrl(url)) toast('Could not open the browser.', 'error');
+    if (!openUrl(refUrl(primary, view.states[refKey(primary)])))
+      toast('Could not open the browser.', 'error');
   };
 
   // Base mode (the default) turns the layer off while a dialog is open, so prompts and confirms
@@ -952,33 +950,4 @@ function linkError(error: unknown): string {
   if (type === 'not_found') return 'Pull request or issue not found.';
   if (type === 'unavailable') return 'GitHub is unavailable. Run /super-sessions for details.';
   return 'Could not link. Enable the opencode-super-sessions server plugin.';
-}
-
-/**
- * Opens a web URL with the OS opener. No shell is involved, and only http(s) URLs are passed,
- * so a crafted ref URL cannot run a command.
- */
-function openUrl(url: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
-  // `start` is a cmd.exe builtin and would need a shell; explorer.exe opens URLs directly.
-  const command =
-    process.platform === 'darwin'
-      ? 'open'
-      : process.platform === 'win32'
-        ? 'explorer.exe'
-        : 'xdg-open';
-  try {
-    const child = spawn(command, [parsed.href], { detached: true, stdio: 'ignore' });
-    child.on('error', () => {});
-    child.unref();
-    return true;
-  } catch {
-    return false;
-  }
 }

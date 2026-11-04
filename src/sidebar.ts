@@ -1,0 +1,34 @@
+import type { Plugin } from '@opencode/plugin/tui';
+import { createComponent, createMemo, lazy } from 'solid-js';
+import type { Options } from './config.js';
+
+/** Everything the sidebar view needs from the plugin entry. */
+export interface SidebarProps {
+  context: Plugin.Context;
+  options: Options;
+  /** Session the sidebar belongs to. Reactive: the slot input changes when the user switches. */
+  sessionID: () => string;
+}
+
+// Importing `./tui` from Node must not load OpenTUI, so the view loads only when the sidebar
+// first renders inside the TUI.
+const Sidebar = lazy(() => import('./sidebar-view.js'));
+
+/** Adds the "Work" section to the session sidebar. Returns the slot's unregister function. */
+export function installSidebar(context: Plugin.Context, options: Options): () => void {
+  return context.ui.slot({
+    append: 'sidebar.content',
+    render: (input) => {
+      const view = createComponent(Sidebar, {
+        context,
+        options,
+        sessionID: () => input.sessionID
+      });
+      return createMemo(() => {
+        const node = typeof view === 'function' ? view() : view;
+        // Solid lazy() returns an empty string while loading; OpenTUI boxes cannot contain text nodes.
+        return node === '' ? undefined : node;
+      });
+    }
+  });
+}

@@ -20,6 +20,7 @@ async function host(current: Route) {
       }
     },
     ui: {
+      slot: () => () => {},
       router: {
         register: () => () => {},
         navigate: (destination: Destination) => navigations.push(destination),
