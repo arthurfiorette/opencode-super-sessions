@@ -84,6 +84,16 @@ git(repo, 'checkout', '-q', '-b', 'fix-titles');
 git(repo, 'update-ref', 'refs/remotes/origin/fix-titles', 'HEAD');
 git(repo, 'branch', '-q', '--set-upstream-to=origin/fix-titles');
 
+// A clone of acme/widgets on its default branch, for a session written before the plugin ran.
+const legacyRepo = path.join(directory, 'legacy');
+await mkdir(legacyRepo);
+git(legacyRepo, 'init', '-q', '-b', 'main');
+git(legacyRepo, 'commit', '-q', '--allow-empty', '--no-verify', '-m', 'init');
+git(legacyRepo, 'remote', 'add', 'origin', 'https://github.com/acme/widgets.git');
+git(legacyRepo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+git(legacyRepo, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
+const legacy = { directory: legacyRepo };
+
 const config = path.join(directory, 'config');
 await mkdir(config);
 const host = await OpenCode.create({
@@ -258,8 +268,97 @@ try {
     )
   );
 
+  // The history scan reads the session the plugin never saw through the TUI's own reader, and
+  // links what live detection would have: the bare #56 after the forge confirms it, and the PR
+  // `gh pr create` printed.
+  // An import publishes only `session.created`, so detection never sees these messages.
+  const legacyID = await importLegacySession();
+  const { historySource, scanSession } = await import('../../dist/history-scan.js');
+  const source = historySource(host, () => legacy);
+  const legacyMetadata = async () =>
+    (await host.sessions.get({ sessionID: legacyID })).metadata ?? {};
+  assert.equal((await legacyMetadata())['super-sessions'], undefined);
+  const noPause = async () => {};
+  assert.equal(await scanSession(source, legacyID, { pause: noPause }), 'scanned');
+  const scanned = (await legacyMetadata())['super-sessions'];
+  assert.deepEqual(
+    scanned.links.map((link) => [link.ref.kind, link.ref.number, link.source]).sort(),
+    [
+      ['issue', 56, 'prompt'],
+      ['pr', 34, 'created']
+    ]
+  );
+  const newest = (await host.message.list({ sessionID: legacyID, order: 'desc', limit: 1 }))
+    .data[0];
+  assert.equal(scanned.scanned.lastMessageID, newest.id);
+
+  // The marker makes the second scan stop at its first call and write nothing.
+  const once = await host.sessions.get({ sessionID: legacyID });
+  assert.equal(await scanSession(source, legacyID, { pause: noPause }), 'skipped');
+  const twice = await host.sessions.get({ sessionID: legacyID });
+  assert.deepEqual(twice.metadata, once.metadata);
+  assert.equal(twice.time.updated, once.time.updated);
+
   console.log('Configured OpenCode integration passed');
 } finally {
   await host.close();
   mock.restoreAll();
+}
+
+/**
+ * Imports a finished session from before the plugin: a prompt naming issue #56 by its bare
+ * number, then an agent turn that ran `gh pr create` and printed the new PR's URL.
+ */
+async function importLegacySession() {
+  const { project } = await host.location.get({ location: legacy });
+  const at = Date.now() - 86_400_000;
+  const id = `ses_legacy${at}`;
+  await host.experimental.session.import({
+    location: legacy,
+    info: {
+      id,
+      projectID: project.id,
+      title: 'Fix the session list',
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: at, updated: at + 3000 },
+      location: legacy
+    },
+    messages: [
+      {
+        id: `msg_legacy${at}a`,
+        type: 'user',
+        text: 'Please fix #56, the list cuts titles off.',
+        time: { created: at }
+      },
+      {
+        id: `msg_legacy${at}b`,
+        type: 'assistant',
+        agent: 'build',
+        model: { id: 'model', providerID: 'provider' },
+        content: [
+          {
+            type: 'tool',
+            id: 'call_1',
+            name: 'shell',
+            state: {
+              status: 'completed',
+              input: { command: 'gh pr create --fill' },
+              content: [
+                {
+                  type: 'text',
+                  text: 'Creating pull request for fix-titles into main in acme/widgets\n\nhttps://github.com/acme/widgets/pull/34\n'
+                }
+              ]
+            },
+            time: { created: at + 1000, completed: at + 2000 }
+          },
+          { type: 'text', text: 'Opened the pull request.' }
+        ],
+        finish: 'stop',
+        time: { created: at + 1000, completed: at + 3000 }
+      }
+    ]
+  });
+  return id;
 }
