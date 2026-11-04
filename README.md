@@ -74,7 +74,7 @@ Pinned sessions stay in the Pinned group of Active even when they are Done. `ctr
 A row is its title line and, when they apply, the lines under it:
 
 - The title line: a marker, the title and the age of the last update. In the Archived view the age reads `archived 3d · updated 5d`.
-- The PR line, when the session has a [main pull request](#main-pull-request): its [review and CI icons](#review-and-ci-icons) while it is open or a draft, then its icon and number in the state color, then its title. A trailing `+N` counts the session's other pull requests and mentioned refs.
+- The PR line, when the session has a [main pull request](#main-pull-request): its icon and number in the state color, its [review and CI icons](#review-and-ci-icons) while it is open or a draft, then its title. A trailing `+N` counts the session's other pull requests and mentioned refs.
 - The issues line, when the session tracks issues: every issue number in its state color, joined as `#1230, #19083 and #8923`. The issues the main pull request closes come first. When they do not fit, the rest are counted in `+N`. A session that tracks one issue shows its title after the number, like the PR line.
 
 The marker column shows one of these, highest first:
@@ -91,7 +91,7 @@ With animations off in OpenCode, the spinner is a still `⋯`. Titles wrap onto 
 
 ### Review and CI icons
 
-An open or draft pull request shows these Nerd Font icons before its own icon, in this order, on list rows, in the preview's Work rows and in the sidebar. A part without data is left out.
+An open or draft pull request shows these Nerd Font icons after its icon and number, in this order, on list rows, in the Pull requests view, in the preview's Work rows and in the sidebar. A part without data is left out, so the icon and number always start in the same column.
 
 | Part    | Icons                                                                                               |
 | ------- | --------------------------------------------------------------------------------------------------- |
@@ -103,7 +103,7 @@ On GitHub, successful, neutral and skipped check runs and successful statuses co
 
 ### Pull requests view
 
-Each row is a pull request: its [review and CI icons](#review-and-ci-icons), its icon and number in the state color, its title, and how many sessions track it. The search filters these rows by number (`12`, `#12` or `!12`) and title.
+Each row is a pull request: its icon and number in the state color, its [review and CI icons](#review-and-ci-icons), its title, and how many sessions track it. The search filters these rows by number (`12`, `#12` or `!12`) and title.
 
 `enter` opens the newest session that tracks the selected pull request, `space` peeks it, and `ctrl+g` opens the pull request in your web browser. The keys that change one session (archive, Done, rename, pin, delete, link) are off in this view. The footer reads `enter open  space peek  ctrl+g open PR  ctrl+/ keys`.
 
@@ -138,7 +138,7 @@ The header holds the title and these sections:
 
 - Context: tokens in the context window and their share of the model's limit, the cost so far, and whether the session is running, idle, interrupted or failed.
 - Session: the project (only when it differs from the browser's), the worktree directory (only when it is not the project root) and the branch (only when it is not the default branch).
-- Work: every tracked pull request and issue, the main pull request first with a `branch` note when it is the branch's pull request. Open pull requests start with their [review and CI icons](#review-and-ci-icons), and a muted line under each gives the full status, such as `approved · 2/3 threads resolved · 12/12 checks passing`. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
+- Work: every tracked pull request and issue, the main pull request first with a `branch` note when it is the branch's pull request. Open pull requests show their [review and CI icons](#review-and-ci-icons) after the number, and a muted line under each gives the full status, such as `approved · 2/3 threads resolved · 12/12 checks passing`. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
 
 The transcript below draws messages the way OpenCode's session view does and follows your `cli.json` session settings (scrollbar, thinking, markdown, verbosity, grouping). It starts at the latest message; scrolling up loads older ones.
 
@@ -195,7 +195,7 @@ A left click on a row opens the session, hovering selects it, and a click outsid
 
 ## Sidebar
 
-The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first with a `branch` note, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests start with their [review and CI icons](#review-and-ci-icons), and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), and a click opens it in your web browser. A session without pull requests, issues or mentions shows nothing there.
+The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first with a `branch` note, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests show their [review and CI icons](#review-and-ci-icons) between the number and the title, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), and a click opens it in your web browser. A session without pull requests, issues or mentions shows nothing there.
 
 ## Pull request and issue tracking
 

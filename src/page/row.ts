@@ -82,8 +82,8 @@ export function findRef(view: SessionRefView | undefined, key: string): Ref | un
 /**
  * Lines a row draws under its title. Each part is empty when its line is not drawn.
  *
- * - `pr`: the main PR's review and CI icons, then the PR with its title, a matched ref that is
- *   shown nowhere else, and `+N`.
+ * - `pr`: the main PR's icon and number, its review and CI icons, its title, then a matched ref
+ *   that is shown nowhere else, and `+N`.
  * - `issues`: one piece per tracked issue (with its title when it is the only one), fitted to
  *   the width when drawn; `extra` is the `+N`
  *   the issues line carries when there is no PR line.
@@ -106,20 +106,23 @@ export function detailKinds(details: RowDetails): Array<'pr' | 'issues'> {
 }
 
 /**
- * The review and CI icons drawn before an open pull request, in GitHub's colors: the review
- * verdict, the CI result with `passed/total` muted, then the unresolved threads in the warning
- * color. A part without data is left out. Each glyph takes a 2-cell slot like the ref icons.
+ * The review and CI icons drawn after an open pull request's number, in GitHub's colors: the
+ * review verdict, the CI result with `passed/total` muted, then the unresolved threads in the
+ * warning color. A part without data is left out. Each part starts with its separating space, so
+ * the number and the state icon stay in the same column on every row, and each glyph keeps a
+ * 2-cell slot like the ref icons because a space always follows it (the next part's or the
+ * title's).
  */
 export function badgeSegments(review: RefReview | undefined, theme: ResolvedTheme): Segment[] {
   if (review === undefined) return [];
   const { feedback, muted } = theme.text;
   const parts: Segment[] = [];
   if (review.decision === 'changes_requested') {
-    parts.push({ text: `${ICONS.changesRequested} `, fg: feedback.error.base });
+    parts.push({ text: ` ${ICONS.changesRequested}`, fg: feedback.error.base });
   } else if (review.decision === 'approved') {
-    parts.push({ text: `${ICONS.approved} `, fg: feedback.success.base });
+    parts.push({ text: ` ${ICONS.approved}`, fg: feedback.success.base });
   } else if (review.decision === 'review_required') {
-    parts.push({ text: `${ICONS.reviewRequired} `, fg: muted });
+    parts.push({ text: ` ${ICONS.reviewRequired}`, fg: muted });
   }
   if (review.checks !== undefined) {
     const [glyph, fg] =
@@ -128,13 +131,13 @@ export function badgeSegments(review: RefReview | undefined, theme: ResolvedThem
         : review.checks === 'failing'
           ? [ICONS.checksFailing, feedback.error.base]
           : [ICONS.checksPending, feedback.warning.base];
-    parts.push({ text: `${glyph} `, fg });
+    parts.push({ text: ` ${glyph}`, fg });
     if (review.checksTotal !== undefined && review.checksPassed !== undefined) {
-      parts.push({ text: `${review.checksPassed}/${review.checksTotal} `, fg: muted });
+      parts.push({ text: ` ${review.checksPassed}/${review.checksTotal}`, fg: muted });
     }
   }
   if (review.unresolved !== undefined && review.unresolved > 0) {
-    parts.push({ text: `${ICONS.threads} ${review.unresolved} `, fg: feedback.warning.base });
+    parts.push({ text: ` ${ICONS.threads} ${review.unresolved}`, fg: feedback.warning.base });
   }
   return parts;
 }
@@ -154,14 +157,15 @@ export function rowDetails(input: RefsInput): RowDetails {
   if (view === undefined) return NO_DETAILS;
   const { base, muted } = input.theme.text;
   const summary = rowRefs(view);
-  /** Icon and number of `ref`, plus its title when `titled`. */
-  const piece = (ref: Ref, titled: boolean): Segment[] => {
+  /** Icon and number of `ref`, its review and CI icons when `badged`, its title when `titled`. */
+  const piece = (ref: Ref, titled: boolean, badged = false): Segment[] => {
     const key = refKey(ref);
     const state = view.states[key];
     const color = refColor(input.options, state?.status, input.theme, input.mode);
     const segments: Segment[] = [
       { text: `${refIcon(ref.kind, state?.status)} `, fg: color },
-      { text: refNumber(ref), fg: color }
+      { text: refNumber(ref), fg: color },
+      ...(badged ? stateBadges(state, input.theme) : [])
     ];
     if (titled && state?.title) {
       segments.push({ text: ` ${state.title}`, fg: key === input.matched ? base : muted });
@@ -181,11 +185,9 @@ export function rowDetails(input: RefsInput): RowDetails {
   );
   const issues = [...summary.issues, ...(extraHit?.kind === 'issue' ? [extraHit] : [])];
 
-  const mainState = summary.pr ? view.states[refKey(summary.pr)] : undefined;
   const pr = prs.flatMap((ref, index) => [
     ...(index > 0 ? [{ text: '  ', fg: muted }] : []),
-    ...(ref === summary.pr ? stateBadges(mainState, input.theme) : []),
-    ...piece(ref, ref === summary.pr || ref === extraHit)
+    ...piece(ref, ref === summary.pr || ref === extraHit, ref === summary.pr)
   ]);
   if (pr.length > 0 && extra > 0) pr.push({ text: `  +${extra}`, fg: muted });
   return {
@@ -249,7 +251,7 @@ type RowLook = Pick<RowModel, 'deleting' | 'selected' | 'stripe'>;
 
 /** Everything a row of the Pull requests view draws. */
 export interface PullRowModel extends RowLook {
-  /** Review and CI icons, then the state icon and number in the state color. */
+  /** The state icon and number in the state color, then the review and CI icons. */
   lead: Segment[];
   title: string;
   /** Muted note at the right end, such as `3 sessions`. */
@@ -258,7 +260,7 @@ export interface PullRowModel extends RowLook {
   width: number;
 }
 
-/** A pull request's review and CI icons, then its state icon and number in the state color. */
+/** A pull request's state icon and number in the state color, then its review and CI icons. */
 export function pullLead(
   ref: Ref,
   state: RefState | undefined,
@@ -266,9 +268,9 @@ export function pullLead(
 ): Segment[] {
   const color = refColor(look.options, state?.status, look.theme, look.mode);
   return [
-    ...stateBadges(state, look.theme),
     { text: `${refIcon(ref.kind, state?.status)} `, fg: color },
-    { text: refNumber(ref), fg: color }
+    { text: refNumber(ref), fg: color },
+    ...stateBadges(state, look.theme)
   ];
 }
 

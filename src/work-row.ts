@@ -83,11 +83,11 @@ export function workStatusLine(input: {
 }
 
 /**
- * One line of a Work section, shared by the session sidebar and the browser's preview: an open
- * pull request's review and CI icons (see {@link stateBadges}), then the state icon, starting in
- * the column of the section's triangle like the host's MCP dots, then the number in `text.base`
- * and the muted title. Hover brightens both and scrolls a cut title; a click opens the ref's
- * page. Built once per position, so updates change properties, never the tree.
+ * One line of a Work section, shared by the session sidebar and the browser's preview: the state
+ * icon, starting in the column of the section's triangle like the host's MCP dots, the number in
+ * `text.base`, an open pull request's review and CI icons (see {@link stateBadges}), then the
+ * muted title. Hover brightens the number and the title and scrolls a cut title; a click opens
+ * the ref's page. Built once per position, so updates change properties, never the tree.
  */
 export function workRow(input: WorkRowInput): JSX.Element {
   const context = input.context;
@@ -103,7 +103,7 @@ export function workRow(input: WorkRowInput): JSX.Element {
   const marker = () => input.marker?.();
   const badges = () => stateBadges(input.state(), theme());
   /**
-   * Cells left for the title after the badges, the icon, the number, the marker and the spaces
+   * Cells left for the title after the icon, the number, the badges, the marker and the spaces
    * between.
    */
   const room = () => {
@@ -142,24 +142,6 @@ export function workRow(input: WorkRowInput): JSX.Element {
     },
     children: [
       jsx('text', {
-        ...id('badges'),
-        flexShrink: 0,
-        wrapMode: 'none',
-        get visible() {
-          return badges().length > 0;
-        },
-        get children() {
-          return badges().map((segment) =>
-            jsx('span', {
-              get style() {
-                return { fg: selectedFg() ?? segment.fg };
-              },
-              children: segment.text
-            })
-          );
-        }
-      }),
-      jsx('text', {
         ...id('icon'),
         flexShrink: 0,
         wrapMode: 'none',
@@ -187,6 +169,24 @@ export function workRow(input: WorkRowInput): JSX.Element {
         },
         get children() {
           return number();
+        }
+      }),
+      jsx('text', {
+        ...id('badges'),
+        flexShrink: 0,
+        wrapMode: 'none',
+        get visible() {
+          return badges().length > 0;
+        },
+        get children() {
+          return badges().map((segment) =>
+            jsx('span', {
+              get style() {
+                return { fg: selectedFg() ?? segment.fg };
+              },
+              children: segment.text
+            })
+          );
         }
       }),
       jsx('text', {
