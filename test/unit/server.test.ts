@@ -4,6 +4,7 @@ import { type RefLink, readSessionRefs } from '../../src/refs/ref.js';
 import { mergeLinks } from '../../src/refs/store.js';
 import { createEventHub, type EventContext, type HandledEvent } from '../../src/server/events.js';
 import { createWriteQueue, type SessionAccess } from '../../src/server/queue.js';
+import type { Runtime } from '../../src/server/runtime.js';
 
 /** Yields to the event loop so concurrent fake calls interleave the way real I/O does. */
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -87,6 +88,37 @@ function fakeBus() {
     }
   };
 }
+
+test('the write queue never overwrites a stored value it cannot read, such as a newer schema', async () => {
+  const newer = { v: 2, links: [{ future: true }], dismissed: [] };
+  const writes: unknown[] = [];
+  const session = {
+    get: async () => ({ metadata: { 'super-sessions': newer } }),
+    update: async (input: { metadata?: Record<string, unknown> }) => {
+      writes.push(input.metadata);
+    }
+  } as unknown as SessionAccess;
+  const queue = createWriteQueue();
+  await assert.rejects(queue.update(session, 'ses_1', (refs) => mergeLinks(refs, [link(1)])));
+  assert.deepEqual(writes, []);
+
+  // A session without the key is a first write, not an unreadable one.
+  const fresh = { ...session, get: async () => ({ metadata: {} }) } as unknown as SessionAccess;
+  await queue.update(fresh, 'ses_2', (refs) => mergeLinks(refs, [link(1)]));
+  assert.equal(writes.length, 1);
+});
+
+test('every copy of the plugin module gets the one sweeper of the shared runtime', async () => {
+  // The daemon loads a local-path plugin once per Location, each a module of its own; a query
+  // string gives the same file a new module instance the same way.
+  type SweepModule = typeof import('../../src/server/sweep.js');
+  const path = '../../src/server/sweep.js';
+  const first: SweepModule = await import(`${path}?location=a`);
+  const second: SweepModule = await import(`${path}?location=b`);
+  assert.notEqual(first.getSweeper, second.getSweeper);
+  const runtime = {} as Runtime;
+  assert.equal(first.getSweeper(runtime), second.getSweeper(runtime));
+});
 
 test('one subscriber handles each event once across Locations, including after a handover', async () => {
   const bus = fakeBus();

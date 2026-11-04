@@ -18,8 +18,11 @@ export interface DoneInput {
   pending: boolean;
   archived: boolean;
   view: SessionRefView;
-  /** Epoch milliseconds of the user's last message. Refs closed before it do not end the session. */
-  lastUserMessageAt?: number;
+  /**
+   * Epoch milliseconds of the user's last message. Refs closed before it do not end the session.
+   * Null when it is unknown, which only the user's own mark overrides.
+   */
+  lastUserMessageAt?: number | null | undefined;
 }
 
 const EXPLICIT_PR_SOURCES: ReadonlySet<RefSource> = new Set(['agent', 'created', 'manual']);
@@ -176,6 +179,7 @@ export function isDone(input: DoneInput): boolean {
     return status !== undefined && CLOSED_STATUSES.has(status);
   });
   if (!closed) return false;
+  if (input.lastUserMessageAt === null) return false;
   if (input.lastUserMessageAt === undefined) return true;
   const latest = latestClose(view, refs);
   return latest !== undefined && latest > input.lastUserMessageAt;

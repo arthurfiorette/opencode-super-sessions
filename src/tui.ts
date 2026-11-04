@@ -17,6 +17,7 @@ import { createPins, type Pins } from './pins.js';
 import type { ProviderId } from './refs/ref.js';
 import { type Availability, SuperSessions } from './rpc.js';
 import { installSettings } from './settings/install.js';
+import { excludeFromAutoArchive } from './settings/maintenance.js';
 import type { TuiSettings } from './settings/store.js';
 import { installSidebar } from './sidebar.js';
 
@@ -261,6 +262,7 @@ async function setCurrentArchived(
     variant: 'success'
   });
   if (archived && settings.closeTabOnArchive()) context.ui.tabs.close(sessionID);
+  if (!archived) await excludeFromAutoArchive(context, [sessionID]);
 }
 
 /** Shows forge availability from the server plugin. */

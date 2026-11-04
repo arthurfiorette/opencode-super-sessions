@@ -28,7 +28,6 @@ const allowed = new Set([
   'XDG_RUNTIME_DIR',
   'DBUS_SESSION_BUS_ADDRESS',
   'GITHUB_TOKEN',
-  'GITHUB_ENTERPRISE_TOKEN',
   // glab reads a token from these before its config and keyring. `OAUTH_TOKEN` is left out: the
   // name is too generic to be sure it belongs to GitLab.
   'GITLAB_TOKEN',
@@ -40,6 +39,10 @@ const allowed = new Set([
   'WINDIR',
   'PATHEXT'
 ]);
+
+// gh sends these to any host other than github.com, so only {@link enterpriseTokens} passes them,
+// and only for a call to such a host.
+const ENTERPRISE_TOKENS = ['GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'];
 
 /**
  * Working directory for child processes. Windows resolves bare command names in the working
@@ -58,8 +61,23 @@ export function childEnvironment(): NodeJS.ProcessEnv {
     Object.entries(process.env).filter(([key, value]) => {
       if (value === undefined) return false;
       const name = key.toUpperCase();
+      if (ENTERPRISE_TOKENS.includes(name)) return false;
       // `GLAB_*` carries glab's config directory, CA and client certificates, and proxy.
       return allowed.has(name) || name.startsWith('GH_') || name.startsWith('GLAB_');
     })
   );
+}
+
+/**
+ * The GitHub Enterprise tokens of the daemon's environment, for a gh call to `host`. Empty for
+ * github.com, which never reads them. The server only calls hosts the user works with (see
+ * `src/server/hosts.ts`), so a ref URL naming another host cannot receive them.
+ */
+export function enterpriseTokens(host: string): Record<string, string> {
+  if (host.toLowerCase() === 'github.com') return {};
+  const tokens: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && ENTERPRISE_TOKENS.includes(key.toUpperCase())) tokens[key] = value;
+  }
+  return tokens;
 }

@@ -41,11 +41,15 @@ export function installMaintenance(
   isBusy: () => boolean
 ): Maintenance {
   const clientID = randomUUID();
+  /** The server plugin's RPC client. */
   const rpc = () => context.client.rpc(SuperSessions);
+  /** RPC call options: this TUI's Location, else the host's default one. */
   const options = () => ({ location: context.location ?? context.data.location.default() });
+  /** Shows a toast. */
   const toast = (message: string, variant: 'info' | 'success' | 'warning' | 'error' = 'info') =>
     context.ui.toast.show({ message, variant });
   const [last, setLast] = createSignal<{ ids: string[]; at: number }>();
+  /** The sessions of the last auto-archive while it can still be undone. */
   const recent = () => {
     const value = last();
     return value !== undefined && Date.now() - value.at < UNDO_WINDOW ? value.ids : [];
@@ -68,6 +72,7 @@ export function installMaintenance(
     return [...new Set(ids)];
   };
   let presenceTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Sends this TUI's pins and open sessions to the server, once per burst of changes. */
   const report = () => {
     clearTimeout(presenceTimer);
     presenceTimer = setTimeout(() => {
@@ -132,24 +137,47 @@ export function installMaintenance(
     }
   };
 
+  // The startup check and the server's event can both ask, and the screen can stay busy for a
+  // while: one dialog and one retry timer at a time, with the newest list waiting for them.
+  let asking = false;
+  let waiting: WorktreeDecision[] | undefined;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+
   /** Asks once per list before the first automatic removal. Waits while the screen is busy. */
   const confirm = async (worktrees: WorktreeDecision[]) => {
     const key = worktrees.map((worktree) => worktree.directory).join('\n');
     if (worktrees.length === 0 || declined.has(key)) return;
-    if (isBusy()) {
-      keep(setTimeout(() => void confirm(worktrees), BUSY_RETRY));
+    if (asking || isBusy()) {
+      waiting = worktrees;
+      if (!asking && retry === undefined) {
+        retry = setTimeout(() => {
+          retry = undefined;
+          const next = waiting;
+          waiting = undefined;
+          if (next !== undefined) void confirm(next);
+        }, BUSY_RETRY);
+        retry.unref?.();
+      }
       return;
     }
-    const accepted = await context.ui.dialog.confirm({
-      title: `Remove ${count(worktrees.length, 'worktree')}?`,
-      message: `${listDecisions(context, worktrees)}\n\nWorktree cleanup asks once. After you confirm, it removes worktrees on its own. Removal cannot be undone.`,
-      label: { confirm: 'Remove', cancel: 'Not now' }
-    });
-    if (!accepted) {
-      declined.add(key);
-      return;
+    asking = true;
+    let accepted = false;
+    try {
+      const answer = await context.ui.dialog.confirm({
+        title: `Remove ${count(worktrees.length, 'worktree')}?`,
+        message: `${listDecisions(context, worktrees)}\n\nWorktree cleanup asks once. After you confirm, it removes worktrees on its own. Removal cannot be undone.`,
+        label: { confirm: 'Remove', cancel: 'Not now' }
+      });
+      accepted = answer === true;
+      if (accepted) await remove(worktrees.map((worktree) => worktree.directory));
+      else declined.add(key);
+    } finally {
+      asking = false;
     }
-    await remove(worktrees.map((worktree) => worktree.directory));
+    // After a confirmation the server removes on its own, so a list that waited needs no dialog.
+    const next = waiting;
+    waiting = undefined;
+    if (next !== undefined && !accepted) void confirm(next);
   };
 
   /** Removes directories that still qualify on the server and reports the result. */
@@ -222,10 +250,7 @@ export function installMaintenance(
           failed++;
         }
       }
-      // Excluded on the server, or the next sweep would archive them again.
-      await rpc()
-        ['archive.exclude']({ sessionIDs: ids }, options())
-        .catch(() => {});
+      await excludeFromAutoArchive(context, ids);
       toast(
         failed === 0
           ? `Restored ${count(ids.length, 'session')}`
@@ -259,7 +284,10 @@ export function installMaintenance(
           listDecisions(context, removals),
           ...(kept.length > 0 ? ['', 'Kept:', listDecisions(context, kept)] : []),
           '',
-          'Removal cannot be undone. Branches and session history are kept.'
+          'Removal cannot be undone. Branches and session history are kept.',
+          ...(plan.confirmed
+            ? []
+            : ['Confirming also turns on automatic removal: later sweeps remove without asking.'])
         ].join('\n'),
         label: { confirm: 'Remove', cancel: 'Cancel' }
       });
@@ -267,11 +295,36 @@ export function installMaintenance(
     },
     dispose() {
       clearTimeout(presenceTimer);
+      clearTimeout(retry);
       for (const timer of timers) clearTimeout(timer);
       for (const off of offs) off();
       disposeRoot();
     }
   };
+}
+
+/**
+ * Tells the server the user restored these sessions, so auto-archive never takes them again.
+ * Called after every restore: the undo command, `ctrl+s` in the Archived view and `/unarchive`.
+ * Never rejects; without the server plugin there is no auto-archive to stop.
+ */
+export function excludeFromAutoArchive(
+  context: Plugin.Context,
+  sessionIDs: readonly string[]
+): Promise<void> {
+  return Promise.resolve()
+    .then(() =>
+      context.client
+        .rpc(SuperSessions)
+        ['archive.exclude'](
+          { sessionIDs: [...sessionIDs] },
+          { location: context.location ?? context.data.location.default() }
+        )
+    )
+    .then(
+      () => {},
+      () => {}
+    );
 }
 
 /** "1 worktree", "2 worktrees". */

@@ -11,7 +11,7 @@ import {
   onMount,
   untrack
 } from 'solid-js';
-import { DIALOG_MODE } from '../host/keymap.js';
+import { DIALOG_MODE, DIALOG_SELECT } from '../host/keymap.js';
 import { dialogTheme } from '../host/theme.js';
 import { displayValue, filterRows, SETTINGS, type SettingRow, stepValue } from './definitions.js';
 import type { SettingsDialogProps } from './install.js';
@@ -116,7 +116,10 @@ export default function SettingsDialog(props: SettingsDialogProps) {
     const index = list.findIndex((row) => row.key === current()?.key);
     setSelected(list[(index + delta + list.length * 10) % list.length]?.key);
   };
-  const moveTo = (index: number) => setSelected(rows()[index]?.key);
+  /** Selects the row at `index`. */
+  const moveTo = (index: number) => {
+    setSelected(rows()[index]?.key);
+  };
 
   /** Steps the selected value. Changes queue behind a write in progress, like the host's. */
   const change = async (direction: number, row = current()) => {
@@ -144,18 +147,18 @@ export default function SettingsDialog(props: SettingsDialogProps) {
 
   // The host's dialogs use these command ids, so the user's own dialog keys apply here too.
   const commands: KeymapCommand[] = [
-    { id: 'dialog.select.prev', title: 'Previous setting', group: 'Dialog', run: () => move(-1) },
-    { id: 'dialog.select.next', title: 'Next setting', group: 'Dialog', run: () => move(1) },
-    { id: 'dialog.select.page_up', title: 'Page up', group: 'Dialog', run: () => move(-10) },
-    { id: 'dialog.select.page_down', title: 'Page down', group: 'Dialog', run: () => move(10) },
-    { id: 'dialog.select.home', title: 'First setting', group: 'Dialog', run: () => moveTo(0) },
+    { id: DIALOG_SELECT.prev, title: 'Previous setting', group: 'Dialog', run: () => move(-1) },
+    { id: DIALOG_SELECT.next, title: 'Next setting', group: 'Dialog', run: () => move(1) },
+    { id: DIALOG_SELECT.pageUp, title: 'Page up', group: 'Dialog', run: () => move(-10) },
+    { id: DIALOG_SELECT.pageDown, title: 'Page down', group: 'Dialog', run: () => move(10) },
+    { id: DIALOG_SELECT.home, title: 'First setting', group: 'Dialog', run: () => moveTo(0) },
     {
-      id: 'dialog.select.end',
+      id: DIALOG_SELECT.end,
       title: 'Last setting',
       group: 'Dialog',
       run: () => moveTo(rows().length - 1)
     },
-    { id: 'dialog.select.submit', title: 'Change setting', group: 'Dialog', run: () => activate() },
+    { id: DIALOG_SELECT.submit, title: 'Change setting', group: 'Dialog', run: () => activate() },
     { bind: 'left', title: 'Previous value', group: 'Settings', run: () => void change(-1) },
     { bind: 'right', title: 'Next value', group: 'Settings', run: () => void change(1) }
   ];

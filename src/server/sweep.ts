@@ -1,18 +1,19 @@
-import { realpath } from 'node:fs/promises';
-import path from 'node:path';
 import type { SessionInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin';
 import type { RpcHandlers, RpcRegistration } from '@opencode/plugin/promise/rpc';
+import { lastUserMessageAt } from '../host/events.js';
 import { isBusy } from '../host/session-api.js';
 import { projectWorktrees, removeWorktree } from '../host/worktree.js';
-import { refKey } from '../refs/ref.js';
-import { doneAt, isDone, trackedRefs } from '../refs/summary.js';
+import { doneAt, isDone } from '../refs/summary.js';
 import type { SessionRefView, SuperSessions, WorktreeDecision } from '../rpc.js';
 import { type ArchiveFacts, createArchiveQueue, isArchiveDue } from './auto-archive.js';
 import {
+  assignSessions,
   cleanupEnabled,
   decideWorktree,
   defaultBranchRef,
+  mergedHeads,
+  mergedPull,
   readPullHead,
   readWorktreeGit,
   type WorktreeFacts,
@@ -76,16 +77,14 @@ export interface Sweeper {
   schedule(delay?: number): void;
 }
 
-const sweepers = new WeakMap<Runtime, Sweeper>();
-
-/** The sweeper of `runtime`, created on first use and hooked into its events. */
+/**
+ * The sweeper of `runtime`, created on first use and hooked into its events. It lives on the
+ * runtime, not in module state: a local-path plugin loads as one module per Location, and each
+ * module's own sweeper would sweep and remove in parallel.
+ */
 export function getSweeper(runtime: Runtime): Sweeper {
-  let sweeper = sweepers.get(runtime);
-  if (sweeper === undefined) {
-    sweeper = createSweeper(runtime);
-    sweepers.set(runtime, sweeper);
-  }
-  return sweeper;
+  runtime.sweeper ??= createSweeper(runtime);
+  return runtime.sweeper;
 }
 
 /** RPC handlers for auto-archive and cleanup, backed by the process-wide sweeper. */
@@ -139,6 +138,7 @@ function createSweeper(runtime: Runtime): Sweeper {
   // The worktree list of the last confirmation request, so each TUI is asked once per list.
   let asked: string | undefined;
 
+  /** The Location that sweeps and emits: the first one still attached. */
   const owner = () => live[0];
 
   /** Runs `task` after every queued sweep, dry run and removal. */
@@ -154,18 +154,21 @@ function createSweeper(runtime: Runtime): Sweeper {
     return [...presence.values()];
   };
 
+  /** The cleanup state, read from storage once per process. An unreadable value starts empty. */
   const loadState = async (context: Plugin.Context): Promise<CleanupState> => {
     if (state !== undefined) return state;
     const stored = await context.storage.get('cleanup').catch(() => undefined);
     state = readCleanupState(stored);
     return state;
   };
+  /** Writes the cleanup state back. Never rejects; a failed write only logs. */
   const saveState = (context: Plugin.Context) =>
     state === undefined
       ? Promise.resolve()
       : context.storage
           .set('cleanup', state as unknown as Parameters<Plugin.Context['storage']['set']>[1])
           .catch((error: unknown) => warn('Saving cleanup state failed', error));
+  /** Sessions the user restored from auto-archive, read from storage once per process. */
   const loadExcluded = async (context: Plugin.Context) => {
     if (excluded !== undefined) return excluded;
     const stored = await context.storage.get('archive-excluded').catch(() => undefined);
@@ -224,6 +227,7 @@ function createSweeper(runtime: Runtime): Sweeper {
     const settings = runtime.settings.current();
     const sessions = await listSessions(context);
     const byID = new Map(sessions.map((info) => [info.id, info]));
+    /** The top-level session `id` belongs to, following parent links. */
     const rootOf = (id: string) => {
       let info = byID.get(id);
       // Bounded: a malformed parent chain must not loop forever.
@@ -251,7 +255,10 @@ function createSweeper(runtime: Runtime): Sweeper {
       ])
     ].filter((id) => id !== 'global');
     const worktrees = want.cleaning ? await listWorktrees(runtime, context, projects) : [];
-    const owners = await assignSessions(roots, worktrees);
+    const owners = await assignSessions(
+      roots.map((info) => ({ id: info.id, directory: info.location.directory })),
+      worktrees.map((worktree) => worktree.directory)
+    );
 
     // Done needs forge state; only sessions a decision reads pay for it. The main checkout is
     // always kept, so its sessions are left out.
@@ -288,7 +295,7 @@ function createSweeper(runtime: Runtime): Sweeper {
     }
 
     const decisions: WorktreeDecision[] = [];
-    const facts = new Map<string, { projectID: string; facts: WorktreeFacts }>();
+    const facts = new Map<string, Gathered>();
     if (want.cleaning) {
       const cleanup = await loadState(context);
       // Remember where sessions live now, so a later deletion maps to its worktree.
@@ -347,13 +354,18 @@ function createSweeper(runtime: Runtime): Sweeper {
               pinned: pinned.has(id)
             };
           }),
-          status: git.status,
+          changed: git.changed,
           ahead: git.ahead,
           merged,
           contained: git.contained,
+          referenced: git.referenced,
           head
         };
-        facts.set(worktree.directory, { projectID: worktree.projectID, facts: fact });
+        facts.set(worktree.directory, {
+          projectID: worktree.projectID,
+          ...(worktree.base === undefined ? {} : { base: worktree.base }),
+          facts: fact
+        });
         decisions.push(decideWorktree(fact, settings, now));
       }
     }
@@ -377,10 +389,9 @@ function createSweeper(runtime: Runtime): Sweeper {
           continue;
         }
         const pending = await hasPending(runtime, context, id);
-        const last = await lastUserMessageAt(context, id);
-        const done =
-          last !== null &&
-          isDone({ ...base, pending, ...(last === undefined ? {} : { lastUserMessageAt: last }) });
+        // The user's mark decides on its own, so it needs no message read.
+        const last = view.done === undefined ? await lastMessage(context, id) : undefined;
+        const done = isDone({ ...base, pending, lastUserMessageAt: last });
         const at = doneAt(view);
         result.set(id, { view, done, pending, ...(at === undefined ? {} : { doneAt: at }) });
       }
@@ -389,12 +400,51 @@ function createSweeper(runtime: Runtime): Sweeper {
   };
 
   /**
-   * Removes worktrees the decision selected, checking git status again right before each one:
-   * the agent or the user may have written files since the facts were read.
+   * The facts of a worktree read again right before its removal. The sweep read them seconds or
+   * minutes earlier, and since then the agent may have written or committed, a session may have
+   * started, resumed or asked a question there, and a TUI may have opened or pinned one. A
+   * session the sweep did not see counts as active, so it keeps the worktree.
    */
+  const freshFacts = async (context: Plugin.Context, entry: Gathered): Promise<WorktreeFacts> => {
+    const clients = reports(Date.now());
+    const pinned = new Set(clients.flatMap((client) => client.pinned));
+    const open = new Set(clients.flatMap((client) => client.open));
+    const known = new Map(entry.facts.sessions.map((session) => [session.id, session]));
+    const listed = await context.session.list({
+      directory: entry.facts.directory,
+      parentID: null,
+      limit: 200
+    });
+    const ids = [...new Set([...known.keys(), ...listed.data.map((info) => info.id)])];
+    const sessions = await Promise.all(
+      ids.map(async (id): Promise<WorktreeSession> => {
+        const info = await context.session.get({ sessionID: id });
+        return {
+          ...(known.get(id) ?? { id, done: false }),
+          archived: info.time.archived !== undefined,
+          updated: info.time.updated,
+          running: isBusy(info),
+          pending: await hasPending(runtime, context, id),
+          open: open.has(id),
+          pinned: pinned.has(id)
+        };
+      })
+    );
+    const git = await readWorktreeGit(entry.facts.directory, entry.base);
+    return {
+      ...entry.facts,
+      sessions,
+      changed: git.changed,
+      ahead: git.ahead,
+      contained: git.contained,
+      referenced: git.referenced
+    };
+  };
+
+  /** Removes worktrees the decision selected, deciding each one again on {@link freshFacts}. */
   const removeAll = async (
     context: Plugin.Context,
-    gathered: { facts: Map<string, { projectID: string; facts: WorktreeFacts }> },
+    gathered: { facts: Map<string, Gathered> },
     removals: WorktreeDecision[]
   ) => {
     const settings = runtime.settings.current();
@@ -406,12 +456,17 @@ function createSweeper(runtime: Runtime): Sweeper {
         kept.push({ directory: decision.directory, reason: 'not a worktree OpenCode knows' });
         continue;
       }
-      const fresh = await readWorktreeGit(decision.directory, undefined);
-      const recheck = decideWorktree(
-        { ...entry.facts, status: fresh.status },
-        settings,
-        Date.now()
-      );
+      let recheck: WorktreeDecision;
+      try {
+        recheck = decideWorktree(await freshFacts(context, entry), settings, Date.now());
+      } catch (error) {
+        warn(`Checking worktree ${decision.directory} again failed`, error);
+        kept.push({
+          directory: decision.directory,
+          reason: 'its sessions could not be read again'
+        });
+        continue;
+      }
       if (recheck.action !== 'remove') {
         kept.push({ directory: decision.directory, reason: recheck.reason });
         continue;
@@ -574,6 +629,7 @@ function readCleanupState(value: unknown): CleanupState {
           )
         )
       : {};
+  /** The string entries of a stored list; anything else reads as empty. */
   const strings = (list: unknown) =>
     Array.isArray(list) ? list.filter((item): item is string => typeof item === 'string') : [];
   return {
@@ -598,6 +654,14 @@ async function listSessions(context: Plugin.Context): Promise<SessionInfo[]> {
     cursor = page.cursor.next ?? undefined;
   } while (cursor && sessions.length < MAX_SESSIONS);
   return sessions;
+}
+
+/** One worktree's facts from a sweep, with what removing it and reading it again need. */
+interface Gathered {
+  projectID: string;
+  /** The default branch ref, for reading `ahead` and `contained` again. */
+  base?: string;
+  facts: WorktreeFacts;
 }
 
 /** A worktree OpenCode knows, with the default branch ref its project compares against. */
@@ -639,72 +703,6 @@ async function listWorktrees(
 }
 
 /**
- * Maps each worktree directory to the top-level sessions in it. A session belongs to the deepest
- * worktree containing its directory, since linked worktrees often sit inside the main checkout
- * (`.worktrees/<name>`).
- */
-async function assignSessions(
-  roots: SessionInfo[],
-  worktrees: KnownWorktree[]
-): Promise<Map<string, string[]>> {
-  const owners = new Map<string, string[]>();
-  // OpenCode stores worktrees resolved, but a session's directory keeps the path it was opened
-  // with (`/var` and `/private/var` on macOS), so both sides are compared resolved.
-  const resolved = new Map<string, Promise<string>>();
-  const real = (directory: string) => {
-    let value = resolved.get(directory);
-    if (value === undefined) {
-      value = realpath(directory).catch(() => directory);
-      resolved.set(directory, value);
-    }
-    return value;
-  };
-  // Deepest first, so `.worktrees/a` wins over the checkout that contains it.
-  const targets = (
-    await Promise.all(
-      worktrees.map(async (worktree) => ({ worktree, real: await real(worktree.directory) }))
-    )
-  ).sort((a, b) => b.real.length - a.real.length);
-  for (const info of roots) {
-    const directory = await real(info.location.directory);
-    const owner = targets.find(
-      (target) =>
-        directory === target.real ||
-        directory.startsWith(target.real.endsWith(path.sep) ? target.real : target.real + path.sep)
-    )?.worktree;
-    if (owner === undefined) continue;
-    const list = owners.get(owner.directory) ?? [];
-    list.push(info.id);
-    owners.set(owner.directory, list);
-  }
-  return owners;
-}
-
-/** A tracked pull request is merged and none is still open or a draft. */
-function mergedPull(views: SessionRefView[]): boolean {
-  const pulls = views.flatMap((view) =>
-    trackedRefs(view)
-      .filter((ref) => ref.kind === 'pr')
-      .map((ref) => view.states[refKey(ref)]?.status)
-  );
-  return (
-    pulls.includes('merged') &&
-    pulls.every((status) => status !== undefined && status !== 'open' && status !== 'draft')
-  );
-}
-
-/** Head commits of the tracked pull requests that are merged, as the forge last reported them. */
-function mergedHeads(views: SessionRefView[]): string[] {
-  const heads = views.flatMap((view) =>
-    trackedRefs(view).flatMap((ref) => {
-      const state = ref.kind === 'pr' ? view.states[refKey(ref)] : undefined;
-      return state?.status === 'merged' && state.headSha !== undefined ? [state.headSha] : [];
-    })
-  );
-  return [...new Set(heads)];
-}
-
-/**
  * Whether a permission request or a question waits on the session, like the TUI's recheck before
  * it archives. A failed permission read counts as waiting.
  */
@@ -722,26 +720,15 @@ async function hasPending(
 }
 
 /**
- * Time of the user's last message, from `session.context`, the only message read a server plugin
- * has. It starts at the latest compaction, so a context with a compaction and no user message
- * after it says nothing about when the user last wrote. Null when unknown, which keeps the
- * session from counting as Done.
+ * Time of the user's last message; see {@link lastUserMessageAt}. Null when unknown, including
+ * a failed read, which keeps the session from counting as Done.
  */
-async function lastUserMessageAt(
+async function lastMessage(
   context: Plugin.Context,
   sessionID: string
 ): Promise<number | undefined | null> {
   try {
-    const messages = await context.session.context({ sessionID });
-    let last: number | undefined;
-    for (const message of messages) {
-      if (message.type !== 'user') continue;
-      if (last === undefined || message.time.created > last) last = message.time.created;
-    }
-    if (last === undefined && messages.some((message) => message.type === 'compaction')) {
-      return null;
-    }
-    return last;
+    return lastUserMessageAt(await context.session.context({ sessionID }));
   } catch {
     return null;
   }

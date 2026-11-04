@@ -254,21 +254,6 @@ export const SETTINGS: readonly SettingRow[] = [
     keywords: ['worktree', 'empty']
   },
   {
-    side: 'server',
-    key: 'keepLocalChanges',
-    group: 'Cleanup',
-    title: 'Keep worktrees with local changes',
-    description: (value) =>
-      value === 'tracked'
-        ? 'Keeps worktrees with edited tracked files. Ignored files such as .env are deleted.'
-        : value === 'uncommitted'
-          ? 'Keeps worktrees with edited or staged files. Ignored files such as .env are deleted.'
-          : 'Keeps worktrees with edited, staged or untracked files. Ignored files such as .env are deleted.',
-    values: ['any', 'uncommitted', 'tracked'],
-    labels: ['any local files', 'uncommitted changes', 'edited tracked files'],
-    keywords: ['worktree', 'dirty', 'untracked']
-  },
-  {
     side: 'action',
     key: 'cleanup.run',
     group: 'Cleanup',

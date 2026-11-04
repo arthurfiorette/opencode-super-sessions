@@ -12,7 +12,9 @@ import {
 } from 'solid-js';
 import { COMMAND_GROUP } from '../commands.js';
 import type { Options } from '../config.js';
+import { isUserPrompt } from '../host/events.js';
 import { BASE_MODE, CLASSIC_LIST, DIALOG_MODE, OVER_PROMPT, SESSION_LIST } from '../host/keymap.js';
+import { editorHasText, SLOTS } from '../host/tui.js';
 import type { Pins } from '../pins.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import { type BrowserModel, createBrowserModel } from './model.js';
@@ -160,10 +162,10 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
     context.keymap.dispatch(SESSION_LIST, CLASSIC_LIST);
   };
   /** Whether the focused prompt holds text, so the arrows belong to it. */
-  const typing = () => (context.renderer.currentFocusedEditor?.plainText.length ?? 0) > 0;
+  const typing = () => editorHasText(context);
 
   const unclaimOverlay = context.ui.slot({
-    append: 'app',
+    append: SLOTS.app,
     render: () => {
       // Lives with the slot, which the host keeps mounted, so it sees every route change.
       createEffect(
@@ -193,7 +195,7 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
     }
   });
   const unclaimBanner = context.ui.slot({
-    append: 'session.composer.top',
+    append: SLOTS.composerTop,
     render: (input) =>
       createMemo(() => {
         if (peeked() === undefined || peeked() !== input.sessionID) return undefined;
@@ -210,7 +212,7 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
 
   // Writing in the peeked session means the user is working there now, so esc interrupts again.
   const offInbox = context.data.on('session.inbox.enqueued', (event) => {
-    if (event.data.sessionID === peeked() && event.data.item.type === 'user') endPeek();
+    if (event.data.sessionID === peeked() && isUserPrompt(event)) endPeek();
   });
 
   // Wins over the host's `session.interrupt` and `prompt.autocomplete.hide` on esc, and over

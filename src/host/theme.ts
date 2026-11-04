@@ -7,6 +7,9 @@ import { RGBA, type SyntaxStyle } from '@opentui/core';
 // only by lazily loaded views, so `./tui` still loads without OpenTUI. Line numbers refer to the
 // OpenCode repository at v2.2.5.
 
+/** The dimmed backdrop behind host dialogs (packages/tui/src/ui/dialog.tsx:70). */
+export const DIALOG_BACKDROP = RGBA.fromInts(0, 0, 0, 150);
+
 /** The surface host dialogs draw on (packages/tui/src/ui/dialog.tsx:44). */
 export function dialogTheme(context: Plugin.Context): ResolvedTheme {
   return context.theme.surface('dialog');

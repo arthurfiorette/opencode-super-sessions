@@ -17,11 +17,15 @@ import {
 } from '../refs/ref.js';
 import { mergeLinks } from '../refs/store.js';
 import type { RepoInfo } from '../repo.js';
+import type { ForgeHosts } from './hosts.js';
 import type { SessionAccess } from './queue.js';
 import { type Runtime, warn } from './runtime.js';
 
-/** Why a candidate could not be checked: a forge error, or a forge with no enabled provider. */
-export type UnverifiedReason = ForgeErrorReason | 'disabled';
+/**
+ * Why a candidate could not be checked: a forge error, a forge with no enabled provider, or a
+ * host the forge is not asked about (see {@link ForgeHosts}).
+ */
+export type UnverifiedReason = ForgeErrorReason | 'disabled' | 'unknown-host';
 
 /** What the forge said about one candidate. */
 export type Resolution =
@@ -55,17 +59,20 @@ export function parseReference(
 
 /**
  * Checks candidates against the forge through the snapshot cache, in input order. Fresh cached
- * answers are reused; `force` refetches the rest.
+ * answers are reused; `force` refetches the rest. Candidates on a host the forge is not asked
+ * about resolve without a call.
  */
 export async function resolveCandidates(
   runtime: Runtime,
   candidates: RefCandidate[],
   options: { force?: boolean } = {}
 ): Promise<Resolution[]> {
+  const allowed = (candidate: RefCandidate) =>
+    runtime.hosts.allows(candidate.provider, candidate.host);
   const answers = new Map<string, Map<string, Snapshot>>();
   await Promise.all(
     [...runtime.providers].map(async ([id, provider]) => {
-      const own = candidates.filter((candidate) => candidate.provider === id);
+      const own = candidates.filter((candidate) => candidate.provider === id && allowed(candidate));
       if (own.length > 0) answers.set(id, await runtime.cache.ensure(provider, own, options));
     })
   );
@@ -75,9 +82,11 @@ export async function resolveCandidates(
       return { status: 'found', ref: snapshot.ref, state: snapshot.state };
     }
     if (snapshot?.reason === 'not-found') return { status: 'not-found', candidate };
-    const reason: UnverifiedReason = runtime.providers.has(candidate.provider)
-      ? (snapshot?.reason ?? 'failed')
-      : 'disabled';
+    const reason: UnverifiedReason = !runtime.providers.has(candidate.provider)
+      ? 'disabled'
+      : !allowed(candidate)
+        ? 'unknown-host'
+        : (snapshot?.reason ?? 'failed');
     if (candidate.kind === undefined) return { status: 'unknown', candidate, reason };
     return { status: 'unverified', ref: { ...candidate, kind: candidate.kind }, reason };
   });
@@ -120,17 +129,25 @@ export async function addLinks(
 
 /**
  * Detection path shared by the shell hook and the event subscriber: checks candidates, drops the
- * ones the forge does not know or that have no kind, and links the rest under `source`.
+ * ones the forge does not know or that have no kind, and links the rest under `source`. The
+ * candidates in `confirmed` are linked only when the forge found them.
  */
 export async function linkDetected(
   runtime: Runtime,
   session: SessionAccess,
   sessionID: string,
   candidates: RefCandidate[],
-  source: RefSource
+  source: RefSource,
+  confirmed: ReadonlySet<RefCandidate> = new Set()
 ): Promise<void> {
   if (candidates.length === 0) return;
-  const refs = usableRefs(await resolveCandidates(runtime, candidates));
+  const resolutions = await resolveCandidates(runtime, candidates);
+  const refs = usableRefs(
+    resolutions.filter(
+      (resolution, index) =>
+        resolution.status === 'found' || !confirmed.has(candidates[index] as RefCandidate)
+    )
+  );
   await addLinks(runtime, session, sessionID, linksOf(refs, source));
 }
 
@@ -177,7 +194,9 @@ export function reasonText(reason: UnverifiedReason): string {
     'rate-limited': 'the forge rate limit is exhausted',
     'not-found': 'it does not exist',
     failed: 'the request failed',
-    disabled: 'this forge is not enabled'
+    disabled: 'this forge is not enabled',
+    'unknown-host':
+      'its host is not the public forge, a git remote of a session or a configured gitlab.hosts entry'
   };
   return texts[reason];
 }

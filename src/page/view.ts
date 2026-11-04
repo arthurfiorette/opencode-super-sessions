@@ -8,7 +8,6 @@ import {
   MouseButton,
   type MouseEvent,
   type Renderable,
-  RGBA,
   SliderRenderable,
   TextAttributes
 } from '@opentui/core';
@@ -27,10 +26,12 @@ import {
 import { openUrl, refUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
 import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
-import { regenerateTitle, setArchived } from '../host/session-api.js';
-import { dialogTheme, sessionBackground } from '../host/theme.js';
+import { rpcError } from '../host/rpc.js';
+import { isUnread, regenerateTitle, setArchived } from '../host/session-api.js';
+import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.js';
 import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
+import { excludeFromAutoArchive } from '../settings/maintenance.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import { ICONS, titleGradient } from './icons.js';
 import { guardActions, type PageProps, type PeekBannerProps, routeKey } from './page.js';
@@ -68,8 +69,6 @@ import {
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 /** Keymap mode pushed while the browser is open. */
 const MODE = 'super-sessions';
-// The host dialog's backdrop color.
-const BACKDROP = RGBA.fromInts(0, 0, 0, 150);
 const PREVIEW_MIN_COLUMNS = 120;
 const REFRESH_INTERVAL = 60_000;
 const SCOPE_DELAY = 200;
@@ -351,6 +350,7 @@ export default function SessionBrowser(props: PageProps) {
     }
     controller.archived(session.id, archived, Date.now());
     if (archived && settings.closeTabOnArchive()) context.ui.tabs.close(session.id);
+    if (!archived) void excludeFromAutoArchive(context, [session.id]);
   };
   /** Renames the selected session to the title the user enters. */
   const rename = async () => {
@@ -806,11 +806,7 @@ export default function SessionBrowser(props: PageProps) {
       const text = cli.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯';
       return { text, fg: runningColor(theme()) };
     }
-    const info = live(session);
-    const unread =
-      info.time.idle !== undefined &&
-      (info.time.viewed === undefined || info.time.idle > info.time.viewed);
-    return unread ? { text: '●', fg: theme().text.feedback.info.base } : undefined;
+    return isUnread(live(session)) ? { text: '●', fg: theme().text.feedback.info.base } : undefined;
   };
 
   // Zebra rows: every second session of a group, all of its lines, on the session view's
@@ -893,7 +889,18 @@ export default function SessionBrowser(props: PageProps) {
           const current = line();
           return current.kind === 'blank' || current.kind === 'header' ? initial : current.session;
         };
-        const row = createMemo(() => rowModel(session()));
+        // A failed memo reads as undefined, and the row's render effects would throw on it again
+        // after the crash fallback, outside any boundary. So the first model is read here, where
+        // a throw stops this line before any node exists, and a later failure keeps the last one.
+        let last = rowModel(initial);
+        const row = createMemo(() => {
+          try {
+            last = rowModel(session());
+          } catch (error) {
+            props.fail(error);
+          }
+          return last;
+        });
         const events = {
           hover: () => hover(session()),
           leave,
@@ -1407,7 +1414,7 @@ export default function SessionBrowser(props: PageProps) {
     paddingBottom: 1,
     paddingLeft: 2,
     paddingRight: 2,
-    backgroundColor: BACKDROP,
+    backgroundColor: DIALOG_BACKDROP,
     onMouseDown: () => {
       dismiss = !!context.renderer.getSelection();
     },
@@ -1512,14 +1519,10 @@ function attached(root: Renderable, node: Renderable): boolean {
 
 /** Turns an RPC `link` failure into a short message. */
 function linkError(error: unknown): string {
-  // The host's RPC error carries the handler's `type` and `data` (RpcError in
-  // packages/protocol/src/errors.ts).
-  const failure = typeof error === 'object' && error !== null ? error : {};
-  const type = 'type' in failure ? failure.type : undefined;
+  const { type, data } = rpcError(error);
   if (type === 'invalid_reference') return 'Not a pull request or issue reference.';
   if (type === 'not_found') return 'Pull request or issue not found.';
   if (type === 'unavailable') {
-    const data = 'data' in failure ? failure.data : undefined;
     const provider =
       typeof data === 'object' && data !== null && 'provider' in data ? data.provider : undefined;
     const forge = provider === 'gitlab' ? 'GitLab' : provider === 'github' ? 'GitHub' : 'The forge';

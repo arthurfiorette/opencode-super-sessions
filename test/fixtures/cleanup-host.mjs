@@ -17,6 +17,7 @@ const fakeGh = fileURLToPath(new URL('./fake-gh.mjs', import.meta.url));
 // Swap only the gh executable at the spawn boundary; git runs for real.
 const processModule = await import('node:child_process');
 const { default: defaultExport, ...namedExports } = processModule;
+/** `child_process.spawn` that runs fake-gh.mjs for `gh-fixture` and the real command otherwise. */
 function spawn(command, args, options) {
   if (command !== 'gh-fixture') return processModule.spawn(command, args, options);
   return processModule.spawn(process.execPath, [fakeGh, ...args], options);
@@ -110,12 +111,29 @@ try {
 
   const plan = await rpc['cleanup.plan']({}, { location });
   assert.equal(plan.confirmed, false);
+  /** The dry run's decision for `worktree`. */
   const decision = (worktree) => plan.worktrees.find((entry) => entry.directory === worktree);
   assert.equal(decision(merged)?.action, 'remove', JSON.stringify(plan.worktrees));
   assert.equal(decision(merged)?.rule, 'merged');
   assert.equal(decision(dirty)?.action, 'keep', JSON.stringify(plan.worktrees));
-  assert.equal(decision(dirty)?.reason, 'has edited tracked files');
+  assert.equal(decision(dirty)?.reason, 'has local changes');
   assert.ok(existsSync(merged), 'The dry run removes nothing.');
+
+  // A sweep that finds a removal before the user ever confirmed asks instead of removing. A
+  // deleted session starts one.
+  const asked = new Promise((resolve) => {
+    const off = rpc.events.on('cleanup.confirm', (event) => {
+      off();
+      resolve(event.data.worktrees);
+    });
+  });
+  const throwaway = await host.sessions.create({ location });
+  await host.sessions.remove({ sessionID: throwaway.id });
+  assert.deepEqual(
+    (await asked).map((entry) => entry.directory),
+    [merged]
+  );
+  assert.ok(existsSync(merged), 'A sweep removes nothing before the first confirmation.');
 
   // Asked for both: the server checks again and removes only the one that qualifies.
   const result = await rpc['cleanup.run']({ directories: [merged, dirty] }, { location });

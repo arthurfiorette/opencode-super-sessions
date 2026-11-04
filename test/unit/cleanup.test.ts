@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { type TestContext, test } from 'node:test';
+import { type Ref, type RefLink, type RefStatus, refKey } from '../../src/refs/ref.js';
+import type { SessionRefView } from '../../src/rpc.js';
 import { type ArchiveFacts, isArchiveDue } from '../../src/server/auto-archive.js';
 import {
+  assignSessions,
   type CleanupSettings,
   decideWorktree,
+  mergedPull,
   parseStatus,
   readPullHead,
+  readWorktreeGit,
   type WorktreeFacts,
   type WorktreeSession
 } from '../../src/server/cleanup.js';
@@ -22,8 +27,7 @@ const OFF: CleanupSettings = {
   cleanupMerged: false,
   cleanupInactiveDays: null,
   cleanupDoneDays: null,
-  cleanupUnchanged: false,
-  keepLocalChanges: 'any'
+  cleanupUnchanged: false
 };
 
 /** A settled session: Done four days ago, last touched ten days ago, nothing holding it. */
@@ -46,12 +50,15 @@ const worktree = (patch: Partial<WorktreeFacts> = {}): WorktreeFacts => ({
   root: false,
   sessions: [session()],
   deleted: false,
-  status: parseStatus(''),
+  changed: false,
   ahead: 0,
   merged: true,
   contained: true,
   ...patch
 });
+
+/** Facts of a detached HEAD with one commit the default branch lacks and no ref holds. */
+const detached: Partial<WorktreeFacts> = { ahead: 1, contained: false, referenced: false };
 
 test('cleanup removes a worktree only under an enabled rule and never against a keep reason', () => {
   const cases: Array<[string, Partial<CleanupSettings>, Partial<WorktreeFacts>, string]> = [
@@ -96,7 +103,7 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
       'remove:merged'
     ],
     ['main checkout', { cleanupMerged: true, cleanupUnchanged: true }, { root: true }, 'keep'],
-    ['git status unreadable', { cleanupMerged: true }, { status: undefined }, 'keep'],
+    ['git status unreadable', { cleanupMerged: true }, { changed: undefined }, 'keep'],
     [
       'running session',
       { cleanupMerged: true },
@@ -162,8 +169,55 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
     ],
     // Unchanged: no commits beyond the default branch.
     ['unchanged', { cleanupUnchanged: true }, {}, 'remove:unchanged'],
+    // A worktree created moments ago has no commits and no session yet.
+    ['unchanged, no session uses it', { cleanupUnchanged: true }, { sessions: [] }, 'keep'],
     ['one commit ahead', { cleanupUnchanged: true }, { ahead: 1 }, 'keep'],
-    ['ahead unknown', { cleanupUnchanged: true }, { ahead: undefined }, 'keep']
+    ['ahead unknown', { cleanupUnchanged: true }, { ahead: undefined }, 'keep'],
+    // OpenCode creates worktrees on a detached HEAD: a commit there that no ref holds is lost
+    // with the worktree, whichever rule matches.
+    [
+      'deleted, commits only HEAD holds',
+      { cleanupDeleted: true },
+      { sessions: [], deleted: true, ...detached },
+      'keep:has commits no branch or tag contains'
+    ],
+    [
+      'Done, commits only HEAD holds',
+      { cleanupDoneDays: 0 },
+      { merged: false, ...detached },
+      'keep:has commits no branch or tag contains'
+    ],
+    [
+      'inactive, commits only HEAD holds',
+      { cleanupInactiveDays: 7 },
+      { sessions: [session({ done: false })], ...detached },
+      'keep:has commits no branch or tag contains'
+    ],
+    [
+      'inactive, commits a branch holds',
+      { cleanupInactiveDays: 7 },
+      { sessions: [session({ done: false })], ...detached, referenced: true },
+      'remove:inactive'
+    ],
+    [
+      'inactive, refs unreadable',
+      { cleanupInactiveDays: 7 },
+      { sessions: [session({ done: false })], ...detached, referenced: undefined },
+      'keep'
+    ],
+    [
+      'inactive, default branch unknown and refs unreadable',
+      { cleanupInactiveDays: 7 },
+      { sessions: [session({ done: false })], ahead: undefined, contained: undefined },
+      'keep'
+    ],
+    // The merged pull request's head has every commit HEAD has, so the forge keeps them.
+    [
+      'merged by squash, commits only HEAD and the pull request hold',
+      { cleanupMerged: true },
+      { ...detached, head: 'included' },
+      'remove:merged'
+    ]
   ];
   for (const [name, settings, facts, expected] of cases) {
     const decision = decideWorktree(worktree(facts), { ...OFF, ...settings }, NOW);
@@ -177,7 +231,114 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
   }
 });
 
-test('a squash-merged branch counts as merged only while HEAD has nothing beyond the PR head', async (t) => {
+test('a session belongs to the deepest worktree that contains its resolved directory', async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'super-sessions-owners-')));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const main = join(root, 'repo');
+  const nested = join(main, '.worktrees', 'a');
+  const sibling = join(main, '.worktrees', 'ab');
+  await mkdir(join(nested, 'src'), { recursive: true });
+  await mkdir(sibling, { recursive: true });
+  // A session opened through a symlink, as macOS reaches /private/var through /var.
+  const alias = join(root, 'alias');
+  await symlink(main, alias);
+
+  const owners = await assignSessions(
+    [
+      { id: 'in-main', directory: main },
+      { id: 'in-a', directory: join(nested, 'src') },
+      { id: 'in-ab', directory: sibling },
+      { id: 'through-alias', directory: join(alias, '.worktrees', 'a') },
+      { id: 'elsewhere', directory: root }
+    ],
+    // `ab` is a plain directory of the main checkout, not a worktree, so `a` must not claim it.
+    [main, nested]
+  );
+  assert.deepEqual(Object.fromEntries(owners), {
+    [main]: ['in-main', 'in-ab'],
+    [nested]: ['in-a', 'through-alias']
+  });
+});
+
+test('pull requests count as merged when one merged and the rest are merged or closed', () => {
+  /** Pull request `number` of acme/app. */
+  const pr = (number: number): Ref => ({
+    provider: 'github',
+    host: 'github.com',
+    repo: 'acme/app',
+    kind: 'pr',
+    number
+  });
+  /** A session view tracking PRs by number with these states; `undefined` leaves it unknown. */
+  const view = (
+    pulls: Array<[number, RefStatus | undefined]>,
+    source: RefLink['source'] = 'agent'
+  ): SessionRefView => ({
+    links: pulls.map(([number]) => ({ ref: pr(number), source, linkedAt: number })),
+    branchRefs: [],
+    states: Object.fromEntries(
+      pulls.flatMap(([number, status]) =>
+        status === undefined ? [] : [[refKey(pr(number)), { status, title: '', url: '' }]]
+      )
+    )
+  });
+  const cases: Array<[string, SessionRefView[], boolean]> = [
+    ['merged', [view([[1, 'merged']])], true],
+    [
+      'merged and closed',
+      [
+        view([
+          [1, 'merged'],
+          [2, 'closed']
+        ])
+      ],
+      true
+    ],
+    [
+      'merged and open',
+      [
+        view([
+          [1, 'merged'],
+          [2, 'open']
+        ])
+      ],
+      false
+    ],
+    [
+      'merged and draft',
+      [
+        view([
+          [1, 'merged'],
+          [2, 'draft']
+        ])
+      ],
+      false
+    ],
+    [
+      'merged and unknown',
+      [
+        view([
+          [1, 'merged'],
+          [2, undefined]
+        ])
+      ],
+      false
+    ],
+    ['closed only', [view([[1, 'closed']])], false],
+    [
+      'open in another session of the worktree',
+      [view([[1, 'merged']]), view([[2, 'open']])],
+      false
+    ],
+    // Mentions are not the session's work, so an open one does not hold the worktree.
+    ['merged and an open mention', [view([[1, 'merged']]), view([[2, 'open']], 'mention')], true],
+    ['no pull request', [view([])], false]
+  ];
+  for (const [name, views, expected] of cases) assert.equal(mergedPull(views), expected, name);
+});
+
+/** A throwaway git repository on `main`, removed after the test. */
+async function tempRepo(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'super-sessions-cleanup-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   /** Runs git with identity, hooks and signing pinned, and returns its trimmed output. */
@@ -205,6 +366,23 @@ test('a squash-merged branch counts as merged only while HEAD has nothing beyond
     return git('rev-parse', 'HEAD');
   };
   git('init', '-q', '-b', 'main');
+  return { directory, git, commit };
+}
+
+test('a commit on a detached HEAD counts as unreferenced until a branch holds it', async (t) => {
+  const { directory, git, commit } = await tempRepo(t);
+  commit('init');
+  git('checkout', '-q', '--detach');
+  commit('work on the detached HEAD');
+  const facts = await readWorktreeGit(directory, 'refs/heads/main');
+  assert.equal(facts.ahead, 1);
+  assert.equal(facts.referenced, false);
+  git('branch', 'keep-it');
+  assert.equal((await readWorktreeGit(directory, 'refs/heads/main')).referenced, true);
+});
+
+test('a squash-merged branch counts as merged only while HEAD has nothing beyond the PR head', async (t) => {
+  const { directory, git, commit } = await tempRepo(t);
   commit('init');
   const first = commit('first PR commit');
   const head = commit('second PR commit');
@@ -223,38 +401,26 @@ test('a squash-merged branch counts as merged only while HEAD has nothing beyond
   assert.equal(await readPullHead(directory, []), 'missing');
 });
 
-test('the keep mode decides which local changes, read from git status, keep a worktree', () => {
+test('any local change read from git status keeps a worktree, since git refuses to remove it', () => {
   // Real `git status --porcelain=v1` lines; `!!` (ignored) only appears with --ignored.
-  const outputs = {
-    clean: '',
-    ignored: '!! .env\n',
-    untracked: '?? notes.md\n',
-    staged: 'A  src/new.ts\n',
-    edited: ' M src/app.ts\n',
-    deleted: ' D src/old.ts\n',
-    renamed: 'R  a.ts -> b.ts\n',
-    conflict: 'UU src/app.ts\n'
-  };
-  const kept: Record<CleanupSettings['keepLocalChanges'], Array<keyof typeof outputs>> = {
-    any: ['untracked', 'staged', 'edited', 'deleted', 'renamed', 'conflict'],
-    uncommitted: ['staged', 'edited', 'deleted', 'renamed', 'conflict'],
-    tracked: ['edited', 'deleted', 'renamed', 'conflict']
-  };
-  for (const [mode, keeps] of Object.entries(kept) as Array<
-    [CleanupSettings['keepLocalChanges'], Array<keyof typeof outputs>]
-  >) {
-    for (const [name, output] of Object.entries(outputs) as Array<[keyof typeof outputs, string]>) {
-      const decision = decideWorktree(
-        worktree({ status: parseStatus(output) }),
-        { ...OFF, cleanupMerged: true, keepLocalChanges: mode },
-        NOW
-      );
-      assert.equal(
-        decision.action,
-        keeps.includes(name) ? 'keep' : 'remove',
-        `${mode} with ${name}`
-      );
-    }
+  const outputs: Array<[string, string, 'keep' | 'remove']> = [
+    ['clean', '', 'remove'],
+    ['ignored', '!! .env\n', 'remove'],
+    ['untracked', '?? notes.md\n', 'keep'],
+    ['staged', 'A  src/new.ts\n', 'keep'],
+    ['edited', ' M src/app.ts\n', 'keep'],
+    ['deleted', ' D src/old.ts\n', 'keep'],
+    ['renamed', 'R  a.ts -> b.ts\n', 'keep'],
+    ['conflict', 'UU src/app.ts\n', 'keep']
+  ];
+  for (const [name, output, expected] of outputs) {
+    const decision = decideWorktree(
+      worktree({ changed: parseStatus(output) }),
+      { ...OFF, cleanupMerged: true },
+      NOW
+    );
+    assert.equal(decision.action, expected, name);
+    if (expected === 'keep') assert.equal(decision.reason, 'has local changes', name);
   }
 });
 

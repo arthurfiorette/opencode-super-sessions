@@ -21,6 +21,7 @@ import {
   isHandledEvent,
   type LifecycleEvent
 } from './events.js';
+import { createForgeHosts, type ForgeHosts } from './hosts.js';
 import { createWriteQueue, type WriteQueue } from './queue.js';
 import {
   applySettings,
@@ -28,6 +29,7 @@ import {
   type SettingsStore,
   serverDefaults
 } from './settings.js';
+import type { Sweeper } from './sweep.js';
 
 /** State shared by every Location of the daemon. */
 export interface Runtime {
@@ -37,7 +39,10 @@ export interface Runtime {
   readonly definitions: ForgeDefinition[];
   readonly providers: ReadonlyMap<ProviderId, ForgeProvider>;
   readonly cache: SnapshotCache;
+  /** Resolves session checkouts, and adds each recognized remote's host to {@link hosts}. */
   readonly repos: RepoResolver;
+  /** The hosts forges are asked about. */
+  readonly hosts: ForgeHosts;
   readonly writes: WriteQueue;
   readonly branches: BranchCache;
   readonly events: EventHub;
@@ -56,6 +61,8 @@ export interface Runtime {
    */
   onMerged?: () => void;
   onLifecycle?: (event: LifecycleEvent, context: EventContext) => void;
+  /** The process-wide auto-archive and cleanup scheduler; see `getSweeper`. */
+  sweeper?: Sweeper;
 }
 
 /** Handles one subscribed event. Set by the server entry, which owns the detection logic. */
@@ -151,6 +158,15 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
     if (next.providers !== previous.providers) forges = createForges(options);
   });
   const cache = watchMerges(createSnapshotCache(), () => runtime.onMerged?.());
+  const hosts = createForgeHosts(base);
+  const repos: RepoResolver = {
+    async resolve(directory) {
+      const info = await forges.repos.resolve(directory);
+      if (info.repo !== undefined) hosts.learn(info.repo);
+      if (info.headRepo !== undefined) hosts.learn(info.headRepo);
+      return info;
+    }
+  };
   let bodyIndex: Promise<BodyIndex> | undefined;
 
   const runtime: Runtime = {
@@ -163,12 +179,11 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
     get providers() {
       return forges.providers;
     },
-    get repos() {
-      return forges.repos;
-    },
+    repos,
+    hosts,
     settings,
     cache,
-    writes: createWriteQueue(),
+    writes: createWriteQueue(warn),
     branches: createBranchCache({
       isOpen(ref) {
         const snapshot = cache.get(refKey(ref));

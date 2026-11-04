@@ -31,6 +31,11 @@ export function userPrompt(event: Event<'session.inbox.enqueued'>): IndexedText 
   };
 }
 
+/** Whether an inbox item is the user's own prompt, the same test {@link userPrompt} makes. */
+export function isUserPrompt(event: Event<'session.inbox.enqueued'>): boolean {
+  return event.data.item.type === 'user';
+}
+
 /**
  * Finished assistant text in `session.text.ended` (packages/schema/src/session-event.ts:420).
  * `ordinal` counts only the text parts of the assistant message, which is how
@@ -85,6 +90,24 @@ export function storedTexts(sessionID: string, messages: readonly SessionMessage
     }
   }
   return texts;
+}
+
+/**
+ * Time of the user's last message in `session.context`, the only message read a server plugin
+ * has. The context starts at the latest compaction (packages/core/src/session/history.ts:184), so
+ * a compaction with no user message after it says nothing about when the user last wrote: null
+ * then, which is unknown. Undefined when the user never wrote.
+ */
+export function lastUserMessageAt(
+  messages: readonly SessionMessageInfo[]
+): number | null | undefined {
+  let last: number | undefined;
+  for (const message of messages) {
+    if (message.type !== 'user') continue;
+    if (last === undefined || message.time.created > last) last = message.time.created;
+  }
+  if (last === undefined && messages.some((message) => message.type === 'compaction')) return null;
+  return last;
 }
 
 /** Index key of the `ordinal`-th text part of an assistant message. */

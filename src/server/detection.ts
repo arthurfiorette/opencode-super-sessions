@@ -1,6 +1,7 @@
 import type { Plugin } from '@opencode/plugin';
 import { assistantText, shellRun, userPrompt } from '../host/events.js';
 import { shellCall } from '../host/tool-hook.js';
+import type { RepoRef } from '../providers/provider.js';
 import { detectCreated, detectInPrompt, detectInText, isCloseCommand } from '../refs/detect.js';
 import type { EventContext, HandledEvent } from './events.js';
 import { linkDetected, resolveRepo } from './links.js';
@@ -68,14 +69,25 @@ export async function handleEvent(
     if (!runtime.options.detect.prompts || prompt === undefined) return;
     const info = await context.session.get({ sessionID: prompt.sessionID });
     const base = (await resolveRepo(runtime, info.location.directory)).repo;
-    const candidates = detectInPrompt(runtime.definitions, prompt.text, base);
-    await linkDetected(runtime, context.session, prompt.sessionID, candidates, 'prompt');
+    await linkPrompt(runtime, context.session, prompt.sessionID, prompt.text, base);
     return;
   }
   if (!runtime.options.detect.mentions) return;
   const text = assistantText(event);
   const candidates = detectInText(runtime.definitions, text.text);
   await linkDetected(runtime, context.session, text.sessionID, candidates, 'mention');
+}
+
+/** Links the refs in a user prompt, resolving bare numbers against `base`, the session's repository. */
+export async function linkPrompt(
+  runtime: Runtime,
+  session: SessionAccess,
+  sessionID: string,
+  text: string,
+  base: RepoRef | undefined
+): Promise<void> {
+  const { candidates, bare } = detectInPrompt(runtime.definitions, text, base);
+  await linkDetected(runtime, session, sessionID, candidates, 'prompt', bare);
 }
 
 /** Keeps the message index current, under the keys the backfill derives from stored messages. */
