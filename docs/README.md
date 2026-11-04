@@ -31,13 +31,13 @@ SDK native parser addons may require Python and a C/C++ build toolchain. Their b
 
 ## Tests
 
-| Layer       | Files                       | Runner       | Covers                                                                                                                                                                                                                                           |
-| ----------- | --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Unit        | `test/unit`                 | `tsx --test` | Detection, ref parsing, Done, caches, `gh` and `glab` output from captured fixtures (`test/fixtures/github`, `test/fixtures/gitlab`), the forge host list, the write queue, cleanup decisions, the URL opener's scheme filter, the version guard |
-| Integration | `test/integration`          | `tsx --test` | The built plugin in an `@opencode/sdk` host run from `test/fixtures` in a child process with a throwaway home: RPC per Location, links, detection against `test/fixtures/fake-gh.mjs`, and cleanup on a real temporary git repository            |
-| Contract    | `test/contract`             | `tsx --test` | The host assumptions listed under [Compatibility](#compatibility), against a real host and, in `tui.test.ts`, the real TUI                                                                                                                       |
-| Native TUI  | `test/tui`                  | `bun test`   | The compiled browser, settings dialog and sidebar mounted with OpenTUI's `testRender`, including the cold lazy load                                                                                                                              |
-| Package     | `scripts/check-package.mjs` | Node         | `npm pack`, an install into a temporary directory, the `.`, `./tui` and `./rpc` exports, and `Host.resolve` finding all three                                                                                                                    |
+| Layer       | Files                       | Runner       | Covers                                                                                                                                                                                                                                                                         |
+| ----------- | --------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unit        | `test/unit`                 | `tsx --test` | Detection, ref parsing, Done, caches, `gh` and `glab` output from captured fixtures (`test/fixtures/github`, `test/fixtures/gitlab`), the forge host list, the write queue, cleanup decisions, the URL opener's scheme filter, the version guard                               |
+| Integration | `test/integration`          | `tsx --test` | The built plugin in an `@opencode/sdk` host run from `test/fixtures` in a child process with a throwaway home: RPC per Location, links, detection against `test/fixtures/fake-gh.mjs`, the history scan of an imported session, and cleanup on a real temporary git repository |
+| Contract    | `test/contract`             | `tsx --test` | The host assumptions listed under [Compatibility](#compatibility), against a real host and, in `tui.test.ts`, the real TUI                                                                                                                                                     |
+| Native TUI  | `test/tui`                  | `bun test`   | The compiled browser, settings dialog and sidebar mounted with OpenTUI's `testRender`, including the cold lazy load                                                                                                                                                            |
+| Package     | `scripts/check-package.mjs` | Node         | `npm pack`, an install into a temporary directory, the `.`, `./tui` and `./rpc` exports, and `Host.resolve` finding all three                                                                                                                                                  |
 
 The contract tests in `test/contract/server.test.ts` run against an in-process host from `@opencode/sdk` with a scripted OpenAI-compatible model on loopback (`test/contract/harness.ts`), so the real agent loop, tool registry and title agent run without a model provider or network. The harness replaces the environment before the SDK loads, so nothing touches the developer's OpenCode config, credentials or sessions.
 
@@ -55,7 +55,7 @@ Each Location registers its own tools, shell hook, `context` hook for the agent 
 
 ### Metadata and the write queue
 
-Links live in session metadata under `super-sessions` (`src/refs/ref.ts`), as `{ v: 1, links, dismissed, done?, doneAt? }`. `done` is the user's Done mark from `done.set`, and `doneAt` is when it was set to `true`, which auto-archive counts days from. The server plugin's `session.update({ metadata })` replaces the whole object, so every write goes through `src/server/queue.ts`: a per-session promise chain that reads the session, applies a pure mutation from `src/refs/store.ts` and writes only when it changed. Tools, the shell hook, events and RPC all share it, across Locations. A stored value that does not parse, such as one a newer plugin version wrote, is never replaced: the write rejects and the daemon log names the session.
+Links live in session metadata under `super-sessions` (`src/refs/ref.ts`), as `{ v: 1, links, dismissed, done?, doneAt?, scanned? }`. `done` is the user's Done mark from `done.set`, and `doneAt` is when it was set to `true`, which auto-archive counts days from. `scanned` is `{ scannedAt, lastMessageID? }`, written once when the [history scan](#history-scan) finished the session. The server plugin's `session.update({ metadata })` replaces the whole object, so every write goes through `src/server/queue.ts`: a per-session promise chain that reads the session, applies a pure mutation from `src/refs/store.ts` and writes only when it changed. Tools, the shell hook, events and RPC all share it, across Locations. A stored value that does not parse, such as one a newer plugin version wrote, is never replaced: the write rejects and the daemon log names the session.
 
 `mergeLinks` dedupes by `refKey`, keeps the earliest `linkedAt`, and only moves a link up the source ladder (`agent`, `created` and `manual` above `prompt`, above `closes`, above `mention`). Only `agent` and `manual` links lift a dismissal. `dismissLink` also drops the `closes` links derived from a dismissed pull request.
 
@@ -75,6 +75,23 @@ Create detection (`src/refs/detect.ts`) is ported from t3code's `PullRequestSync
 A URL in a prompt, a reply or command output can name any host with a `github` or `gitlab` label, and the forge CLI would send the user's login there. So forges are asked only about the hosts in `runtime.hosts` (`src/server/hosts.ts`): each forge's `defaultHost`, the `gitlab.hosts` option, and the host of every remote the repository resolver recognized in a session's directory. A candidate on another host resolves without a call as unverified, with the reason `unknown-host`; its link is kept, and its state stays unknown.
 
 `session.deleted` and `session.execution.succeeded`, `failed` and `interrupted` also go to the sweeper (see [Auto-archive and cleanup](#auto-archive-and-cleanup)).
+
+### History scan
+
+Live detection misses sessions from before the plugin and messages written while it was not running. The server plugin's only message read is `session.context`, which starts at the latest compaction, so the TUI reads the history with `client.message.list` and the server runs detection on it.
+
+`src/history-scan.ts` holds one queue per TUI and scans one session at a time. Nothing is read on startup or on the first open of the browser. A session is queued when:
+
+- the preview loads it (`onLoaded` in `src/page/preview.ts`, wired in `src/page/view.ts`), starting from the page the preview already holds;
+- it is peeked (`show` in `src/page/page.ts`) or opened from the browser (`open` in `src/page/view.ts`);
+- the route moves to it from anywhere, such as the quick switch keys or tabs (the route watcher in `src/page/page.ts`). The watcher is deferred, so the session the TUI starts on waits for a move;
+- "Scan all sessions now" lists every root session in the browser's current scope, archived ones included (`scopeSessions` in `src/page/page.ts`), after a confirmation.
+
+Opened and peeked sessions go first, then the previewed one, then "Scan all". A new preview replaces a previewed session that has not started, and closing the browser cancels previewed scans at their next page; opening or peeking closes the browser and asks for that session again right after, which keeps its scan. A session whose synced metadata has the marker, or that this TUI already scanned or failed to scan, is skipped without a request.
+
+`scanSession` pages `message.list` newest first, 100 messages per page with 100 ms between pages and 250 ms between sessions, and turns each page into items with `storedHistory` (`src/host/events.ts`): user prompts and assistant text under the keys live indexing uses, and finished shell commands from agent shell calls and `!` messages. Shell output is cut to its lines holding `://`, since create detection takes only URLs alone on a line, and a command without such a line is dropped. Text fields are cut to 64 KiB. Items go to `history.scan` in chunks of at most 50 items and 256 KiB; the last chunk sets `done` with the newest message id.
+
+`scanHistory` (`src/server/history.ts`) reads the session first and answers `skipped` when the marker is there, which stops the TUI. Otherwise it adds prompts and text to the message index, runs `detectInPrompt` (bare numbers against the session's repository, kept only when the forge finds them), `detectInText` and `detectCreated` under `detect.prompts` and `detect.mentions`, resolves the whole chunk in one forge lookup and merges the links and, on the last chunk, the marker in one queued write. History links carry their message's time as `linkedAt`, except for refs already linked, which keep theirs so a scan of a session live detection covered writes nothing. Dismissed refs stay dismissed.
 
 ### Caches
 
@@ -157,6 +174,7 @@ The dialog rows are in `src/settings/definitions.ts`. TUI settings live in `cont
 | `done.set`                                           | The user's Done mark, or `null` to follow the refs again  |
 | `settings.get`, `settings.set`                       | Server settings                                           |
 | `presence`                                           | A TUI's pins and open sessions                            |
+| `history.scan`                                       | Detection and indexing over a chunk of stored messages    |
 | `archive.claim`, `archive.report`, `archive.exclude` | Auto-archive hand-off, and sessions the user restored     |
 | `cleanup.plan`, `cleanup.run`                        | Dry run and confirmed removal                             |
 
@@ -198,7 +216,7 @@ To add a forge:
 The `@opencode/*` pins only fix the types and the tests. At runtime the plugin runs inside whatever `opencode` the user installed, so everything it assumes about the host lives in `src/host/*`, one file per area, each linking the host source it mirrors:
 
 - `keymap.ts`: command ids the takeover reuses, the `dialog.select.*` ids the settings dialog registers, layer priorities, keymap modes.
-- `events.ts`: where prompt text, assistant text and `!` commands sit in events, the index keys shared with the backfill, and the last user message in a `session.context` that starts at the latest compaction.
+- `events.ts`: where prompt text, assistant text and `!` commands sit in events and in stored messages (`storedHistory` for the history scan), the index keys shared with the backfill, and the last user message in a `session.context` that starts at the latest compaction.
 - `tool-hook.ts`: the shell tool's name and its `execute.after` payload.
 - `session-api.ts`: archiving and title regeneration over HTTP, the project scope of the list, the running test, the unread rule.
 - `worktree.ts`: worktree listing and removal without force.
@@ -219,7 +237,7 @@ Each assumption and what checks it:
 - The shell tool name and the `execute.after` payload: a contract test with a real agent shell call.
 - `session.update({ metadata })` replaces the object, and `session.get` returns metadata and location: a contract test.
 - Archive and restore over HTTP, and an empty title regenerating it: contract tests.
-- `message.list` shapes, paging and the `type` filter: a contract test.
+- `message.list` shapes, paging and the `type` filter: a contract test. The same test and the `!` command test read the prompt, the agent's shell call with its output, the answer and a `!` command through `storedHistory`. That a background shell call records `metadata.status: 'running'` is not checked against a host.
 - `session.list` filters and cursors: a contract test.
 - The worktree list marks the main checkout, and removal without force refuses local files: a contract test.
 - Every agent request carries the plugin's tracking instruction once: a contract test.

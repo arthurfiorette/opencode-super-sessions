@@ -1,3 +1,4 @@
+import type { SessionInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import type { KeymapCommand } from '@opencode/plugin/tui/context';
 import { createComponent, createMemo, type JSX, lazy } from 'solid-js';
@@ -25,6 +26,15 @@ export interface SettingsDialogProps {
   promptSuffix(): void;
   /** Dry run and confirmation, then reopens the dialog on the action row. */
   runCleanup(): void;
+  /** Confirmation, then scans every session in the scope and reopens the dialog on its row. */
+  scanAll(): void;
+}
+
+/** What "Scan all sessions now" needs from the browser and the history scanner. */
+export interface ScanAll {
+  /** Every session in the browser's current scope. */
+  sessions(): Promise<{ scope: 'project' | 'all'; sessions: SessionInfo[] }>;
+  scan(sessions: readonly SessionInfo[]): Promise<void>;
 }
 
 /** The settings dialog, its stores and the TUI half of auto-archive and cleanup. */
@@ -47,7 +57,8 @@ const View = lazy(() => import('./dialog-view.js'));
 export function installSettings(
   context: Plugin.Context,
   options: Options,
-  pins: Pins
+  pins: Pins,
+  history: ScanAll
 ): SettingsInstall {
   const tui = createTuiSettings(context, options);
   const server = createServerSettings(context);
@@ -65,9 +76,39 @@ export function installSettings(
         server,
         focus,
         promptSuffix: () => void promptSuffix(),
-        runCleanup: () => void maintenance.runCleanup().finally(() => open('cleanup.run'))
+        runCleanup: () => void maintenance.runCleanup().finally(() => open('cleanup.run')),
+        scanAll: () => void scanAll().finally(() => open('history.scan'))
       })
     );
+  };
+
+  /** Lists the scope's sessions, asks once, then scans them in the background. */
+  const scanAll = async () => {
+    const toast = (message: string, variant: 'info' | 'error' = 'info') =>
+      context.ui.toast.show({ message, variant });
+    let listed: Awaited<ReturnType<ScanAll['sessions']>>;
+    try {
+      listed = await history.sessions();
+    } catch {
+      toast('Could not list sessions.', 'error');
+      return;
+    }
+    const total = listed.sessions.length;
+    if (total === 0) {
+      toast('No sessions to scan.');
+      return;
+    }
+    const where = listed.scope === 'all' ? 'all projects' : 'this project';
+    const confirmed = await context.ui.dialog.confirm({
+      title: 'Scan all sessions?',
+      message: [
+        `This reads the whole history of ${total === 1 ? '1 session' : `${total} sessions`} in ${where}, one session at a time, to find pull requests, issues and text for search.`,
+        'Sessions scanned before are skipped. Progress shows in a notification.'
+      ].join('\n\n'),
+      label: { confirm: 'Scan' }
+    });
+    // Not awaited: the scan outlives the dialog, which reopens at once.
+    if (confirmed) void history.scan(listed.sessions);
   };
 
   /** Prompts for a custom suffix; an empty answer keeps the current value. */

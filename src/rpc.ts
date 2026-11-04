@@ -83,6 +83,28 @@ export const worktreeDecisionSchema = z.strictObject({
 
 const directories = z.array(z.string()).max(200);
 
+/** Longest text a history item carries, in UTF-16 code units. The TUI cuts longer text. */
+export const HISTORY_TEXT_MAX = 64 * 1024;
+/** Most items one `history.scan` call carries. */
+export const HISTORY_ITEMS_MAX = 50;
+
+const historyText = z.string().max(HISTORY_TEXT_MAX);
+const created = z.number().int().nonnegative();
+
+/**
+ * One piece of a stored transcript for the history scan: a user prompt or assistant text under
+ * its message index key, or a finished shell command with the output lines that hold a URL.
+ */
+export const historyItemSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.enum(['prompt', 'text']),
+    key: z.string().min(1).max(200),
+    text: historyText,
+    created
+  }),
+  z.strictObject({ type: z.literal('shell'), command: historyText, output: historyText, created })
+]);
+
 export type ProviderChoice = z.output<typeof providerChoiceSchema>;
 export type ServerSettings = z.output<typeof serverSettingsSchema>;
 export type ServerSettingsView = z.output<typeof serverSettingsViewSchema>;
@@ -94,6 +116,7 @@ export type SessionRefView = z.output<typeof sessionRefViewSchema>;
 export type SearchScope = z.output<typeof searchScopeSchema>;
 export type SearchMatch = z.output<typeof searchMatchSchema>;
 export type SearchHit = z.output<typeof searchHitSchema>;
+export type HistoryItem = z.output<typeof historyItemSchema>;
 
 const sessionIDs = z.array(z.string()).max(200);
 
@@ -207,6 +230,22 @@ export const SuperSessions = Rpc.define({
     'archive.exclude': {
       input: z.strictObject({ sessionIDs: z.array(z.string()).max(200) }),
       output: z.strictObject({})
+    },
+    /**
+     * Runs detection and the message index over a session's stored messages, for history the
+     * plugin never saw live. The TUI sends the history in chunks and sets `done` on the last,
+     * which records the session's scan marker with `lastMessageID`, the newest message read.
+     * `skipped` is true when the session already had the marker: the items were ignored and the
+     * caller stops.
+     */
+    'history.scan': {
+      input: z.strictObject({
+        sessionID: z.string(),
+        items: z.array(historyItemSchema).max(HISTORY_ITEMS_MAX),
+        done: z.boolean(),
+        lastMessageID: z.string().optional()
+      }),
+      output: z.strictObject({ skipped: z.boolean() })
     },
     /** Dry run: what cleanup would remove and keep now. Removes nothing. */
     'cleanup.plan': {

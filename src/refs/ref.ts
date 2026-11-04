@@ -54,7 +54,16 @@ export const sessionRefsSchema = z.strictObject({
   // The user's Done override: `true` is Done whatever the refs say, `false` never Done, unset
   // follows the rule. `doneAt` is when `true` was set, which auto-archive counts days from.
   done: z.boolean().optional(),
-  doneAt: z.number().int().nonnegative().optional()
+  doneAt: z.number().int().nonnegative().optional(),
+  // Set when the history scan finished reading the session's stored messages (`history.scan`),
+  // so it runs once per session. `lastMessageID` is the newest message it read; live detection
+  // covers the ones after it.
+  scanned: z
+    .strictObject({
+      scannedAt: z.number().int().nonnegative(),
+      lastMessageID: z.string().optional()
+    })
+    .optional()
 });
 
 /**

@@ -61,7 +61,7 @@ export type SettingRow =
   | ({ side: 'server'; key: keyof ServerSettings } & RowShape)
   | {
       side: 'action';
-      key: 'cleanup.run';
+      key: 'cleanup.run' | 'history.scan';
       group: string;
       title: string;
       description: string;
@@ -203,6 +203,15 @@ export const SETTINGS: readonly SettingRow[] = [
     values: ['github', 'gitlab', 'both'],
     labels: ['GitHub', 'GitLab', 'both'],
     keywords: ['github', 'gitlab', 'forge']
+  },
+  {
+    side: 'action',
+    key: 'history.scan',
+    group: 'Tracking',
+    title: 'Scan all sessions now',
+    description:
+      'Reads the history of every session in the current scope for pull requests, issues and search text, and asks first. Sessions are otherwise scanned when you first select them.',
+    keywords: ['history', 'old sessions', 'index', 'refs']
   },
   {
     side: 'server',

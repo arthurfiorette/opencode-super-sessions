@@ -15,6 +15,7 @@ import {
 import { createStore } from 'solid-js/store';
 import { useCliSettings } from '../cli-settings.js';
 import type { Options } from '../config.js';
+import type { HistoryPage } from '../history-scan.js';
 import { markdownStyles } from '../host/theme.js';
 import { createMarquee } from '../marquee.js';
 import type { SessionRefView } from '../rpc.js';
@@ -47,6 +48,11 @@ export interface PreviewProps {
    * modal, so raised boxes and markdown backgrounds match it. Defaults to `context.theme`.
    */
   theme?(): ResolvedTheme;
+  /**
+   * Called with the newest page of messages each time the pane loads a session, so the history
+   * scan starts from it instead of fetching it again.
+   */
+  onLoaded?(sessionID: string, page: HistoryPage): void;
 }
 
 const FOLLOW_DELAY = 150;
@@ -97,7 +103,9 @@ export function Preview(props: PreviewProps): JSX.Element {
   // a scroll in progress stops here instead of carrying over to the next session's title.
   createEffect(on(shown, () => marquee.leave(marquee.active() ?? '')));
 
-  const transcript = createTranscript(context, shown);
+  const transcript = createTranscript(context, shown, (sessionID, page) =>
+    props.onLoaded?.(sessionID, page)
+  );
   const syntax = createSyntax(context, theme);
   const muted = () => theme().text.muted;
 
@@ -248,7 +256,11 @@ function agentColor(
 }
 
 /** Transcript pages of the shown session, newest page first from the server. */
-function createTranscript(context: Plugin.Context, shown: () => string | undefined) {
+function createTranscript(
+  context: Plugin.Context,
+  shown: () => string | undefined,
+  loaded: (sessionID: string, page: HistoryPage) => void
+) {
   const [state, setState] = createStore<{
     sessionID: string | undefined;
     messages: SessionMessageInfo[];
@@ -280,6 +292,7 @@ function createTranscript(context: Plugin.Context, shown: () => string | undefin
         cursor: page.cursor.next ?? undefined,
         status: 'ready'
       });
+      loaded(sessionID, { messages: page.data, cursor: page.cursor.next ?? undefined });
     } catch {
       if (current === token) setState('status', 'error');
     }

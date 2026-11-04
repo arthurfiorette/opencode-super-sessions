@@ -4,6 +4,7 @@ import type { KeymapCommand } from '@opencode/plugin/tui/context';
 import { z } from 'zod';
 import { COMMAND_GROUP } from './commands.js';
 import { type Options, parseOptions } from './config.js';
+import { createHistoryScanner } from './history-scan.js';
 import {
   CLASSIC_LIST,
   DIALOG_MODE,
@@ -62,8 +63,13 @@ export default Plugin.define({
     const pins = createPins(context);
     // Settings dialog, its stores, and the TUI half of auto-archive and cleanup. First, because
     // the browser and the sidebar read the stores through `tuiSettingsFor`.
-    const settings = installSettings(context, options, pins);
-    const browser = installBrowser(context, options, pins);
+    const history = createHistoryScanner(context);
+    // `browser` is read only when the user runs the action, after it was assigned.
+    const settings = installSettings(context, options, pins, {
+      sessions: () => browser.scopeSessions(),
+      scan: (sessions) => history.scanAll(sessions)
+    });
+    const browser = installBrowser(context, options, pins, history);
     const uninstallSidebar = installSidebar(context, options);
 
     // Must stay synchronous: the keymap only falls through to the built-in dialog when `run`
@@ -184,6 +190,7 @@ export default Plugin.define({
       settings.dispose();
       pins.dispose();
       browser.dispose();
+      history.dispose();
       uninstallSidebar();
     };
   }

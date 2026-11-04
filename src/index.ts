@@ -72,6 +72,8 @@ async function registerInert(context: Plugin.Context): Promise<void> {
     'settings.get': async () => ({ values: defaults, defaults }),
     'settings.set': async () => ({ values: defaults, defaults }),
     presence: async () => ({}),
+    // Skipped, so the TUI stops paging a history nothing would read.
+    'history.scan': async () => ({ skipped: true }),
     'archive.claim': async () => ({ sessions: [] }),
     'archive.report': async () => ({}),
     'archive.exclude': async () => ({}),

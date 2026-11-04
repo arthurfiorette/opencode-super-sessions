@@ -1,4 +1,5 @@
 import type { OpenCodeEvent, SessionMessageInfo } from '@opencode/client';
+import { SHELL_TOOL } from './tool-hook.js';
 
 // Where the server finds text and commands in host events and stored messages. The fields are
 // typed, so a rename fails the typecheck; what the types cannot say is which event carries what,
@@ -90,6 +91,57 @@ export function storedTexts(sessionID: string, messages: readonly SessionMessage
     }
   }
   return texts;
+}
+
+/** One prompt, assistant text or finished shell command of a stored transcript. */
+export type HistoryEntry =
+  | { type: 'prompt' | 'text'; key: string; text: string; created: number }
+  | { type: 'shell'; command: string; output: string; created: number };
+
+/**
+ * What the history scan reads from `message.list` pages: user prompts and assistant text under
+ * the keys {@link storedTexts} gives them, and finished shell commands. Agent shell calls are
+ * `shell` tool parts whose completed state holds `{ command }` as input and the output as text
+ * content (`toolResult` in packages/core/src/tool/plugin/shell.ts:84); a command moved to the
+ * background records `metadata.status: 'running'` there and has no final output. User `!`
+ * commands are `shell` messages (`SessionMessageShell` in packages/schema/src/session-message.ts).
+ */
+export function storedHistory(messages: readonly SessionMessageInfo[]): HistoryEntry[] {
+  const entries: HistoryEntry[] = [];
+  for (const message of messages) {
+    const created = message.time.created;
+    if (message.type === 'user') {
+      entries.push({ type: 'prompt', key: message.id, text: message.text, created });
+    }
+    if (message.type === 'shell' && message.status !== 'running') {
+      entries.push({
+        type: 'shell',
+        command: message.command,
+        output: message.output?.output ?? '',
+        created
+      });
+    }
+    if (message.type !== 'assistant') continue;
+    let ordinal = 0;
+    for (const part of message.content) {
+      if (part.type === 'text') {
+        entries.push({
+          type: 'text',
+          key: textKey(message.id, ordinal++),
+          text: part.text,
+          created
+        });
+        continue;
+      }
+      const state = part.type === 'tool' && part.name === SHELL_TOOL ? part.state : undefined;
+      if (state?.status !== 'completed' || state.metadata?.status === 'running') continue;
+      const command = state.input.command;
+      if (typeof command !== 'string') continue;
+      const output = state.content.flatMap((item) => (item.type === 'text' ? [item.text] : []));
+      entries.push({ type: 'shell', command, output: output.join('\n'), created });
+    }
+  }
+  return entries;
 }
 
 /**

@@ -217,6 +217,12 @@ For a branch pushed to a fork, the plugin looks the pull request up in the origi
 
 The "Record refs from prompts" and "Record mentioned refs" settings turn off the first and the last source.
 
+### Older sessions
+
+Detection watches sessions as they run, so sessions from before you installed the plugin, or from while it was not running, start without refs. The first time you select such a session in the browser (its preview loads), peek at it or open it, the plugin reads its whole history in the background and links what detection would have linked: refs in your prompts, PRs and issues created with `gh` or `glab`, and mentions. The same pass adds the session's prompts and replies to message search. Each session is read once; the plugin records that in the session's metadata, and later messages are covered as they come.
+
+Nothing is read until you touch a session. One session is read at a time, in pages of 100 messages with a short pause between pages, and closing the browser stops the read of a session you only selected. "Scan all sessions now" in the [settings](#settings) reads every session in the browser's current scope after asking, with progress in a toast.
+
 ### Main pull request
 
 The PR line shows one pull request: the branch's pull request, else the newest one the agent linked or created or you linked, else the newest one from your prompts.
@@ -256,26 +262,27 @@ Neither changes anything on GitHub or GitLab. Every request to the model also ca
 
 Open the settings with `ctrl+o` in the browser, `/super-sessions settings`, or "Super Sessions settings" in the palette. The dialog has a search field. `up` and `down` select a row (your dialog keys), `left` and `right` change the value, and `enter` steps forward, runs an action or asks for a custom value.
 
-| Group         | Setting                              | Values, default first                  | Meaning                                                                                     |
-| ------------- | ------------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------- |
-| List          | Default scope                        | this project, all projects             | Which sessions the browser lists. Changing it also drops an earlier `ctrl+a` choice         |
-|               | PR and issue line                    | on, off                                | Whether rows show the PR, status and issues lines                                           |
-|               | Title scrolling on hover             | follow animations, off, on             | Whether a cut title in the sidebar and preview Work rows scrolls while the mouse is over it |
-| Preview       | Preview pane                         | on, off                                | Whether the browser shows the preview                                                       |
-|               | Preview width                        | 40%; 30% to 60% in 5% steps            | The preview's share of the browser width                                                    |
-| Archiving     | Close tab when archiving             | on, off                                | Whether archiving a session also closes its tab                                             |
-|               | Archive on title suffix              | off, `" !"`, custom                    | Archives a session when you rename it to end with this text, and removes the text           |
-|               | Auto-archive Done sessions           | off, immediately, after 1, 3 or 7 days | See [Auto-archive](#auto-archive)                                                           |
-| Tracking      | Record mentioned refs                | on, off                                | Whether links in the assistant's replies are kept for search and the preview                |
-|               | Record refs from prompts             | on, off                                | Whether pull requests and issues in your prompts are tracked                                |
-|               | Providers                            | GitHub, GitLab, both                   | Which forges are asked for state                                                            |
-| Cleanup       | Delete worktrees of deleted sessions | off, on                                | See [Worktree cleanup](#worktree-cleanup)                                                   |
-|               | Delete merged worktrees              | off, on                                |                                                                                             |
-|               | Delete inactive worktrees            | off, after 3, 7, 14 or 30 days         |                                                                                             |
-|               | Delete worktrees of Done sessions    | off, immediately, after 1, 3 or 7 days |                                                                                             |
-|               | Delete unchanged worktrees           | off, on                                |                                                                                             |
-|               | Run cleanup now                      | action                                 | Lists what the rules would remove and asks before removing anything                         |
-| Compatibility | Use on untested OpenCode versions    | off, on                                | See [Compatibility](#compatibility)                                                         |
+| Group         | Setting                              | Values, default first                  | Meaning                                                                                                  |
+| ------------- | ------------------------------------ | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| List          | Default scope                        | this project, all projects             | Which sessions the browser lists. Changing it also drops an earlier `ctrl+a` choice                      |
+|               | PR and issue line                    | on, off                                | Whether rows show the PR, status and issues lines                                                        |
+|               | Title scrolling on hover             | follow animations, off, on             | Whether a cut title in the sidebar and preview Work rows scrolls while the mouse is over it              |
+| Preview       | Preview pane                         | on, off                                | Whether the browser shows the preview                                                                    |
+|               | Preview width                        | 40%; 30% to 60% in 5% steps            | The preview's share of the browser width                                                                 |
+| Archiving     | Close tab when archiving             | on, off                                | Whether archiving a session also closes its tab                                                          |
+|               | Archive on title suffix              | off, `" !"`, custom                    | Archives a session when you rename it to end with this text, and removes the text                        |
+|               | Auto-archive Done sessions           | off, immediately, after 1, 3 or 7 days | See [Auto-archive](#auto-archive)                                                                        |
+| Tracking      | Record mentioned refs                | on, off                                | Whether links in the assistant's replies are kept for search and the preview                             |
+|               | Record refs from prompts             | on, off                                | Whether pull requests and issues in your prompts are tracked                                             |
+|               | Providers                            | GitHub, GitLab, both                   | Which forges are asked for state                                                                         |
+|               | Scan all sessions now                | action                                 | Reads every session in the current scope for refs and search text. See [Older sessions](#older-sessions) |
+| Cleanup       | Delete worktrees of deleted sessions | off, on                                | See [Worktree cleanup](#worktree-cleanup)                                                                |
+|               | Delete merged worktrees              | off, on                                |                                                                                                          |
+|               | Delete inactive worktrees            | off, after 3, 7, 14 or 30 days         |                                                                                                          |
+|               | Delete worktrees of Done sessions    | off, immediately, after 1, 3 or 7 days |                                                                                                          |
+|               | Delete unchanged worktrees           | off, on                                |                                                                                                          |
+|               | Run cleanup now                      | action                                 | Lists what the rules would remove and asks before removing anything                                      |
+| Compatibility | Use on untested OpenCode versions    | off, on                                | See [Compatibility](#compatibility)                                                                      |
 
 The plugin options are the defaults, so the first value above is the default only when you set no option. A value changed in the dialog overrides the option, and changing it back to the option's value removes the override. Every change applies at once, without a restart.
 
@@ -380,7 +387,7 @@ The plugin asks `gh` and `glab` only about github.com, gitlab.com, the hosts in 
 
 | Data                                                                       | Location                                                                                           |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Linked and unlinked refs, your Done mark                                   | Session metadata, under the `super-sessions` key                                                   |
+| Linked and unlinked refs, your Done mark, whether the history was read     | Session metadata, under the `super-sessions` key                                                   |
 | Message search index                                                       | `$XDG_DATA_HOME/opencode/plugins/opencode-super-sessions/search.db` (default `~/.local/share/...`) |
 | TUI settings, pins, the `ctrl+a` choice                                    | OpenCode's plugin storage for the TUI                                                              |
 | Server settings, the cleanup confirmation, sessions kept from auto-archive | OpenCode's plugin storage for the server plugin                                                    |
@@ -400,7 +407,8 @@ If the browser fails, it closes and opens the built-in list. If the pull request
 
 - The browser loads the 200 most recently updated sessions of each list (not archived, and archived) in the scope. Search reaches older sessions, but ref matches only cover the 200 most recently updated sessions in the scope.
 - Message search needs `node:sqlite` with FTS5 in the daemon. Without it the daemon log says so, and search covers titles and refs only.
-- The index fills from live messages and from a background pass over older sessions. That pass only reads what follows a session's latest compaction, so text from before a compaction is searchable only if the plugin saw it live. Tool output and reasoning are not indexed.
+- The index fills from live messages, from a background pass over older sessions and from the read of a session's whole history (see [Older sessions](#older-sessions)). The background pass only reads what follows a session's latest compaction, so text from before a compaction becomes searchable once the plugin saw it live or read that session's history. Tool output and reasoning are not indexed.
+- Reading an older session's history needs a terminal: a session nobody selected, peeked, opened or scanned from the settings keeps no refs from before the plugin.
 - For a `!` command, detection reads the first 1 MiB of its output, which is all OpenCode passes to plugins.
 - GitLab instances served under a URL path prefix, such as `https://example.com/gitlab`, are not supported.
 - GitHub Enterprise Server hosts without a `github` label in their name are not recognized.
