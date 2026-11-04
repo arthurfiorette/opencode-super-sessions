@@ -1,8 +1,15 @@
 import type { OpenCodeEvent } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin';
 
-/** Event types the server reacts to: user prompts and finished assistant text. */
-export const EVENT_TYPES = ['session.inbox.enqueued', 'session.text.ended'] as const;
+/**
+ * Event types the server reacts to: user prompts and finished assistant text, plus deletions so
+ * the message index forgets deleted sessions.
+ */
+export const EVENT_TYPES = [
+  'session.inbox.enqueued',
+  'session.text.ended',
+  'session.deleted'
+] as const;
 
 export type HandledEvent = Extract<OpenCodeEvent, { type: (typeof EVENT_TYPES)[number] }>;
 
