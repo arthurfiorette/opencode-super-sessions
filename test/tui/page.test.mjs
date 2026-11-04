@@ -51,7 +51,22 @@ const fixtures = () => [
   })
 ];
 
+const issues = [1, 2, 3, 4, 5, 6].map((number) => ({ ...pr4930, kind: 'issue', number }));
 const refViews = {
+  unread: {
+    links: issues.map((ref, index) => ({ ref, source: 'prompt', linkedAt: 10 - index })),
+    branchRefs: [],
+    states: Object.fromEntries(
+      issues.map((ref) => [
+        key(ref),
+        {
+          status: 'open',
+          title: `Rspack issue ${ref.number}`,
+          url: `https://github.com/mastra-ai/mastra/issues/${ref.number}`
+        }
+      ])
+    )
+  },
   running: {
     links: [{ ref: pr4930, source: 'agent', linkedAt: 1 }],
     branchRefs: [],
@@ -307,6 +322,29 @@ test('session.list opens the browser cold and lists active sessions with their r
     .find((command) => command.bind === 'shift+tab')
     .run();
   await eventually(rendered, (frame) => /#4930 Migrate build to Rspack\s+1 session/.test(frame));
+});
+
+test('rows list each issue on its own line up to five, and "Group issues" joins them', async () => {
+  const terminal = await host();
+  const rendered = await testRender(() => terminal.overlay.render({}), { width: 140, height: 40 });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  await eventually(
+    rendered,
+    (frame) => frame.includes('Rspack issue 1') && frame.includes('+1 more')
+  );
+  const frame = rendered.captureCharFrame();
+  // Newest link first; the sixth issue folds into `+1 more`.
+  assert.match(frame, /#1 Rspack issue 1\s*\n.*#2 Rspack issue 2/);
+  assert.match(frame, /#5 Rspack issue 5\s*\n.*\+1 more/);
+  assert.doesNotMatch(frame, /Rspack issue 6/);
+
+  const { tuiSettingsFor } = await import('../../dist/settings/store.js');
+  await tuiSettingsFor(terminal.context).set('groupIssues', true);
+  await eventually(rendered, (next) => /#1, .*#2, .*#3/.test(next) && !next.includes('+1 more'));
+  assert.doesNotMatch(rendered.captureCharFrame(), /Rspack issue/);
 });
 
 // Old sessions are read only once the user selects one: no history reads on startup, and the

@@ -184,7 +184,8 @@ export default function SessionBrowser(props: PageProps) {
           theme: theme(),
           mode: context.themeMode,
           refs: data.refs[session.id],
-          matched: reason(session)?.ref
+          matched: reason(session)?.ref,
+          groupIssues: settings.groupIssues()
         })
       : NO_DETAILS;
   /** The age, or the archive and update ages in the Archived view, on the title line. */
@@ -1164,8 +1165,8 @@ export default function SessionBrowser(props: PageProps) {
           ? 'b'
           : value.kind === 'pull'
             ? `p:${value.pull.key}`
-            : value.kind === 'wrap'
-              ? `w${value.index}:${value.session.id}`
+            : value.kind === 'wrap' || value.kind === 'issue'
+              ? `${value.kind}${value.index}:${value.session.id}`
               : `${value.kind}:${value.session.id}`;
     });
     return createMemo(() => {
@@ -1224,7 +1225,7 @@ export default function SessionBrowser(props: PageProps) {
         };
         if (value.kind === 'title') return titleLine(theme, row, events);
         if (value.kind === 'wrap') return wrapLine(value.index, theme, row, events);
-        return detailsLine(value.kind, theme, row, events);
+        return detailsLine(value, theme, row, events);
       });
     });
   };

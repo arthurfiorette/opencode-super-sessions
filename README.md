@@ -75,7 +75,8 @@ A row is its title line and, when they apply, the lines under it:
 
 - The title line: a marker, the title and the age of the last update. In the Archived view the age reads `archived 3d · updated 5d`.
 - The PR line, when the session has a [main pull request](#main-pull-request): its icon and number in the state color, its [review and CI icons](#review-and-ci-icons) while it is open or a draft, then its title. A trailing `+N` counts the session's other pull requests and mentioned refs.
-- The issues line, when the session tracks issues: every issue number in its state color, joined as `#1230, #19083 and #8923`. The issues the main pull request closes come first. When they do not fit, the rest are counted in `+N`. A session that tracks one issue shows its title after the number, like the PR line.
+- One line per tracked issue: its icon and number in the state color, then its title, cut with `…`. The issues the main pull request closes come first, then the others newest first. After five issues the rest are counted on a `+N more` line. Without a PR line, the first issue line carries the `+N` for the other refs.
+- With the "Group issues" setting on, one issues line instead: every issue number in its state color, joined as `#1230, #19083 and #8923`, with `+N` for the ones that do not fit. A session that tracks one issue shows its title after the number.
 
 The marker column shows one of these, highest first:
 
@@ -296,6 +297,7 @@ Open the settings with `ctrl+o` in the browser, `/super-sessions settings`, or "
 | ------------- | ------------------------------------ | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | List          | Default scope                        | this project, all projects             | Which sessions the browser lists. Changing it also drops an earlier `ctrl+a` choice                      |
 |               | PR and issue line                    | on, off                                | Whether rows show the PR and issues lines                                                                |
+|               | Group issues                         | off, on                                | Whether rows join their issues on one line instead of one line per issue with its title                  |
 |               | Title scrolling on hover             | follow animations, off, on             | Whether a cut title in the sidebar and preview Work rows scrolls while the mouse is over it              |
 | Preview       | Preview pane                         | on, off                                | Whether the browser shows the preview                                                                    |
 |               | Preview width                        | 40%; 30% to 60% in 5% steps            | The preview's share of the browser width                                                                 |
@@ -386,6 +388,7 @@ Options go in the plugin entry's `options`. Unknown options are rejected. With a
 | `preview`                 | `true`          | Show the preview                                                                           |
 | `scope`                   | `"project"`     | Default scope: `"project"` or `"all"`                                                      |
 | `rows.refs`               | `true`          | Show the PR and issues lines on rows                                                       |
+| `rows.groupIssues`        | `false`         | Join a row's issues on one line instead of one line per issue                              |
 | `titleScroll`             | `"auto"`        | Scroll cut titles on hover: `"auto"` follows OpenCode's `animations`, or `"on"` or `"off"` |
 | `untestedHosts`           | `false`         | Take over the session list on OpenCode versions newer than the tested one                  |
 | `autoArchiveDays`         | Unset (off)     | Auto-archive Done sessions after this many days, from `0` to `365`                         |

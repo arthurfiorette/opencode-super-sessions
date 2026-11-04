@@ -7,6 +7,7 @@ import { type Ref, type RefReview, type RefState, refKey, refNumber } from '../r
 import { rowRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { ICONS, refColor, refIcon } from './icons.js';
+import type { DetailLine } from './state.js';
 
 /** A run of text in one color on a row line. */
 export interface Segment {
@@ -44,6 +45,8 @@ export interface RefsInput {
   refs: SessionRefView | undefined;
   /** `refKey` of the ref a search matched, drawn with its title in the base text color. */
   matched?: string | undefined;
+  /** Join the issues on one line instead of one line each (the "Group issues" setting). */
+  groupIssues?: boolean;
 }
 
 /** Short relative age: `now`, `5m`, `3h`, `2d`, `4mo`, `1y`. */
@@ -83,24 +86,34 @@ export function findRef(view: SessionRefView | undefined, key: string): Ref | un
  *
  * - `pr`: the main PR's icon and number, its review and CI icons, its title, then a matched ref
  *   that is shown nowhere else, and `+N`.
- * - `issues`: one piece per tracked issue (with its title when it is the only one), fitted to
- *   the width when drawn; `extra` is the `+N`
- *   the issues line carries when there is no PR line.
+ * - `issues`: with `grouped`, one piece per tracked issue (with its title when it is the only
+ *   one), joined on one line and fitted to the width when drawn; `extra` is the `+N` that line
+ *   carries when there is no PR line. Otherwise one whole line per issue (icon, number and
+ *   title), at most {@link ISSUE_LINES}, then a muted `+N more` line; the first issue line
+ *   carries the `+N` instead, and `extra` stays 0.
  */
 export interface RowDetails {
   pr: Segment[];
   issues: Segment[][];
   extra: number;
+  grouped: boolean;
 }
 
 /** Details of a session without refs. */
-export const NO_DETAILS: RowDetails = { pr: [], issues: [], extra: 0 };
+export const NO_DETAILS: RowDetails = { pr: [], issues: [], extra: 0, grouped: false };
+
+/** Issue lines a row lists one per line before the rest fold into `+N more`. */
+export const ISSUE_LINES = 5;
 
 /** The detail lines a row has, in order, for laying out the list. */
-export function detailKinds(details: RowDetails): Array<'pr' | 'issues'> {
+export function detailKinds(details: RowDetails): DetailLine[] {
   return [
-    ...(details.pr.length > 0 ? (['pr'] as const) : []),
-    ...(details.issues.length > 0 ? (['issues'] as const) : [])
+    ...(details.pr.length > 0 ? [{ kind: 'pr' as const }] : []),
+    ...(details.issues.length === 0
+      ? []
+      : details.grouped
+        ? [{ kind: 'issues' as const }]
+        : details.issues.map((_, index) => ({ kind: 'issue' as const, index })))
   ];
 }
 
@@ -203,12 +216,40 @@ export function rowDetails(input: RefsInput): RowDetails {
     ...piece(ref, ref === summary.pr || ref === extraHit, ref === summary.pr)
   ]);
   if (pr.length > 0 && extra > 0) pr.push({ text: `  +${extra}`, fg: muted });
+  if (input.groupIssues === true) {
+    return {
+      pr,
+      // A lone issue has the room for its title, like the PR line; several read as a number list.
+      issues: issues.map((ref) => piece(ref, issues.length === 1)),
+      extra: pr.length > 0 ? 0 : extra,
+      grouped: true
+    };
+  }
   return {
     pr,
-    // A lone issue has the room for its title, like the PR line; several read as a number list.
-    issues: issues.map((ref) => piece(ref, issues.length === 1)),
-    extra: pr.length > 0 ? 0 : extra
+    issues: issueLines(issues, input.matched, pr.length > 0 ? 0 : extra),
+    extra: 0,
+    grouped: false
   };
+
+  /**
+   * One line per issue with its title, at most {@link ISSUE_LINES} and then `+N more`. The issue
+   * a search matched is moved up into the shown lines; `extra` trails the first line.
+   */
+  function issueLines(refs: Ref[], matchedKey: string | undefined, trailing: number): Segment[][] {
+    const ordered = [...refs];
+    const hit = ordered.findIndex((ref) => refKey(ref) === matchedKey);
+    if (ordered.length > ISSUE_LINES && hit >= ISSUE_LINES) {
+      const [moved] = ordered.splice(hit, 1);
+      if (moved) ordered.splice(ISSUE_LINES - 1, 0, moved);
+    }
+    const shown = ordered.length > ISSUE_LINES ? ordered.slice(0, ISSUE_LINES) : ordered;
+    const lines = shown.map((ref) => piece(ref, true));
+    if (trailing > 0 && lines[0]) lines[0] = [...lines[0], { text: `  +${trailing}`, fg: muted }];
+    const hidden = ordered.length - shown.length;
+    if (hidden > 0) lines.push([{ text: `+${hidden} more`, fg: muted }]);
+    return lines;
+  }
 }
 
 /**
@@ -579,17 +620,18 @@ function detailLine(
  * instead.
  */
 export function detailsLine(
-  kind: 'pr' | 'issues',
+  line: DetailLine,
   theme: () => ResolvedTheme,
   model: () => RowModel,
   events: RowEvents
 ): JSX.Element {
   return detailLine(theme, model, events, (room) => {
     const details = model().details;
-    if (kind === 'issues') {
+    if (line.kind === 'issues') {
       return issueSegments(details.issues, details.extra, room, theme().text.muted);
     }
-    return details[kind];
+    if (line.kind === 'issue') return details.issues[line.index] ?? [];
+    return details.pr;
   });
 }
 

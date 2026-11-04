@@ -11,6 +11,8 @@ export const PREVIEW_WIDTHS = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6] as const;
 export const tuiValuesSchema = z.strictObject({
   scope: z.enum(['project', 'all']),
   refLine: z.boolean(),
+  /** Join a row's issues on one line instead of one line each. */
+  groupIssues: z.boolean(),
   /** `auto` follows the host's `animations` setting. */
   titleScroll: z.enum(['auto', 'on', 'off']),
   previewPane: z.boolean(),
@@ -30,6 +32,7 @@ export function tuiDefaults(options: Options): TuiValues {
   return {
     scope: options.scope,
     refLine: options.rows.refs,
+    groupIssues: options.rows.groupIssues,
     titleScroll: options.titleScroll,
     previewPane: options.preview,
     previewWidth: options.previewWidth,
@@ -111,6 +114,16 @@ export const SETTINGS: readonly SettingRow[] = [
     description: 'Whether rows show the pull requests and issues of the session',
     ...onOff,
     keywords: ['pull request', 'refs']
+  },
+  {
+    side: 'tui',
+    key: 'groupIssues',
+    group: 'List',
+    title: 'Group issues',
+    description:
+      'Whether rows list their issues on one line, as #1, #2 and #3, instead of one line per issue with its title',
+    ...onOff,
+    keywords: ['issues', 'refs', 'compact']
   },
   {
     side: 'tui',
