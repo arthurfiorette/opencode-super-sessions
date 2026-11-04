@@ -39,11 +39,14 @@ import { Preview } from './preview.js';
 import { workLines } from './preview-header.js';
 import {
   cells,
+  detailKinds,
+  detailsLine,
   findRef,
   formatAge,
+  NO_DETAILS,
+  type RowDetails,
   type RowModel,
-  refSegments,
-  refsLine,
+  rowDetails,
   runningColor,
   type Segment,
   titleLine,
@@ -153,19 +156,19 @@ export default function SessionBrowser(props: PageProps) {
     const fallback = view?.defaultBranch ?? vcs?.default;
     return current && current !== fallback ? current : undefined;
   };
-  // Empty with the "PR and issue line" setting off, which also drops the row's second line.
-  const refsOf = (session: SessionInfo): Segment[] =>
+  // The "PR and issue line" setting turns the PR, status and issues lines off together.
+  const detailsOf = (session: SessionInfo): RowDetails =>
     settings.refLine()
-      ? refSegments({
+      ? rowDetails({
           options: props.options,
           theme: theme(),
           mode: context.themeMode,
           refs: data.refs[session.id],
           matched: reason(session)?.ref
         })
-      : [];
+      : NO_DETAILS;
   const lines = createMemo(() =>
-    layoutLines(model.groups(), (session) => refsOf(session).length > 0)
+    layoutLines(model.groups(), (session) => detailKinds(detailsOf(session)))
   );
   const visible = createMemo(() => lines().slice(memory.scroll, memory.scroll + listHeight()));
 
@@ -283,8 +286,8 @@ export default function SessionBrowser(props: PageProps) {
     });
   const select = (sessionID: string | undefined) => remember({ selected: sessionID });
   const move = (delta: number) => select(moveSelection(rows(), memory.selected, delta));
-  // Rows take one to three lines; counting three per row keeps the jump on screen.
-  const pageRows = () => Math.max(1, Math.floor(listHeight() / 3));
+  // Rows take one to four lines; counting four per row keeps the jump on screen.
+  const pageRows = () => Math.max(1, Math.floor(listHeight() / 4));
   const open = (sessionID = memory.selected) => {
     if (sessionID === undefined) return;
     props.close();
@@ -399,7 +402,8 @@ export default function SessionBrowser(props: PageProps) {
   const openRef = () => {
     const session = selected();
     const view = session ? data.refs[session.id] : undefined;
-    const primary = view ? rowRefs(view).primary : undefined;
+    const summary = view ? rowRefs(view) : undefined;
+    const primary = summary?.pr ?? summary?.issues[0];
     if (!view || !primary) {
       toast('No pull request or issue on this session.');
       return;
@@ -681,7 +685,7 @@ export default function SessionBrowser(props: PageProps) {
           : `archived ${formatAge(now - archivedAt)} · updated ${formatAge(now - info.time.updated)}`,
       // The row box pads one cell on each side.
       width: listWidth() - 2,
-      refs: refsOf(session),
+      details: detailsOf(session),
       selected: memory.selected === session.id,
       // Pinned rows show their slot instead of the spinner, but their title still says it runs.
       running: model.running(session.id),
@@ -735,7 +739,7 @@ export default function SessionBrowser(props: PageProps) {
           open: () => open(session().id)
         };
         if (value.kind === 'title') return titleLine(theme, row, events);
-        return refsLine(theme, row, events);
+        return detailsLine(value.kind, theme, row, events);
       });
     });
   };

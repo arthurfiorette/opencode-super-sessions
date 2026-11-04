@@ -130,56 +130,56 @@ test('decides when a session is Done', () => {
   }
 });
 
-test('picks the primary ref, the issue beside it and the overflow count', () => {
+test('picks the main PR, every tracked issue and the overflow count', () => {
   const closes = (target: Ref, via: Ref, linkedAt: number): RefLink => ({
     ...link(target, 'closes', linkedAt),
     via: refKey(via)
   });
-  const cases: Array<[string, SessionRefView, { primary?: Ref; issue?: Ref; extra: number }]> = [
-    ['empty', view([]), { extra: 0 }],
+  const cases: Array<[string, SessionRefView, ReturnType<typeof rowRefs>]> = [
+    ['empty', view([]), { branch: false, issues: [], extra: 0 }],
     [
       'branch PR wins over a newer linked PR',
       view([link(pr(2), 'agent', 9)], [], [pr(1)]),
-      { primary: pr(1), extra: 1 }
+      { pr: pr(1), branch: true, issues: [], extra: 1 }
     ],
     [
       'newest linked PR wins',
       view([link(pr(1), 'created', 1), link(pr(2), 'agent', 2)]),
-      { primary: pr(2), extra: 1 }
+      { pr: pr(2), branch: false, issues: [], extra: 1 }
     ],
     [
       'linked PR wins over a newer PR from the prompt',
       view([link(pr(1), 'created', 1), link(pr(2), 'prompt', 2)]),
-      { primary: pr(1), extra: 1 }
+      { pr: pr(1), branch: false, issues: [], extra: 1 }
     ],
     [
-      'prompt issue shows beside the PR',
-      view([link(issue(9), 'prompt', 1), link(pr(1), 'created', 2)]),
-      { primary: pr(1), issue: issue(9), extra: 0 }
-    ],
-    [
-      'issue the PR closes wins over a newer prompt issue',
-      view([closes(issue(8), pr(1), 1), link(issue(9), 'prompt', 5), link(pr(1), 'created', 2)]),
-      { primary: pr(1), issue: issue(8), extra: 1 }
+      'issues the PR closes come first, then the rest newest first',
+      view([
+        link(issue(7), 'prompt', 3),
+        closes(issue(8), pr(1), 1),
+        link(issue(9), 'manual', 5),
+        link(pr(1), 'created', 2)
+      ]),
+      { pr: pr(1), branch: false, issues: [issue(8), issue(9), issue(7)], extra: 0 }
     ],
     [
       'snapshot closes list counts before a closes link exists',
       view(
-        [link(issue(8), 'prompt', 1), link(issue(9), 'prompt', 5)],
+        [link(issue(9), 'prompt', 5)],
         [[pr(1), state('open', undefined, { closes: [issue(8)] })]],
         [pr(1)]
       ),
-      { primary: pr(1), issue: issue(8), extra: 1 }
+      { pr: pr(1), branch: true, issues: [issue(8), issue(9)], extra: 0 }
     ],
     [
-      'without PRs the newest issue is primary',
+      'without PRs only issues show',
       view([link(issue(8), 'prompt', 1), link(issue(9), 'prompt', 5)]),
-      { primary: issue(9), issue: issue(8), extra: 0 }
+      { branch: false, issues: [issue(9), issue(8)], extra: 0 }
     ],
     [
       'mentions only add to the count',
       view([link(pr(1), 'agent', 1), link(pr(5), 'mention', 9), link(issue(6), 'mention', 9)]),
-      { primary: pr(1), extra: 2 }
+      { pr: pr(1), branch: false, issues: [], extra: 2 }
     ]
   ];
   for (const [name, input, expected] of cases) {

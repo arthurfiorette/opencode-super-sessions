@@ -4,7 +4,7 @@ import { jsx } from '@opentui/solid/jsx-runtime';
 import type { JSX } from 'solid-js';
 import type { Options } from '../config.js';
 import { marqueeText } from '../marquee.js';
-import { type Ref, refKey, refNumber } from '../refs/ref.js';
+import { type Ref, type RefReview, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { refColor, refIcon } from './icons.js';
@@ -26,8 +26,8 @@ export interface RowModel {
   right: string;
   /** Cells inside the row's padding, measured from the list. */
   width: number;
-  /** The refs line. Empty when the session has no refs. */
-  refs: Segment[];
+  /** Lines under the title, from {@link rowDetails}. */
+  details: RowDetails;
   selected: boolean;
   /** The session runs: the title takes the spinner's color, unless the row is selected. */
   running: boolean;
@@ -82,41 +82,134 @@ export function findRef(view: SessionRefView | undefined, key: string): Ref | un
 }
 
 /**
- * The refs line: the primary ref with its title, the issue beside it, the ref a search matched
- * when it is neither, and a count of the rest. Icon and number take the state color, since a
- * colored icon beside a plain number read as two things; titles are muted, except the matched
- * ref's title.
+ * Lines a row draws under its title. Each part is empty when its line is not drawn.
+ *
+ * - `pr`: the main PR with its title, a matched ref that is shown nowhere else, and `+N`.
+ * - `status`: review and CI parts of the main PR worth acting on.
+ * - `issues`: one piece per tracked issue, fitted to the width when drawn; `extra` is the `+N`
+ *   the issues line carries when there is no PR line.
  */
-export function refSegments(input: RefsInput): Segment[] {
+export interface RowDetails {
+  pr: Segment[];
+  status: Segment[];
+  issues: Segment[][];
+  extra: number;
+}
+
+/** Details of a session without refs. */
+export const NO_DETAILS: RowDetails = { pr: [], status: [], issues: [], extra: 0 };
+
+/** The detail lines a row has, in order, for laying out the list. */
+export function detailKinds(details: RowDetails): Array<'pr' | 'status' | 'issues'> {
+  return [
+    ...(details.pr.length > 0 ? (['pr'] as const) : []),
+    ...(details.status.length > 0 ? (['status'] as const) : []),
+    ...(details.issues.length > 0 ? (['issues'] as const) : [])
+  ];
+}
+
+/**
+ * The list row's status parts for an open pull request, in the colors the forge uses for them.
+ * A pending review request and passing checks are the normal state, so they are left out.
+ */
+export function statusSegments(review: RefReview | undefined, theme: ResolvedTheme): Segment[] {
+  if (review === undefined) return [];
+  const feedback = theme.text.feedback;
+  const parts: Segment[] = [];
+  if (review.decision === 'changes_requested') {
+    parts.push({ text: 'changes requested', fg: feedback.error.base });
+  }
+  if (review.unresolved !== undefined && review.unresolved > 0) {
+    parts.push({ text: `${review.unresolved} unresolved`, fg: feedback.warning.base });
+  }
+  if (review.checks === 'failing') parts.push({ text: 'checks failing', fg: feedback.error.base });
+  if (review.checks === 'pending') parts.push({ text: 'checks pending', fg: theme.text.muted });
+  if (review.decision === 'approved') parts.push({ text: 'approved', fg: feedback.success.base });
+  return parts.flatMap((part, index) =>
+    index === 0 ? [part] : [{ text: ' · ', fg: theme.text.muted }, part]
+  );
+}
+
+/**
+ * Builds a row's detail lines. Icon and number take the state color, since a colored icon beside
+ * a plain number read as two things; titles are muted, except a ref a search matched.
+ */
+export function rowDetails(input: RefsInput): RowDetails {
   const view = input.refs;
-  if (view === undefined) return [];
+  if (view === undefined) return NO_DETAILS;
   const { base, muted } = input.theme.text;
   const summary = rowRefs(view);
-  const shown = [summary.primary, summary.issue].filter((ref): ref is Ref => ref !== undefined);
-  const matched = input.matched === undefined ? undefined : findRef(view, input.matched);
-  let extra = summary.extra;
-  if (matched !== undefined && !shown.some((ref) => refKey(ref) === input.matched)) {
-    shown.push(matched);
-    extra = Math.max(0, extra - 1);
-  }
-  const pieces = shown.map((ref): Segment[] => {
+  /** Icon and number of `ref`, plus its title when `titled`. */
+  const piece = (ref: Ref, titled: boolean): Segment[] => {
     const key = refKey(ref);
     const state = view.states[key];
-    const hit = key === input.matched;
     const color = refColor(input.options, state?.status, input.theme, input.mode);
-    const piece: Segment[] = [
+    const segments: Segment[] = [
       { text: `${refIcon(ref.kind, state?.status)} `, fg: color },
       { text: refNumber(ref), fg: color }
     ];
-    if ((ref === summary.primary || hit) && state?.title) {
-      piece.push({ text: ` ${state.title}`, fg: hit ? base : muted });
+    if (titled && state?.title) {
+      segments.push({ text: ` ${state.title}`, fg: key === input.matched ? base : muted });
     }
-    return piece;
-  });
-  if (extra > 0) pieces.push([{ text: `+${extra}`, fg: muted }]);
-  return pieces.flatMap((piece, index) =>
-    index === 0 ? piece : [{ text: '  ', fg: muted }, ...piece]
+    return segments;
+  };
+
+  const shownKeys = new Set(
+    [summary.pr, ...summary.issues].flatMap((ref) => (ref ? [refKey(ref)] : []))
   );
+  const matched = input.matched === undefined ? undefined : findRef(view, input.matched);
+  // A hit on a ref the row does not show (another PR, a mention) joins the line of its kind.
+  const extraHit = matched && !shownKeys.has(refKey(matched)) ? matched : undefined;
+  const extra = Math.max(0, summary.extra - (extraHit ? 1 : 0));
+  const prs = [summary.pr, extraHit?.kind === 'pr' ? extraHit : undefined].filter(
+    (ref): ref is Ref => ref !== undefined
+  );
+  const issues = [...summary.issues, ...(extraHit?.kind === 'issue' ? [extraHit] : [])];
+
+  const pr = prs.flatMap((ref, index) => [
+    ...(index > 0 ? [{ text: '  ', fg: muted }] : []),
+    ...piece(ref, ref === summary.pr || ref === extraHit)
+  ]);
+  if (pr.length > 0 && extra > 0) pr.push({ text: `  +${extra}`, fg: muted });
+  const mainState = summary.pr ? view.states[refKey(summary.pr)] : undefined;
+  const open = mainState?.status === 'open' || mainState?.status === 'draft';
+  return {
+    pr,
+    status: open ? statusSegments(mainState?.review, input.theme) : [],
+    issues: issues.map((ref) => piece(ref, false)),
+    extra: pr.length > 0 ? 0 : extra
+  };
+}
+
+/**
+ * Joins issue pieces as `#1, #2 and #3`. When they do not fit `width`, as many as fit are joined
+ * with commas and the rest counted in `+N`, which `extra` adds to.
+ */
+export function issueSegments(
+  pieces: readonly Segment[][],
+  extra: number,
+  width: number,
+  muted: string | RGBA
+): Segment[] {
+  const size = (segments: readonly Segment[]) =>
+    segments.reduce((sum, segment) => sum + cells(segment.text), 0);
+  /** The first `count` pieces joined, with the `+N` for the rest. */
+  const join = (count: number): Segment[] => {
+    const hidden = pieces.length - count + extra;
+    const shown = pieces.slice(0, count);
+    const out = shown.flatMap((piece, index) => {
+      if (index === 0) return piece;
+      const last = index === shown.length - 1 && count === pieces.length;
+      return [{ text: last ? ' and ' : ', ', fg: muted }, ...piece];
+    });
+    if (hidden > 0) out.push({ text: `${count > 0 ? ' ' : ''}+${hidden}`, fg: muted });
+    return out;
+  };
+  for (let count = pieces.length; count > 0; count--) {
+    const line = join(count);
+    if (size(line) <= width) return line;
+  }
+  return join(pieces.length > 0 ? 1 : 0);
 }
 
 /** Pointer handlers shared by every line of a row. */
@@ -258,7 +351,7 @@ function detailLine(
   theme: () => ResolvedTheme,
   model: () => RowModel,
   events: RowEvents,
-  segments: () => Segment[]
+  segments: (room: number) => Segment[]
 ): JSX.Element {
   return lineBox(theme, model, events, [
     jsx('box', { width: MARKER_WIDTH + DETAIL_INDENT, flexShrink: 0 }),
@@ -271,7 +364,7 @@ function detailLine(
         const current = model();
         const override = rowColors(theme(), current).fg;
         const room = current.width - MARKER_WIDTH - DETAIL_INDENT;
-        return fitSegments(segments(), room).map((segment) =>
+        return fitSegments(segments(room), room).map((segment) =>
           jsx('span', {
             style: { fg: override ?? segment.fg, bold: segment.bold ?? false },
             children: segment.text
@@ -282,13 +375,23 @@ function detailLine(
   ]);
 }
 
-/** Second row line, when the session has refs. The branch shows in the preview instead. */
-export function refsLine(
+/**
+ * One of the lines under the title (see {@link RowDetails}). The branch shows in the preview
+ * instead.
+ */
+export function detailsLine(
+  kind: 'pr' | 'status' | 'issues',
   theme: () => ResolvedTheme,
   model: () => RowModel,
   events: RowEvents
 ): JSX.Element {
-  return detailLine(theme, model, events, () => model().refs);
+  return detailLine(theme, model, events, (room) => {
+    const details = model().details;
+    if (kind === 'issues') {
+      return issueSegments(details.issues, details.extra, room, theme().text.muted);
+    }
+    return details[kind];
+  });
 }
 
 type Bun = { stringWidth(text: string): number };

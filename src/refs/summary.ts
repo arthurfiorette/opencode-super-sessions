@@ -1,10 +1,13 @@
 import type { SessionRefView } from '../rpc.js';
 import { type Ref, type RefLink, type RefSource, refKey, TRACKED_SOURCES } from './ref.js';
 
-/** Refs drawn on a session row: the primary ref, an issue beside it, and how many more exist. */
+/** Refs drawn on a session row: the main PR, every tracked issue, and how many others exist. */
 export interface RowRefs {
-  primary?: Ref;
-  issue?: Ref;
+  pr?: Ref;
+  /** The main PR is the one whose head is the session's branch. */
+  branch: boolean;
+  issues: Ref[];
+  /** Other pull requests and mentions. */
   extra: number;
 }
 
@@ -20,7 +23,6 @@ export interface DoneInput {
 }
 
 const EXPLICIT_PR_SOURCES: ReadonlySet<RefSource> = new Set(['agent', 'created', 'manual']);
-const ROW_ISSUE_SOURCES: ReadonlySet<RefSource> = new Set(['prompt', 'closes']);
 const CLOSED_STATUSES = new Set(['merged', 'closed', 'completed', 'not_planned']);
 
 /** The link with the highest `linkedAt`, or undefined for an empty list. */
@@ -46,46 +48,56 @@ export function trackedRefs(view: SessionRefView): Ref[] {
 }
 
 /**
- * Picks what a session row shows. The primary ref is the branch PR, else the newest PR the agent
- * or user linked, else the newest PR from a prompt, else the newest tracked issue. The issue
- * beside it is the newest `prompt` or `closes` issue, preferring one the primary PR closes.
- * `extra` counts every other ref, mentions included.
+ * The session's main pull request: the branch PR, else the newest PR the agent or user linked,
+ * else the newest PR from a prompt.
+ */
+export function mainPullRequest(view: SessionRefView): { pr?: Ref; branch: boolean } {
+  const branchPR = view.branchRefs[0];
+  if (branchPR !== undefined) return { pr: branchPR, branch: true };
+  const prs = trackedLinks(view).filter((link) => link.ref.kind === 'pr');
+  const pr =
+    newest(prs.filter((link) => EXPLICIT_PR_SOURCES.has(link.source)))?.ref ?? newest(prs)?.ref;
+  return pr === undefined ? { branch: false } : { pr, branch: false };
+}
+
+/**
+ * Picks what a session row shows: the main PR (see {@link mainPullRequest}) and every tracked
+ * issue, the ones the main PR closes first, newest link first within each part. The PR snapshot
+ * knows its closing issues before a `closes` link is stored, so those count as tracked too.
+ * `extra` counts the other pull requests and the mentions.
  */
 export function rowRefs(view: SessionRefView): RowRefs {
-  const tracked = trackedLinks(view);
-  const prs = tracked.filter((link) => link.ref.kind === 'pr');
-  const primary =
-    view.branchRefs[0] ??
-    newest(prs.filter((link) => EXPLICIT_PR_SOURCES.has(link.source)))?.ref ??
-    newest(prs)?.ref ??
-    newest(tracked.filter((link) => link.ref.kind === 'issue'))?.ref;
-  const primaryKey = primary === undefined ? undefined : refKey(primary);
+  const main = mainPullRequest(view);
+  const mainKey = main.pr === undefined ? undefined : refKey(main.pr);
+  const closedByMain = new Set(
+    (mainKey === undefined ? undefined : view.states[mainKey]?.closes)?.map(refKey)
+  );
+  const issueLinks = trackedLinks(view)
+    .filter((link) => link.ref.kind === 'issue')
+    .sort((a, b) => b.linkedAt - a.linkedAt);
+  const closesMain = (ref: Ref, via?: string) =>
+    (mainKey !== undefined && via === mainKey) || closedByMain.has(refKey(ref));
+  const issues = new Map<string, Ref>();
+  for (const link of issueLinks.filter((item) => closesMain(item.ref, item.via))) {
+    issues.set(refKey(link.ref), link.ref);
+  }
+  for (const ref of mainKey === undefined ? [] : (view.states[mainKey]?.closes ?? [])) {
+    if (!issues.has(refKey(ref))) issues.set(refKey(ref), ref);
+  }
+  for (const link of issueLinks) {
+    if (!issues.has(refKey(link.ref))) issues.set(refKey(link.ref), link.ref);
+  }
 
-  const issues = tracked.filter(
-    (link) =>
-      link.ref.kind === 'issue' &&
-      ROW_ISSUE_SOURCES.has(link.source) &&
-      refKey(link.ref) !== primaryKey
-  );
-  // The PR snapshot knows its closing issues before a `closes` link is stored, so check both.
-  const closedByPrimary = new Set(
-    (primaryKey === undefined ? undefined : view.states[primaryKey]?.closes)?.map(refKey)
-  );
-  const preferred = issues.filter(
-    (link) =>
-      (primaryKey !== undefined && link.via === primaryKey) || closedByPrimary.has(refKey(link.ref))
-  );
-  const issue = (newest(preferred) ?? newest(issues))?.ref;
-
-  const shown = new Set([primaryKey, issue === undefined ? undefined : refKey(issue)]);
+  const shown = new Set([mainKey, ...issues.keys()]);
   const others = new Set(
     [...view.branchRefs, ...view.links.map((link) => link.ref)]
       .map(refKey)
       .filter((key) => !shown.has(key))
   );
   return {
-    ...(primary === undefined ? {} : { primary }),
-    ...(issue === undefined ? {} : { issue }),
+    ...(main.pr === undefined ? {} : { pr: main.pr }),
+    branch: main.branch,
+    issues: [...issues.values()],
     extra: others.size
   };
 }

@@ -12,6 +12,8 @@ import { type Ref, type RefState, refKey, refNumber } from './refs/ref.js';
 
 // Cells taken by a ref glyph and its trailing space (see `ICONS`).
 const ICON = 2;
+// Blank cells between the title and the marker at the right end.
+const MARKER_GAP = 2;
 
 /** Inputs of {@link workRow}. */
 export interface WorkRowInput {
@@ -25,8 +27,55 @@ export interface WorkRowInput {
   marquee: ReturnType<typeof createMarquee>;
   /** Keyboard selection, drawn in the action selection colors like a selected list row. */
   selected?(): boolean;
+  /** Small muted note at the right end, such as `branch` for the session's branch PR. */
+  marker?(): string | undefined;
   /** Element id; the parts get `-icon`, `-number` and `-title` after it. */
   id?: string;
+}
+
+/**
+ * The full review and CI status of an open pull request, as one muted line such as
+ * `approved · 2/3 threads resolved · checks passing`. Undefined when there is nothing to say.
+ */
+export function reviewSummary(state: RefState | undefined): string | undefined {
+  const review = state?.status === 'open' || state?.status === 'draft' ? state.review : undefined;
+  if (review === undefined) return undefined;
+  const parts: string[] = [];
+  if (review.decision !== undefined) parts.push(review.decision.replace('_', ' '));
+  if (review.threads !== undefined && review.threads > 0) {
+    parts.push(`${review.threads - (review.unresolved ?? 0)}/${review.threads} threads resolved`);
+  }
+  if (review.checks !== undefined) parts.push(`checks ${review.checks}`);
+  return parts.length > 0 ? parts.join(' · ') : undefined;
+}
+
+/**
+ * The muted status line under a Work row's pull request, starting in the number's column. Hidden
+ * while {@link reviewSummary} has nothing to say.
+ */
+export function workStatusLine(input: {
+  theme(): ResolvedTheme;
+  state(): RefState | undefined;
+  width(): number;
+}): JSX.Element {
+  return jsx('box', {
+    flexDirection: 'row',
+    height: 1,
+    flexShrink: 0,
+    paddingLeft: ICON,
+    get visible() {
+      return reviewSummary(input.state()) !== undefined;
+    },
+    children: jsx('text', {
+      wrapMode: 'none',
+      get fg() {
+        return input.theme().text.muted;
+      },
+      get children() {
+        return fitText(reviewSummary(input.state()) ?? '', Math.floor(input.width()) - ICON);
+      }
+    })
+  });
 }
 
 /**
@@ -46,8 +95,14 @@ export function workRow(input: WorkRowInput): JSX.Element {
   const selected = () => input.selected?.() ?? false;
   /** Selection foreground over every part, or undefined for the parts' own colors. */
   const selectedFg = () => (selected() ? theme().text.action.primary.focused : undefined);
-  /** Cells left for the title after the icon, the number and the space before the title. */
-  const room = () => Math.floor(input.width()) - ICON - cells(number()) - 1;
+  const marker = () => input.marker?.();
+  /** Cells left for the title after the icon, the number, the marker and the spaces between. */
+  const room = () => {
+    const note = marker();
+    return (
+      Math.floor(input.width()) - ICON - cells(number()) - 1 - (note ? cells(note) + MARKER_GAP : 0)
+    );
+  };
   return jsx('box', {
     ...(input.id === undefined ? {} : { id: input.id }),
     flexDirection: 'row',
@@ -115,6 +170,19 @@ export function workRow(input: WorkRowInput): JSX.Element {
           return input.marquee.active() === key() && input.marquee.offset() > 0
             ? ` ${marqueeText(title(), room(), input.marquee.offset())}`
             : ` ${fitText(title(), room())}`;
+        }
+      }),
+      jsx('text', {
+        flexShrink: 0,
+        wrapMode: 'none',
+        get visible() {
+          return marker() !== undefined;
+        },
+        get fg() {
+          return selectedFg() ?? theme().text.muted;
+        },
+        get children() {
+          return `${' '.repeat(MARKER_GAP)}${marker() ?? ''}`;
         }
       })
     ]

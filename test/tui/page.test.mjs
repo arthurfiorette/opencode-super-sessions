@@ -100,7 +100,8 @@ const refViews = {
       [key(pr4930)]: {
         status: 'open',
         title: 'Migrate build to Rspack',
-        url: 'https://github.com/mastra-ai/mastra/pull/4930'
+        url: 'https://github.com/mastra-ai/mastra/pull/4930',
+        review: { decision: 'changes_requested', unresolved: 2, threads: 3, checks: 'failing' }
       },
       [key(issue12)]: {
         status: 'open',
@@ -450,9 +451,16 @@ test('rows take a line per detail they have, with no gap between rows and one bl
   const { lines, row } = await mount(100);
   const frame = lines();
 
-  // Running has refs, so it takes two lines. Its branch shows in the preview, never in the list.
+  // Running has a PR with review trouble and an issue it closes: PR, status and issues lines,
+  // indented past the title. Its branch shows in the preview, never in the list.
   const running = row('Mastra build: Rollup to Rspack');
   assert.match(frame[running + 1], /#4930 Migrate build to Rspack/);
+  assert.match(frame[running + 2], /changes requested · 2 unresolved · checks failing/);
+  assert.match(frame[running + 3], /#12\s*$/);
+  const indent = (index) => frame[index].search(/\S/);
+  assert.equal(indent(running + 2), indent(running + 1));
+  assert.equal(indent(running + 3), indent(running + 1));
+  assert.ok(indent(running + 1) > frame[running].indexOf('Mastra build'));
   assert.ok(!frame.some((line) => line.includes('rspack-build')));
   // Both pins have neither: the second follows on the next line, then one blank line comes
   // before the Running header.

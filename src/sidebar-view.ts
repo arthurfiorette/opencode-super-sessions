@@ -21,7 +21,7 @@ import { type SessionRefView, SuperSessions } from './rpc.js';
 import { tuiSettingsFor } from './settings/store.js';
 import type { SidebarProps } from './sidebar.js';
 import { createSidebarState } from './sidebar-state.js';
-import { workRow } from './work-row.js';
+import { workRow, workStatusLine } from './work-row.js';
 
 const REFRESH_INTERVAL = 60_000;
 
@@ -112,17 +112,32 @@ export default function Sidebar(props: SidebarProps) {
     ]
   }));
 
-  /** One ref line; the shared Work row also draws the preview's Work section. */
+  /** Key of the session's branch PR, which leads the list with a `branch` marker. */
+  const branchKey = () => {
+    const ref = data.view?.branchRefs[0];
+    return ref === undefined ? undefined : refKey(ref);
+  };
+  /**
+   * One ref line, plus the status line under a pull request; the shared Work row also draws the
+   * preview's Work section.
+   */
   const row = (ref: () => Ref, index: number) =>
-    workRow({
-      context,
-      options: props.options,
-      theme,
-      ref,
-      state: () => stateOf(ref()),
-      width,
-      marquee,
-      id: `super-sessions-sidebar-ref-${index}`
+    jsx('box', {
+      flexShrink: 0,
+      children: [
+        workRow({
+          context,
+          options: props.options,
+          theme,
+          ref,
+          state: () => stateOf(ref()),
+          width,
+          marquee,
+          marker: () => (refKey(ref()) === branchKey() ? 'branch' : undefined),
+          id: `super-sessions-sidebar-ref-${index}`
+        }),
+        workStatusLine({ theme, state: () => stateOf(ref()), width })
+      ]
     });
 
   return jsx('box', {

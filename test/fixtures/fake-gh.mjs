@@ -33,6 +33,51 @@ const refs = {
     closedAt: '2026-11-01T10:00:00Z',
     closingIssuesReferences: { nodes: [] }
   },
+  // Open with review trouble: changes requested, three of four threads open, a failing head.
+  'acme/widgets#90': {
+    __typename: 'PullRequest',
+    state: 'OPEN',
+    isDraft: false,
+    title: 'Group search results by day',
+    url: 'https://github.com/acme/widgets/pull/90',
+    mergedAt: null,
+    closedAt: null,
+    reviewDecision: 'CHANGES_REQUESTED',
+    headRefOid: '9a0c2f3e4b5d6a7c8e9f0a1b2c3d4e5f6a7b8c9d',
+    closingIssuesReferences: {
+      nodes: [{ number: 61, repository: { nameWithOwner: 'acme/widgets' } }]
+    },
+    latestReviews: { nodes: [{ state: 'CHANGES_REQUESTED' }] },
+    reviewThreads: {
+      totalCount: 4,
+      nodes: [
+        { isResolved: false },
+        { isResolved: true },
+        { isResolved: false },
+        { isResolved: false }
+      ]
+    },
+    commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] }
+  },
+  // Issues for a session that tracks three at once.
+  ...Object.fromEntries(
+    [
+      [61, 'OPEN', 'Search results come back out of date order'],
+      [62, 'CLOSED', 'Server hits land after older local ones'],
+      [63, 'OPEN', 'Keep the selection when hits arrive']
+    ].map(([number, state, title]) => [
+      `acme/widgets#${number}`,
+      {
+        __typename: 'Issue',
+        state,
+        stateReason: state === 'CLOSED' ? 'COMPLETED' : null,
+        title,
+        url: `https://github.com/acme/widgets/issues/${number}`,
+        closedAt: state === 'CLOSED' ? '2026-11-02T10:00:00Z' : null,
+        closedByPullRequestsReferences: { nodes: [] }
+      }
+    ])
+  ),
   'acme/widgets#34': {
     __typename: 'PullRequest',
     state: 'OPEN',
@@ -48,7 +93,7 @@ const refs = {
 };
 
 // Head branch of each pull request above, for `pullRequests(headRefName:)` lookups.
-const branches = { 'acme/widgets@fix-titles': [34] };
+const branches = { 'acme/widgets@fix-titles': [34], 'acme/widgets@group-search': [90] };
 
 const args = process.argv.slice(2);
 

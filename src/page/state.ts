@@ -28,11 +28,14 @@ export interface Group {
   sessions: SessionInfo[];
 }
 
+/** Lines a session row can draw under its title, in this order. */
+export type DetailKind = 'pr' | 'status' | 'issues';
+
 /** One terminal line of the session list. A session takes a `title` line and the others it needs. */
 export type Line =
   | { kind: 'blank' }
   | { kind: 'header'; title: string }
-  | { kind: 'title' | 'refs'; session: SessionInfo };
+  | { kind: 'title' | DetailKind; session: SessionInfo };
 
 /** What the Done rule needs beyond refs. Fetched only for sessions that could be Done. */
 export interface DoneExtra {
@@ -155,20 +158,20 @@ export function rowsOf(groups: readonly Group[]): SessionInfo[] {
 }
 
 /**
- * Lays groups out as terminal lines. Each row is its title line plus a refs line when
- * `hasRefs` says so. Rows follow each other with no gap, and one blank line comes before every
- * group after the first, like the host's session list.
+ * Lays groups out as terminal lines. Each row is its title line plus the detail lines `details`
+ * names. Rows follow each other with no gap, and one blank line comes before every group after
+ * the first, like the host's session list.
  */
 export function layoutLines(
   groups: readonly Group[],
-  hasRefs: (session: SessionInfo) => boolean
+  details: (session: SessionInfo) => readonly DetailKind[]
 ): Line[] {
   return groups.flatMap((group, index): Line[] => [
     ...(index > 0 ? [{ kind: 'blank' as const }] : []),
     ...(group.title === undefined ? [] : [{ kind: 'header' as const, title: group.title }]),
     ...group.sessions.flatMap((session): Line[] => [
       { kind: 'title', session },
-      ...(hasRefs(session) ? [{ kind: 'refs' as const, session }] : [])
+      ...details(session).map((kind) => ({ kind, session }))
     ])
   ]);
 }

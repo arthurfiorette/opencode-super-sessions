@@ -8,9 +8,9 @@ import { createComponent, createMemo, For, type JSX, Show, untrack } from 'solid
 import type { Options } from '../config.js';
 import { type createMarquee, marqueeText } from '../marquee.js';
 import { type Ref, refKey } from '../refs/ref.js';
-import { trackedRefs } from '../refs/summary.js';
+import { mainPullRequest, trackedRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
-import { workRow } from '../work-row.js';
+import { reviewSummary, workRow, workStatusLine } from '../work-row.js';
 import { fitText } from './row.js';
 
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -244,15 +244,20 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
       },
       children: (item: WorkLine) => {
         if (item.kind === 'label') return line(() => item.text);
+        const state = () => props.refs()?.states[refKey(item.ref)];
+        if (item.kind === 'status') {
+          return workStatusLine({ theme, state, width: () => props.width() });
+        }
         return workRow({
           context,
           options: props.options,
           theme,
           ref: () => item.ref,
-          state: () => props.refs()?.states[refKey(item.ref)],
+          state,
           width: () => props.width(),
           marquee: props.marquee,
-          selected: () => props.selectedRef() === refKey(item.ref)
+          selected: () => props.selectedRef() === refKey(item.ref),
+          marker: () => (item.branch ? 'branch' : undefined)
         });
       }
     })
@@ -285,21 +290,40 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
   });
 }
 
-/** One line of the preview's Work section: a ref row, or the label over mentioned refs. */
-export type WorkLine = { kind: 'label'; text: string } | { kind: 'ref'; ref: Ref };
+/**
+ * One line of the preview's Work section: a ref row (`branch` marks the session's branch PR),
+ * the status line under a pull request, or the label over mentioned refs.
+ */
+export type WorkLine =
+  | { kind: 'label'; text: string }
+  | { kind: 'ref'; ref: Ref; branch?: boolean }
+  | { kind: 'status'; ref: Ref };
 
 /**
- * Tracked refs with the issues each PR closes right under it, in the same columns, then
- * mentioned refs under a label. Each ref appears once, so its key names its row.
+ * Tracked refs, the main PR first, each PR followed by its status line when it has one and the
+ * issues it closes right under it, in the same columns; then mentioned refs under a label. Each
+ * ref appears once, so its key names its row.
  */
 export function workLines(view: SessionRefView): WorkLine[] {
+  const main = mainPullRequest(view);
+  const mainKey = main.pr === undefined ? undefined : refKey(main.pr);
   const tracked = trackedRefs(view);
   const trackedKeys = new Set(tracked.map(refKey));
   const nestedKeys = new Set<string>();
   const lines: WorkLine[] = [];
-  for (const pr of tracked.filter((ref) => ref.kind === 'pr')) {
-    lines.push({ kind: 'ref', ref: pr });
+  const prs = tracked.filter((ref) => ref.kind === 'pr');
+  const ordered = [
+    ...prs.filter((ref) => refKey(ref) === mainKey),
+    ...prs.filter((ref) => refKey(ref) !== mainKey)
+  ];
+  for (const pr of ordered) {
     const key = refKey(pr);
+    lines.push(
+      key === mainKey && main.branch
+        ? { kind: 'ref', ref: pr, branch: true }
+        : { kind: 'ref', ref: pr }
+    );
+    if (reviewSummary(view.states[key]) !== undefined) lines.push({ kind: 'status', ref: pr });
     const closes = new Map<string, Ref>();
     for (const ref of view.states[key]?.closes ?? []) closes.set(refKey(ref), ref);
     for (const link of view.links) {
