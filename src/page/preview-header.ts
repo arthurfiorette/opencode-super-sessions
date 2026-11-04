@@ -328,6 +328,8 @@ export function workLines(view: SessionRefView): WorkLine[] {
   const tracked = trackedRefs(view);
   const trackedKeys = new Set(tracked.map(refKey));
   const nestedKeys = new Set<string>();
+  // The PR's snapshot still lists an issue the user unlinked; its stored link is what is gone.
+  const linkedKeys = new Set(view.links.map((link) => refKey(link.ref)));
   const lines: WorkLine[] = [];
   const prs = tracked.filter((ref) => ref.kind === 'pr');
   const ordered = [
@@ -339,7 +341,9 @@ export function workLines(view: SessionRefView): WorkLine[] {
     lines.push({ kind: 'ref', ref: pr });
     if (hasWorkStatus(view.states[key])) lines.push({ kind: 'status', ref: pr });
     const closes = new Map<string, Ref>();
-    for (const ref of view.states[key]?.closes ?? []) closes.set(refKey(ref), ref);
+    for (const ref of view.states[key]?.closes ?? []) {
+      if (linkedKeys.has(refKey(ref))) closes.set(refKey(ref), ref);
+    }
     for (const link of view.links) {
       if (link.source === 'closes' && link.via === key) closes.set(refKey(link.ref), link.ref);
     }

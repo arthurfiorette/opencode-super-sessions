@@ -743,6 +743,30 @@ export default function SessionBrowser(props: PageProps) {
     const session = selected();
     if (ref && session) copyLink(context, refUrl(ref, data.refs[session.id]?.states[refKey(ref)]));
   };
+  /**
+   * `d` in the Work rows: unlinks the selected ref. No confirmation, since `ctrl+l` links it
+   * again. The server records the dismissal, which keeps detection and the branch lookup from
+   * bringing the ref back. The Work selection keeps its index, so it lands on the row that took
+   * the ref's place.
+   */
+  const unlinkWork = async () => {
+    const ref = workRef();
+    const session = selected();
+    if (!ref || !session) return;
+    const label = `${refKind(ref)} ${refNumber(ref)}`;
+    try {
+      await model.rpc().unlink({ sessionID: session.id, key: refKey(ref) }, model.rpcOptions());
+    } catch {
+      toast(`Could not unlink ${label}.`, 'error');
+      return;
+    }
+    toast(
+      `Unlinked ${label}. ${shortcut('super-sessions.link', 'ctrl+l')} links it again.`,
+      'success'
+    );
+    // The cached read, not a forge refresh, so the row and the preview drop the ref at once.
+    await controller.reread([session.id]);
+  };
 
   const nextView = (step: number) =>
     setView(VIEWS[(VIEWS.indexOf(memory.view) + VIEWS.length + step) % VIEWS.length] ?? 'active');
@@ -831,7 +855,10 @@ export default function SessionBrowser(props: PageProps) {
         ? [{ title: 'Focus the preview links', key: 'right', run: focusWork }]
         : []),
       ...(workRef() !== undefined
-        ? [{ title: 'Copy the selected link', key: 'c', run: copyWork }]
+        ? [
+            { title: 'Copy the selected link', key: 'c', run: copyWork },
+            { title: 'Unlink pull request or issue', key: 'd', run: unlinkWork }
+          ]
         : []),
       {
         title: 'Show command palette',
@@ -936,6 +963,14 @@ export default function SessionBrowser(props: PageProps) {
       enabled: () => workRef() !== undefined,
       run: copyWork
     },
+    // Same rule as `c`. Not backspace: it edits the search, and a press meant for the query
+    // would unlink the selected ref.
+    ...['d', 'delete'].map((bind) => ({
+      bind,
+      title: 'Unlink pull request or issue',
+      enabled: () => workRef() !== undefined,
+      run: () => void unlinkWork()
+    })),
     { bind: 'pageup', title: 'Page up', run: () => move(-pageRows()) },
     { bind: 'pagedown', title: 'Page down', run: () => move(pageRows()) },
     { bind: 'home', title: 'First session', run: () => move(-rowCount()) },
@@ -1666,7 +1701,12 @@ export default function SessionBrowser(props: PageProps) {
     if (focus() === 'work')
       return [
         ['open', 'enter'],
-        ...(pullView() ? [] : ([['copy', 'c']] as Array<[string, string]>)),
+        ...(pullView()
+          ? []
+          : ([
+              ['copy', 'c'],
+              ['unlink', 'd']
+            ] as Array<[string, string]>)),
         ['back', 'left']
       ];
     // A row is a pull request here: enter and space act on its newest session.

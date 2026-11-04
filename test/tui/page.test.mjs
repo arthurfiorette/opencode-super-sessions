@@ -139,12 +139,22 @@ async function host(
   const selects = [];
   // Set, `session.list` never answers, like a busy server.
   let stalled = false;
+  // `unlink` calls; later views leave their keys out, as the server's dismissal does.
+  const unlinks = [];
+  /** A session's view without the links unlinked from it. */
+  const viewOf = (id) => {
+    const gone = new Set(unlinks.filter((item) => item.sessionID === id).map((item) => item.key));
+    return {
+      ...refViews[id],
+      links: refViews[id].links.filter((link) => !gone.has(key(link.ref)))
+    };
+  };
   // RPCs reach the server plugin through a Location, which a missing directory does not have.
   const views = async ({ sessionIDs }, options) => {
     const directory = options?.location?.directory ?? '/repo';
     if (directory.startsWith(GONE)) throw missing(directory);
     return Object.fromEntries(
-      sessionIDs.filter((id) => refViews[id]).map((id) => [id, refViews[id]])
+      sessionIDs.filter((id) => refViews[id]).map((id) => [id, viewOf(id)])
     );
   };
   const context = {
@@ -214,6 +224,10 @@ async function host(
         'history.scan': async (input) => {
           scans.push(input);
           return { skipped: false };
+        },
+        unlink: async (input) => {
+          unlinks.push(input);
+          return {};
         },
         search
       })
@@ -317,6 +331,7 @@ async function host(
     scans,
     forks,
     selects,
+    unlinks,
     stallLists() {
       stalled = true;
     },
@@ -506,6 +521,45 @@ test('ctrl+b forks the selected session before the picked prompt and opens the f
   command('shift+tab').run();
   await eventually(rendered, (frame) => /#4930 .*Migrate build to Rspack/.test(frame));
   assert.equal(command('ctrl+b').enabled(), false);
+});
+
+// Unlinking asks for no confirmation, so the key must act only on the Work links; on the list `d`
+// is a letter of the search.
+test('d and delete in the Work links unlink the selected ref, and the next ref takes the selection', async () => {
+  const terminal = await host();
+  const rendered = await testRender(() => terminal.overlay.render({}), { width: 140, height: 40 });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  await eventually(rendered, (frame) => frame.includes('Rspack issue 1'));
+  // Leaves the session with six issues alone in the list, selected.
+  await rendered.mockInput.typeText('worktrees');
+  await eventually(rendered, (frame) => !frame.includes('Mastra build'));
+  /** Runs the browser's binding for `bind` like the host: a disabled one leaves the key to the search. */
+  const press = (bind) => {
+    const command = terminal.layers
+      .filter((layer) => layer.mode === 'super-sessions')
+      .flatMap((layer) => layer.commands)
+      .find((item) => item.bind === bind);
+    return command.enabled?.() === false ? false : command.run();
+  };
+  assert.equal(press('d'), false);
+
+  press('right');
+  press('d');
+  await eventually(rendered, (frame) => !frame.includes('Rspack issue 1'));
+  press('delete');
+  await eventually(rendered, (frame) => !frame.includes('Rspack issue 2'));
+  assert.deepEqual(terminal.unlinks, [
+    { sessionID: 'unread', key: key(issues[0]) },
+    { sessionID: 'unread', key: key(issues[1]) }
+  ]);
+  assert.match(rendered.captureCharFrame(), /Rspack issue 3/);
+  assert.deepEqual(
+    terminal.toasts.map((toast) => toast.message),
+    ['Unlinked issue #1. ctrl+l links it again.', 'Unlinked issue #2. ctrl+l links it again.']
+  );
 });
 
 // Crossing the list toward the preview used to select every row under the pointer, so the preview

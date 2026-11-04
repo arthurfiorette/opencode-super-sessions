@@ -159,7 +159,7 @@ While you peek at a running session, `esc` returns to the list instead of interr
 
 ### Work links
 
-`right` moves the arrow keys from the list to the preview's Work rows. It does so only while the search cursor is at the end of the query and the preview shows Work rows; otherwise it moves the cursor. In the Work rows, `up` and `down` select a row, `enter` opens it in your web browser, and `left` or `esc` returns to the list. Selecting another session or typing also returns to the list. A left click on a Work row opens it too, and `c` copies the selected row's URL.
+`right` moves the arrow keys from the list to the preview's Work rows. It does so only while the search cursor is at the end of the query and the preview shows Work rows; otherwise it moves the cursor. In the Work rows, `up` and `down` select a row, `enter` opens it in your web browser, and `left` or `esc` returns to the list. Selecting another session or typing also returns to the list. A left click on a Work row opens it too, and `c` copies the selected row's URL. `d` or `delete` unlinks the selected row's pull request or issue (see [Unlinking](#unlinking)), and the selection moves to the row that takes its place.
 
 ### Copying links
 
@@ -177,7 +177,7 @@ Some terminals keep ctrl+click for themselves:
 
 ### Keys
 
-The footer always shows the same hints: `space peek`, `ctrl+s archive`, `ctrl+q done` and `ctrl+/ keys` on the left, `ctrl+a all projects` on the right. While the Work rows have the arrow keys it reads `enter open`, `c copy` and `left back`. Every other action is in the keys dialog: `ctrl+/`, or `?` while the search is empty, lists each browser action with its key, like OpenCode's command palette. Type to filter it, and `enter` runs the action on the selected session.
+The footer always shows the same hints: `space peek`, `ctrl+s archive`, `ctrl+q done` and `ctrl+/ keys` on the left, `ctrl+a all projects` on the right. While the Work rows have the arrow keys it reads `enter open`, `c copy`, `d unlink` and `left back`. Every other action is in the keys dialog: `ctrl+/`, or `?` while the search is empty, lists each browser action with its key, like OpenCode's command palette. Type to filter it, and `enter` runs the action on the selected session.
 
 Keys are written the way OpenCode writes them. Keys marked "yours" belong to an OpenCode command the browser reuses, so the browser, its footer and the keys dialog follow your own keybinds for that command.
 
@@ -190,6 +190,7 @@ Keys are written the way OpenCode writes them. Keys marked "yours" belong to an 
 | `space`                       | [Peek](#peek), while the search is empty                                                                                       |
 | `right`                       | Move to the [Work links](#work-links), or to the sessions of a pull request                                                    |
 | `c`                           | Copy the selected Work link's URL, while the Work links have the arrow keys                                                    |
+| `d`, `delete`                 | Unlink pull request or issue: the selected Work link, while the Work links have the arrow keys                                 |
 | `esc`                         | Close the browser                                                                                                              |
 | `ctrl+/`, `?`                 | The keys dialog. `?` types into a search that is not empty                                                                     |
 | `tab` / `shift+tab`           | Next or previous view                                                                                                          |
@@ -283,7 +284,7 @@ A session is Done when all of these hold:
 
 ### Unlinking
 
-Ask the agent to unlink a ref; it calls `unlink_work`. Detection and the branch lookup never add an unlinked ref back, while linking it again with `link_work` or `ctrl+l` does. Unlinking a pull request also drops the issues that were linked only because it closes them. The browser has no unlink key.
+In the browser, select a [Work link](#work-links) and press `d` or `delete`. There is no confirmation; a toast names the ref and the key that links it again. You can also ask the agent, which calls `unlink_work`. Detection and the branch lookup never add an unlinked ref back, while linking it again with `link_work` or `ctrl+l` does. That holds for the branch's pull request too, which stays unlinked until you link it. Unlinking a pull request also drops the issues that were linked only because it closes them.
 
 ### Agent tools
 

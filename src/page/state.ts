@@ -751,6 +751,16 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
     },
 
     /**
+     * Reads the given sessions' refs again without asking the forge, after a change the server
+     * stored, such as an unlink. The server answers from its caches, so the rows follow at once.
+     */
+    async reread(ids: string[]): Promise<void> {
+      const refs = await fetchRefs(ids);
+      publish({ refs: { ...data.refs, ...refs } });
+      await classify();
+    },
+
+    /**
      * Refetches one session's refs, branch pull requests and git checkout, ignoring the caches
      * (a rate limit still holds). Resolves to the forges that failed; throws when the server
      * plugin did not answer for the session.

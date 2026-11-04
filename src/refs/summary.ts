@@ -65,8 +65,9 @@ export function mainPullRequest(view: SessionRefView): { pr?: Ref; branch: boole
 
 /**
  * Picks what a session row shows: the main PR (see {@link mainPullRequest}) and every tracked
- * issue, the ones the main PR closes first, newest link first within each part. The PR snapshot
- * knows its closing issues before a `closes` link is stored, so those count as tracked too.
+ * issue, the ones the main PR closes first, newest link first within each part. Only stored
+ * links count: the server stores a `closes` link for each issue in the PR's snapshot before it
+ * answers, so an issue the snapshot lists without a link is one the user unlinked.
  * `extra` counts the other pull requests and the mentions.
  */
 export function rowRefs(view: SessionRefView): RowRefs {
@@ -83,9 +84,6 @@ export function rowRefs(view: SessionRefView): RowRefs {
   const issues = new Map<string, Ref>();
   for (const link of issueLinks.filter((item) => closesMain(item.ref, item.via))) {
     issues.set(refKey(link.ref), link.ref);
-  }
-  for (const ref of mainKey === undefined ? [] : (view.states[mainKey]?.closes ?? [])) {
-    if (!issues.has(refKey(ref))) issues.set(refKey(ref), ref);
   }
   for (const link of issueLinks) {
     if (!issues.has(refKey(link.ref))) issues.set(refKey(link.ref), link.ref);
