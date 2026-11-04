@@ -5,6 +5,7 @@ import type { ResolvedTheme } from '@opencode/theme/tui';
 import {
   type BoxRenderable,
   type InputRenderable,
+  MouseButton,
   type MouseEvent,
   type Renderable,
   RGBA,
@@ -628,32 +629,36 @@ export default function SessionBrowser(props: PageProps) {
         ]
       }),
       jsx('box', {
+        flexDirection: 'row',
         flexGrow: 1,
         flexShrink: 1,
         minWidth: 0,
         paddingLeft: 4,
-        children: jsx('text', {
-          wrapMode: 'none',
-          get children() {
-            return VIEWS.flatMap((view, index) => {
-              const current = memory.view === view && !data.search;
-              const icon =
-                view === 'done'
-                  ? `${ICONS.done} `
-                  : view === 'archived'
-                    ? `${ICONS.archived} `
-                    : '';
+        gap: 3,
+        // One text per tab, since spans take no pointer events: a left click switches the view.
+        children: VIEWS.map((view) => {
+          const current = () => memory.view === view && !data.search;
+          const icon =
+            view === 'done' ? `${ICONS.done} ` : view === 'archived' ? `${ICONS.archived} ` : '';
+          return jsx('text', {
+            flexShrink: 0,
+            wrapMode: 'none',
+            onMouseUp: (event: MouseEvent) => {
+              if (event.button !== MouseButton.LEFT) return;
+              event.stopPropagation();
+              setView(view);
+            },
+            get children() {
               return [
-                ...(index > 0 ? [span('   ', () => theme().text.muted)] : []),
                 span(
                   `${icon}${VIEW_LABELS[view]}`,
-                  () => (current ? theme().text.base : theme().text.muted),
-                  current
+                  () => (current() ? theme().text.base : theme().text.muted),
+                  current()
                 ),
                 span(` ${model.counts()[view]}`, () => theme().text.muted)
               ];
-            });
-          }
+            }
+          });
         })
       }),
       jsx('text', {
