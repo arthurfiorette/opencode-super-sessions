@@ -82,6 +82,7 @@ A URL in a prompt, a reply or command output can name any host with a `github` o
 | -------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------- |
 | Ref snapshots              | `src/cache.ts`                | Open and draft 2 min, closed 15 min, merged, completed and not planned forever, errors 30 s |
 | Branch pull requests       | `src/server/branches.ts`      | 1 min while a found PR is open, 5 min otherwise, errors 30 s                                |
+| Pull request details       | `src/server/pull-details.ts`  | Like the PR's snapshot, errors 30 s; the last 100 PRs                                       |
 | Remotes and default branch | `src/repo.ts`                 | 15 min per directory                                                                        |
 | Current branch             | `src/repo.ts`                 | 10 s per directory                                                                          |
 | Forge availability         | `src/providers/*/provider.ts` | 5 min, 10 s while the CLI is missing                                                        |
@@ -128,6 +129,8 @@ The backfill (`src/server/backfill.ts`) walks every session through `session.lis
 
 The browser (`src/page/page.ts`) claims the host's `app` slot, which renders after the route inside the main column, and draws an absolutely positioned overlay only while open, so the route underneath stays mounted. While open it pushes the `super-sessions` keymap mode, which turns off the prompt and every other `base` layer, and its layer sits in that mode at priority 1. Host dialogs push `modal` above it, take the keys and draw above the overlay. The model (`src/page/model.ts`) outlives the overlay: it caches both lists for 30 seconds, reloads 500 ms after session events while open, and keeps query, view, selection and scroll in `storage.memory`.
 
+The Pull requests view builds its rows in the TUI from the lists and refs the model already loaded (`pullRows` in `src/page/state.ts`), so it costs no extra call. Its selection is a pull request key (`memory.pull`), and `memory.selected` follows it as that pull request's newest session; `model.rows()` is then the list of those sessions, so `enter`, `space`, the peek keys and the way back from a peek work unchanged. Only the preview (`src/page/pull-preview.ts`) asks the server, with `pull.details`, 150 ms after the selection settles.
+
 ### Takeover and classic fallthrough
 
 A global layer at priority 1 (`OVER_HOST`) registers commands with the host's own ids: `session.list` (slash `sessions`, aliases `resume` and `continue`) and `session.quick_switch.1` to `9`. Reusing the ids makes the user's keybinds, the slash names and the palette entries reach the plugin first. A keymap `run` falls through to the next layer only when it returns a literal `false`, and a returned Promise counts as handled, so these runs stay synchronous. `/sessions-classic` dispatches `session.list` with the argument `classic`, for which the takeover returns `false` and the built-in list opens.
@@ -148,6 +151,7 @@ The dialog rows are in `src/settings/definitions.ts`. TUI settings live in `cont
 | ---------------------------------------------------- | --------------------------------------------------------- |
 | `status`                                             | CLI availability of each enabled forge on its public host |
 | `refs`, `refresh`                                    | Links, branch refs and states per session                 |
+| `pull.details`                                       | Author, branches, description and checks of one PR        |
 | `search`                                             | Ranked hits for a query, scope and archived flag          |
 | `link`, `unlink`                                     | Manual link and dismissal                                 |
 | `done.set`                                           | The user's Done mark, or `null` to follow the refs again  |
@@ -173,7 +177,7 @@ Cleanup (`src/server/cleanup.ts`) gathers facts per worktree and calls `decideWo
 `src/providers/provider.ts` defines a forge as a static half and a runtime half:
 
 - `ForgeDefinition`: static and side-effect free, shared by the server, the TUI and tests. It recognizes remotes, parses URLs and typed references, scans text for refs and bare numbers, and holds the create, close and list command patterns.
-- `ForgeProvider`: the server-only runtime half, which spawns the CLI. `available(host)`, `branchPullRequests(repo, branch, headRepo?)`, and `snapshot(candidates)`, which resolves kinds and returns states in input order, with `not-found` for one missing number and `retryAt` on rate limits.
+- `ForgeProvider`: the server-only runtime half, which spawns the CLI. `available(host)`, `branchPullRequests(repo, branch, headRepo?)`, `snapshot(candidates)`, which resolves kinds and returns states in input order, with `not-found` for one missing number and `retryAt` on rate limits, and `details(ref)` for the Pull requests view's preview. GitHub reads the first 100 rollup contexts and GitLab the first 100 jobs of the head pipeline that were not retried; `foldChecks` in `src/providers/checks.ts` keeps the newest run of each check per workflow, as t3code does, and lists failures first.
 
 A pull request's snapshot carries `updatedAt` and, while it is open or a draft, `review`: the verdict, resolvable threads, the head commit's CI result and `checksPassed`/`checksTotal`. GitHub's counts come from `statusCheckRollup.contexts(first: 0)`, whose `checkRunCountsByState` and `statusContextCountsByState` cost no node. Passed means SUCCESS, NEUTRAL and SKIPPED check runs plus SUCCESS statuses, which matched github.com's `N/M checks passing` on 2026-11-04 except for superseded re-runs: github.com drops a run another run of the same check replaced, and the counts cannot. GitLab counts the head pipeline's jobs with two `jobs(retried: false, statuses:)` connections: SUCCESS and SKIPPED over every status but MANUAL. They raise a merge request's complexity from 34 to 43 points.
 
