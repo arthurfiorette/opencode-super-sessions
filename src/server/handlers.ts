@@ -14,10 +14,15 @@ export function rpcHandlers(
 ): RpcHandlers<typeof SuperSessions> {
   return {
     async status() {
-      const provider = runtime.providers.get('github');
-      if (provider === undefined) return { providers: {} };
-      // Only github.com is probed: the page shows one status line, and GHES hosts are rare.
-      return { providers: { github: await provider.available('github.com') } };
+      // Only each forge's public host is probed: the page shows one line per forge, and
+      // self-managed hosts are rare.
+      const entries = await Promise.all(
+        [...runtime.providers].map(
+          async ([id, provider]) =>
+            [id, await provider.available(provider.definition.defaultHost)] as const
+        )
+      );
+      return { providers: Object.fromEntries(entries) };
     },
 
     refs: ({ sessionIDs }) => buildViews(runtime, context.session, sessionIDs, { wait: false }),

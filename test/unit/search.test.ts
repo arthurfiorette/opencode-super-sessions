@@ -66,6 +66,14 @@ test('ranks by tier, then recency, and never matches a number by prefix', () => 
         ['ref-12', 'ref-number']
       ]
     ],
+    [
+      'mr !12',
+      undefined,
+      [
+        ['other-repo-12', 'ref-number'],
+        ['ref-12', 'ref-number']
+      ]
+    ],
     ['acme/app#12', undefined, [['ref-12', 'ref-number']]],
     ['https://github.com/other/lib/issues/12', undefined, [['other-repo-12', 'ref-number']]],
     ['https://github.com/other/lib/pull/12', undefined, []],

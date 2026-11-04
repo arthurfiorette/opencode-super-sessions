@@ -1,0 +1,58 @@
+{
+  "source": "Each entry says where its shape comes from. Exit codes and `glab:` stderr lines follow glab's api command source (gitlab.com/gitlab-org/cli, internal/commands/api/api.go: GraphQL and HTTP >= 400 errors print `glab: <message>` and exit 1).",
+  "invalid-token": {
+    "source": "Live body and status: gitlab.com GraphQL with a made-up bearer token, 2026-11-04.",
+    "code": 1,
+    "status": "HTTP/2.0 401 Unauthorized",
+    "headers": { "Ratelimit-Remaining": "496", "Ratelimit-Reset": "1793752560" },
+    "body": { "errors": [{ "message": "Invalid token" }] },
+    "stderr": "glab: Invalid token\n"
+  },
+  "keyring-token-missing": {
+    "source": "glab source, internal/api/client.go: the client is never built, so no request is sent and nothing reaches stdout.",
+    "code": 1,
+    "stdout": "",
+    "stderr": "the token for \"gitlab.com\" is missing from the operating system keyring; run `glab auth login --hostname gitlab.com` to re-authenticate\n"
+  },
+  "throttled": {
+    "source": "GitLab docs, administration/settings/user_and_ip_rate_limits.md: Rack::Attack answers 429 with a plain-text `Retry later` body and Retry-After in seconds.",
+    "code": 1,
+    "status": "HTTP/2.0 429 Too Many Requests",
+    "headers": {
+      "Content-Type": "text/plain",
+      "Ratelimit-Remaining": "0",
+      "Ratelimit-Reset": "1793753280",
+      "Retry-After": "30"
+    },
+    "body": "Retry later\n",
+    "stderr": "glab: HTTP 429\n"
+  },
+  "quota-spent": {
+    "source": "GitLab docs, same page: every response carries RateLimit-Remaining and RateLimit-Reset (Unix time). Body is a live shape.",
+    "code": 0,
+    "status": "HTTP/2.0 200 OK",
+    "headers": { "Ratelimit-Remaining": "0", "Ratelimit-Reset": "1793753280" },
+    "body": { "data": { "project": null } },
+    "stderr": ""
+  },
+  "older-gitlab-without-closes": {
+    "source": "Live shape of gitlab.com's answer to an unknown MergeRequest field (asked as `bogusField` on 2026-11-04), with the field name set to the one older servers lack.",
+    "code": 1,
+    "status": "HTTP/2.0 200 OK",
+    "body": {
+      "errors": [
+        {
+          "message": "Field 'workItemRelations' doesn't exist on type 'MergeRequest'",
+          "locations": [{ "line": 1, "column": 145 }],
+          "path": ["query", "p0", "m0", "workItemRelations"],
+          "extensions": {
+            "code": "undefinedField",
+            "typeName": "MergeRequest",
+            "fieldName": "workItemRelations"
+          }
+        }
+      ]
+    },
+    "stderr": "glab: Field 'workItemRelations' doesn't exist on type 'MergeRequest'\n"
+  }
+}

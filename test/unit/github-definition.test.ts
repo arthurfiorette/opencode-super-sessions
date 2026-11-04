@@ -23,7 +23,8 @@ test('recognizes GitHub remotes and rejects other forges and local paths', () =>
     ['git@acme.ghe.com:team/tool.git', { ...ghes, host: 'acme.ghe.com' }],
     // A GHES hostname with a dash is a real server, not an alias.
     ['git@github-enterprise.acme.io:team/tool.git', undefined],
-    ['git@gitlab.com:acme/app.git', undefined],
+    // GitHub must not claim it before GitLab, which comes later in the registry.
+    ['git@gitlab.com:acme/app.git', { provider: 'gitlab', host: 'gitlab.com', repo: 'acme/app' }],
     ['https://bitbucket.org/acme/app', undefined],
     ['https://github.com/acme', undefined],
     ['https://github.com/acme/app/extra', undefined],

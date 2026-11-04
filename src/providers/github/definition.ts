@@ -132,11 +132,15 @@ function parseUrl(url: string): Ref | undefined {
   return { provider: 'github', host, repo, kind: match[3] === 'pull' ? 'pr' : 'issue', number };
 }
 
-/** Parses one reference typed or pasted by the user. Bare numbers need a GitHub `base`. */
+/**
+ * Parses one reference typed or pasted by the user. Bare numbers need a GitHub `base`, and only
+ * URLs are read when `base` is on another forge.
+ */
 function parseReference(text: string, base?: RepoRef): RefCandidate | undefined {
   const value = text.trim();
   if (/^https?:\/\//iu.test(value)) return parseUrl(value);
-  const github = base?.provider === 'github' ? base : undefined;
+  // Without a host, `group/project#N` in a GitLab session names a GitLab issue.
+  if (base !== undefined && base.provider !== 'github') return undefined;
 
   const named = NAMED_REFERENCE.exec(value);
   if (named !== null) {
@@ -144,13 +148,13 @@ function parseReference(text: string, base?: RepoRef): RefCandidate | undefined 
     const number = positiveNumber(named[4]);
     if (repo === undefined || number === undefined) return undefined;
     // `owner/repo#N` in a GHES session most likely points at the same server.
-    return candidate(github?.host ?? PUBLIC_HOST, repo, number, kindOf(named[1]));
+    return candidate(base?.host ?? PUBLIC_HOST, repo, number, kindOf(named[1]));
   }
 
   const bare = BARE_REFERENCE.exec(value);
   const number = positiveNumber(bare?.[2]);
-  if (bare === null || number === undefined || github === undefined) return undefined;
-  return candidate(github.host, github.repo, number, kindOf(bare[1]));
+  if (bare === null || number === undefined || base === undefined) return undefined;
+  return candidate(base.host, base.repo, number, kindOf(bare[1]));
 }
 
 /** Replaces every match of `pattern` with spaces so later scans keep their offsets. */
@@ -191,6 +195,7 @@ function scanBareNumbers(text: string, base: RepoRef): RefCandidate[] {
 /** Static GitHub definition: github.com, GitHub Enterprise Cloud and GitHub Enterprise Server. */
 export const github: ForgeDefinition = {
   id: 'github',
+  defaultHost: PUBLIC_HOST,
   recognizeRemote,
   parseUrl,
   parseReference,

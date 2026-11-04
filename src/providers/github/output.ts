@@ -1,4 +1,5 @@
 import type { RunResult } from '../../process.js';
+import { isRecord, parseJson, splitInclude } from '../include.js';
 import type { Availability, ForgeError } from '../provider.js';
 
 /** One entry of a GraphQL `errors` array. `type` is GitHub's code, such as `NOT_FOUND`. */
@@ -18,41 +19,6 @@ export interface GraphQLResponse {
 const DEFAULT_BACKOFF_MS = 60_000;
 // gh exits with 4 when a command needs authentication and no token is configured.
 const AUTH_REQUIRED_EXIT = 4;
-
-/**
- * Splits `gh api --include` output into the HTTP status, lower-cased headers and body. Output
- * without a status line (gh failed before sending a request) is returned as a bare body.
- */
-function splitInclude(stdout: string): {
-  status?: number;
-  headers: Record<string, string>;
-  body: string;
-} {
-  // gh ends the status line with LF but header lines with CRLF.
-  const match = /^HTTP\/[\d.]+ (\d{3})[^\n]*\n([\s\S]*?)\r?\n\r?\n/.exec(stdout);
-  if (!match) return { headers: {}, body: stdout };
-  const headers: Record<string, string> = {};
-  for (const line of (match[2] ?? '').split(/\r?\n/)) {
-    const colon = line.indexOf(':');
-    if (colon > 0)
-      headers[line.slice(0, colon).trim().toLowerCase()] = line.slice(colon + 1).trim();
-  }
-  return { status: Number(match[1]), headers, body: stdout.slice(match[0].length) };
-}
-
-/** Parses JSON without throwing; gh prints plain text for failures that never reached GitHub. */
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
-/** Narrows an unknown value to a plain object. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /** Keeps only well-formed GraphQL errors so later lookups by `path` can trust the shape. */
 function readErrors(value: unknown): GraphQLError[] {

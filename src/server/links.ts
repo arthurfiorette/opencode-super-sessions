@@ -170,10 +170,10 @@ export async function syncCloses(
 /** Short text for why a ref could not be checked, for tool results. */
 export function reasonText(reason: UnverifiedReason): string {
   const texts: Record<UnverifiedReason, string> = {
-    'missing-tool': 'gh is not installed or ghPath is wrong',
-    unauthenticated: 'gh is not logged in',
+    'missing-tool': 'the forge CLI (gh or glab) is not installed or ghPath/glabPath is wrong',
+    unauthenticated: 'the forge CLI is not logged in',
     forbidden: 'access was denied',
-    'rate-limited': 'the GitHub rate limit is exhausted',
+    'rate-limited': 'the forge rate limit is exhausted',
     'not-found': 'it does not exist',
     failed: 'the request failed',
     disabled: 'this forge is not enabled'

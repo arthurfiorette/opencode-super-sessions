@@ -29,6 +29,10 @@ const allowed = new Set([
   'DBUS_SESSION_BUS_ADDRESS',
   'GITHUB_TOKEN',
   'GITHUB_ENTERPRISE_TOKEN',
+  // glab reads a token from these before its config and keyring. `OAUTH_TOKEN` is left out: the
+  // name is too generic to be sure it belongs to GitLab.
+  'GITLAB_TOKEN',
+  'GITLAB_ACCESS_TOKEN',
   'USERPROFILE',
   'APPDATA',
   'LOCALAPPDATA',
@@ -46,7 +50,7 @@ export function childDirectory(): string {
 }
 
 /**
- * Environment for `gh` and `git` children: only what they need to find their config, credentials
+ * Environment for `gh`, `glab` and `git` children: only what they need to find their config, credentials
  * and network, so daemon secrets and `GIT_*` overrides from the host process never leak into them.
  */
 export function childEnvironment(): NodeJS.ProcessEnv {
@@ -54,7 +58,8 @@ export function childEnvironment(): NodeJS.ProcessEnv {
     Object.entries(process.env).filter(([key, value]) => {
       if (value === undefined) return false;
       const name = key.toUpperCase();
-      return allowed.has(name) || name.startsWith('GH_');
+      // `GLAB_*` carries glab's config directory, CA and client certificates, and proxy.
+      return allowed.has(name) || name.startsWith('GH_') || name.startsWith('GLAB_');
     })
   );
 }

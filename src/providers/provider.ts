@@ -23,6 +23,8 @@ export interface RefCandidate {
  */
 export interface ForgeDefinition {
   id: ProviderId;
+  /** Public host, such as `github.com`. The status command checks the login there. */
+  defaultHost: string;
   /** Recognizes `https`, `ssh://`, `git://` and scp-style remotes. Returns undefined for other forges. */
   recognizeRemote(url: string): RepoRef | undefined;
   /** Parses a pull request or issue web URL. */
