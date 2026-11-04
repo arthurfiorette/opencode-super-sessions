@@ -31,7 +31,7 @@ function branchTarget(info: RepoInfo): BranchTarget | undefined {
 }
 
 /** Reads a session, or undefined when it does not exist or cannot be read. */
-async function readSession(session: SessionAccess, sessionID: string) {
+async function readSession(session: Pick<SessionAccess, 'get'>, sessionID: string) {
   return session.get({ sessionID }).catch((): SessionInfo | undefined => undefined);
 }
 
@@ -163,14 +163,22 @@ function listScope(scope: SearchScope): { directory?: string; project?: string; 
   return {};
 }
 
+type SearchInput = {
+  query: string;
+  scope: SearchScope;
+  archived: boolean;
+  limit?: number | undefined;
+};
+
 /**
- * Searches top-level sessions by title (the server's own search), ref number and cached ref
- * title. Ref matches only cover the 200 most recently updated sessions in scope.
+ * Searches top-level sessions by title (the server's own search), ref number, cached ref title
+ * and finally message text. Ref matches only cover the 200 most recently updated sessions in
+ * scope.
  */
 export async function searchSessions(
   runtime: Runtime,
-  session: Pick<Plugin.Context['session'], 'list'>,
-  input: { query: string; scope: SearchScope; archived: boolean; limit?: number | undefined }
+  session: Pick<Plugin.Context['session'], 'list' | 'get'>,
+  input: SearchInput
 ): Promise<SearchHit[]> {
   const filters = { ...listScope(input.scope), archived: input.archived, parentID: null };
   const [titled, recent] = await Promise.all([
@@ -201,10 +209,79 @@ export async function searchSessions(
     })
   );
 
-  return rankSessions({
+  const ranked = rankSessions({
     query: input.query,
     definitions: runtime.definitions,
     sessions: candidates,
     titleHits: titled.data.map((info) => info.id)
-  }).slice(0, input.limit ?? 50);
+  });
+  const body = await bodyHits(runtime, session, input, infos.keys(), ranked);
+  return [...ranked, ...body].slice(0, input.limit ?? 50);
+}
+
+// Sessions read from the message index per search, and how many of them may need a
+// `session.get` because they are not among the listed candidates (children, older sessions).
+const BODY_HITS = 200;
+const BODY_LOOKUPS = 50;
+
+/**
+ * Message text matches below every other tier, newest message first. Hits in a subagent's
+ * session count for its top-level session, since the page lists only those.
+ */
+async function bodyHits(
+  runtime: Runtime,
+  session: Pick<Plugin.Context['session'], 'get'>,
+  input: SearchInput,
+  listed: Iterable<string>,
+  ranked: SearchHit[]
+): Promise<SearchHit[]> {
+  const found = (await runtime.bodyIndex()).search(input.query, { limit: BODY_HITS });
+  // Listed sessions passed the server's scope and archive filters already.
+  const accepted = new Set(listed);
+  const rejected = new Set<string>();
+  let lookups = 0;
+
+  /** The in-scope top-level session a hit belongs to, reading unlisted ones within the budget. */
+  const resolve = async (start: string): Promise<string | undefined> => {
+    let id = start;
+    while (!accepted.has(id)) {
+      if (rejected.has(id) || lookups >= BODY_LOOKUPS) return undefined;
+      lookups++;
+      const info = await readSession(session, id);
+      if (info?.parentID !== undefined) {
+        id = info.parentID;
+        continue;
+      }
+      if (info === undefined || !inScope(info, input)) {
+        rejected.add(id);
+        return undefined;
+      }
+      accepted.add(id);
+    }
+    return id;
+  };
+
+  const seen = new Set(ranked.map((hit) => hit.sessionID));
+  const hits: SearchHit[] = [];
+  for (const { sessionID } of found) {
+    const id = await resolve(sessionID);
+    if (id === undefined || seen.has(id)) continue;
+    seen.add(id);
+    hits.push({ sessionID: id, match: 'body', score: 0 });
+  }
+  return hits;
+}
+
+/** Whether a top-level session read outside `session.list` matches the search filters. */
+function inScope(info: SessionInfo, input: SearchInput): boolean {
+  if ((info.time.archived !== undefined) !== input.archived) return false;
+  const scope = input.scope;
+  if (scope.type === 'directory') return info.location.directory === scope.directory;
+  if (scope.type === 'project') {
+    return (
+      info.projectID === scope.project &&
+      (scope.subpath === '' || (info.subpath ?? '') === scope.subpath)
+    );
+  }
+  return true;
 }

@@ -34,6 +34,12 @@ export const optionsSchema = z
         prompts: z.boolean().default(true)
       })
       .default({ mentions: true, prompts: true }),
+    search: z
+      .strictObject({
+        /** Index message text in the plugin's data directory and match it in search. */
+        body: z.boolean().default(true)
+      })
+      .default({ body: true }),
     /** Archive a session and strip this suffix when its title ends with it, e.g. " !". */
     archiveSuffix: z.string().min(1).max(10).optional(),
     closeTabOnArchive: z.boolean().default(true),
@@ -53,6 +59,7 @@ export const optionsSchema = z
     ghPath: 'gh',
     providers: ['github'],
     detect: { mentions: true, prompts: true },
+    search: { body: true },
     closeTabOnArchive: true,
     previewWidth: 0.4,
     colors: {}

@@ -7,7 +7,7 @@ import { definitions } from '../providers/registry.js';
 import { type ProviderId, refKey } from '../refs/ref.js';
 import { createRepoResolver, type RepoResolver } from '../repo.js';
 import { type Backfill, createBackfill } from './backfill.js';
-import { type BodyIndex, bodyIndexPath, openBodyIndex } from './body-index.js';
+import { type BodyIndex, bodyIndexPath, disabledIndex, openBodyIndex } from './body-index.js';
 import { type BranchCache, createBranchCache } from './branches.js';
 import { createEventHub, type EventContext, type EventHub, type HandledEvent } from './events.js';
 import { createWriteQueue, type WriteQueue } from './queue.js';
@@ -26,7 +26,7 @@ export interface Runtime {
   readonly events: EventHub;
   /** Sessions with a background refresh running, so repeated `refs` calls do not stack them. */
   readonly refreshing: Set<string>;
-  /** The message search index, opened on first use. */
+  /** The message search index, opened on first use. Disabled when `search.body` is off. */
   readonly bodyIndex: () => Promise<BodyIndex>;
   readonly backfill: Backfill;
 }
@@ -119,7 +119,9 @@ function createRuntime(options: Options, handle: EventHandler): Runtime {
     }),
     refreshing: new Set(),
     bodyIndex: () => {
-      bodyIndex ??= openBodyIndex(bodyIndexPath(), warn);
+      bodyIndex ??= options.search.body
+        ? openBodyIndex(bodyIndexPath(), warn)
+        : Promise.resolve(disabledIndex);
       return bodyIndex;
     },
     backfill: createBackfill({
