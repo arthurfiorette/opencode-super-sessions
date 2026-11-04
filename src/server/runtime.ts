@@ -1,3 +1,5 @@
+import { statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { createSnapshotCache, type SnapshotCache } from '../cache.js';
 import type { Options } from '../config.js';
@@ -32,6 +34,8 @@ export interface Runtime {
   /** The message search index, opened on first use. Disabled when `search.body` is off. */
   readonly bodyIndex: () => Promise<BodyIndex>;
   readonly backfill: Backfill;
+  /** Closes the search index. Called when a newer build of the plugin replaces this runtime. */
+  readonly dispose: () => Promise<void>;
 }
 
 /** Handles one subscribed event. Set by the server entry, which owns the detection logic. */
@@ -42,8 +46,10 @@ export type EventHandler = (
 ) => Promise<void>;
 
 interface Shared {
-  runtime: Runtime;
+  // Older builds stored runtimes without `dispose`, so it stays optional on what we read back.
+  runtime: Omit<Runtime, 'dispose'> & Partial<Pick<Runtime, 'dispose'>>;
   configuration: Options;
+  build?: string;
 }
 
 // The daemon loads the plugin module once per Location and module state is not shared between
@@ -51,6 +57,7 @@ interface Shared {
 const key = Symbol.for('opencode-super-sessions');
 const shared = globalThis as typeof globalThis & { [key]?: Shared };
 const warned = new Set<string>();
+const build = buildIdentity();
 
 /** Writes a warning to the daemon log, prefixed with the plugin id. */
 export function warn(message: string, error?: unknown): void {
@@ -73,17 +80,37 @@ export function warnOnce(message: string): void {
  */
 export function getRuntime(options: Options, handle: EventHandler): Runtime {
   const existing = shared[key];
-  if (existing !== undefined) {
+  if (existing !== undefined && existing.build === build) {
     if (!isDeepStrictEqual(existing.configuration, options)) {
       warnOnce(
         'Another Location passed different options. The first options stay in effect until the daemon restarts.'
       );
     }
-    return existing.runtime;
+    return existing.runtime as Runtime;
+  }
+  // A rebuild or upgrade reloaded into a running daemon finds the previous build's runtime here.
+  // Its shape and closures belong to the old code, so it is replaced instead of reused.
+  if (existing !== undefined) {
+    void existing.runtime
+      .dispose?.()
+      .catch((error: unknown) => warn('Closing the previous runtime failed', error));
   }
   const runtime = createRuntime(options, handle);
-  shared[key] = { runtime, configuration: options };
+  shared[key] = { runtime, configuration: options, build };
   return runtime;
+}
+
+/**
+ * Identifies the loaded build by the modification time of this module file. Every Location of one
+ * daemon loads the same file, so they agree; a rebuild or package upgrade changes it.
+ */
+function buildIdentity(): string {
+  try {
+    return `${fileURLToPath(import.meta.url)}@${statSync(fileURLToPath(import.meta.url)).mtimeMs}`;
+  } catch {
+    // Bundled or virtual module paths have no file to stat; every load then shares one runtime.
+    return 'unknown';
+  }
 }
 
 /** Runtime provider for each forge, built from the options that configure it. */
@@ -138,7 +165,11 @@ function createRuntime(options: Options, handle: EventHandler): Runtime {
       index: () => runtime.bodyIndex(),
       context: () => runtime.events.current(),
       warn
-    })
+    }),
+    async dispose() {
+      const index = await bodyIndex;
+      index?.close();
+    }
   };
   return runtime;
 }
