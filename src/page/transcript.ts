@@ -1123,7 +1123,7 @@ function questionTool(
   });
 }
 
-/** `✓ Explore Subagent — description` (`Subagent`). */
+/** One line naming the subagent and its task, with the host's exact label (`Subagent`). */
 function subagentTool(
   props: TranscriptProps,
   part: Tool,

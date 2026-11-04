@@ -287,12 +287,8 @@ function createTranscript(context: Plugin.Context, shown: () => string | undefin
       if (sessionID === undefined || cursor === undefined || loadingOlder) return false;
       loadingOlder = true;
       try {
-        const page = await context.client.message.list({
-          sessionID,
-          order: 'desc',
-          limit: PAGE_SIZE,
-          cursor
-        });
+        // The cursor carries the first page's order; the API rejects `order` next to it.
+        const page = await context.client.message.list({ sessionID, limit: PAGE_SIZE, cursor });
         if (state.sessionID !== sessionID) return false;
         setState({
           messages: [...[...page.data].reverse(), ...state.messages],
