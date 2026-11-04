@@ -18,6 +18,14 @@ const hostname = z
     message: 'Use a host name such as code.example.com, without scheme, port or path.'
   });
 
+const days = z.number().int().min(0).max(365);
+
+/**
+ * Which local changes keep a worktree from cleanup: any status line, staged or edited tracked
+ * files, or edited tracked files only. Ignored files never keep one.
+ */
+export const keepModeSchema = z.enum(['any', 'uncommitted', 'tracked']);
+
 const hex = z.string().regex(/^#[0-9a-f]{6}$/i, { message: 'Use a #rrggbb color.' });
 const color = z.union([hex, z.strictObject({ dark: hex, light: hex })]);
 
@@ -58,6 +66,29 @@ export const optionsSchema = z
     archiveSuffix: z.string().min(1).max(10).optional(),
     closeTabOnArchive: z.boolean().default(true),
     previewWidth: z.number().min(0.2).max(0.7).default(0.4),
+    // Defaults for the settings dialog. A value changed in the dialog overrides these.
+    /** Which sessions the browser lists when it opens. */
+    scope: z.enum(['project', 'all']).default('project'),
+    /** Show the branch line and the PR and issue line on browser rows. */
+    rows: z
+      .strictObject({ branch: z.boolean().default(true), refs: z.boolean().default(true) })
+      .default({ branch: true, refs: true }),
+    /** Scroll a hovered title that does not fit. `auto` follows the host's `animations`. */
+    titleScroll: z.enum(['auto', 'on', 'off']).default('auto'),
+    /** Show the preview pane on wide terminals. */
+    preview: z.boolean().default(true),
+    /** Archive Done sessions this many days after they become Done. Unset keeps them. */
+    autoArchiveDays: days.optional(),
+    cleanup: z
+      .strictObject({
+        deletedSessions: z.boolean().default(false),
+        merged: z.boolean().default(false),
+        inactiveDays: days.min(1).optional(),
+        doneDays: days.optional(),
+        unchanged: z.boolean().default(false),
+        keep: keepModeSchema.default('any')
+      })
+      .default({ deletedSessions: false, merged: false, unchanged: false, keep: 'any' }),
     colors: z
       .strictObject({
         open: color.optional(),
@@ -78,6 +109,11 @@ export const optionsSchema = z
     search: { body: true },
     closeTabOnArchive: true,
     previewWidth: 0.4,
+    scope: 'project',
+    rows: { branch: true, refs: true },
+    titleScroll: 'auto',
+    preview: true,
+    cleanup: { deletedSessions: false, merged: false, unchanged: false, keep: 'any' },
     colors: {}
   });
 

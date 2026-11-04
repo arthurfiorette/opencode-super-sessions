@@ -15,6 +15,31 @@ export const EVENT_TYPES = [
 
 export type HandledEvent = Extract<OpenCodeEvent, { type: (typeof EVENT_TYPES)[number] }>;
 
+/**
+ * Events that start an auto-archive and cleanup sweep: a session finished running (it may be
+ * Done now) or was deleted (its worktree may be unused now). Kept apart from {@link EVENT_TYPES}
+ * so the detection handler only ever sees the events it parses.
+ */
+export const LIFECYCLE_TYPES = [
+  'session.deleted',
+  'session.execution.succeeded',
+  'session.execution.failed',
+  'session.execution.interrupted'
+] as const;
+
+export type LifecycleEvent = Extract<OpenCodeEvent, { type: (typeof LIFECYCLE_TYPES)[number] }>;
+
+/** Every event the process-wide subscriber receives. */
+export type SubscribedEvent = HandledEvent | LifecycleEvent;
+
+const SUBSCRIBED_TYPES = [...new Set([...EVENT_TYPES, ...LIFECYCLE_TYPES])];
+const handledTypes: ReadonlySet<string> = new Set(EVENT_TYPES);
+
+/** Whether the detection handler parses this event. */
+export function isHandledEvent(event: SubscribedEvent): event is HandledEvent {
+  return handledTypes.has(event.type);
+}
+
 /** The parts of a Location's plugin context the subscriber and its handler use. */
 export type EventContext = Pick<Plugin.Context, 'event' | 'session'>;
 
@@ -31,7 +56,7 @@ export interface EventHub {
 
 export interface EventHubOptions {
   /** Handles one event with the context that owns the subscription. Failures are reported to `onError`. */
-  handle(event: HandledEvent, context: EventContext): Promise<void>;
+  handle(event: SubscribedEvent, context: EventContext): Promise<void>;
   onError(error: unknown): void;
   /** Event ids remembered for dedupe. */
   memory?: number;
@@ -65,7 +90,7 @@ export function createEventHub(options: EventHubOptions): EventHub {
 
   /** Reads the owner's stream until it ends or ownership moves. */
   const consume = async (context: EventContext, signal: AbortSignal) => {
-    for await (const event of context.event.subscribe({ types: EVENT_TYPES, signal })) {
+    for await (const event of context.event.subscribe({ types: SUBSCRIBED_TYPES, signal })) {
       if (signal.aborted) break;
       // A handover resubscribes on another Location's stream, which may deliver an event the old
       // stream already did. Ids are global, so the seen set catches it.

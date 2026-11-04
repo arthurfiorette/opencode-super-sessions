@@ -4,6 +4,8 @@ import { SuperSessions } from './rpc.js';
 import { handleEvent, registerShellHook } from './server/detection.js';
 import { rpcHandlers } from './server/handlers.js';
 import { getRuntime, warn } from './server/runtime.js';
+import { serverDefaults } from './server/settings.js';
+import { getSweeper } from './server/sweep.js';
 import { registerTools } from './server/tools.js';
 
 /**
@@ -20,14 +22,20 @@ export default Plugin.define({
       return;
     }
     const runtime = getRuntime(options, handleEvent);
+    // Before tools and hooks: detection reads the dialog's tracking settings.
+    await runtime.settings.load(context.storage);
     await registerTools(runtime, context);
     await registerShellHook(runtime, context);
-    await context.rpc.register(SuperSessions, rpcHandlers(runtime, context));
+    const registration = await context.rpc.register(SuperSessions, rpcHandlers(runtime, context));
     // Attached last so a failed registration above never leaves a subscriber behind.
     const detach = runtime.events.attach(context);
     // After attach: the backfill borrows the live contexts the event hub tracks.
     runtime.backfill.start();
-    return detach;
+    const detachSweeper = getSweeper(runtime).attach(context, registration.events.emit);
+    return () => {
+      detachSweeper();
+      detach();
+    };
   }
 });
 
@@ -44,6 +52,7 @@ function readOptions(input: unknown): Options | undefined {
 
 /** Registers handlers that report nothing, so the TUI degrades to title-only data. */
 async function registerInert(context: Plugin.Context): Promise<void> {
+  const defaults = serverDefaults(parseOptions(undefined));
   await context.rpc.register(SuperSessions, {
     status: async () => ({ providers: {} }),
     refs: async () => ({}),
@@ -51,6 +60,21 @@ async function registerInert(context: Plugin.Context): Promise<void> {
     search: async () => [],
     link: async (_input, invocation) =>
       invocation.error('unavailable', 'The plugin options are invalid.', { reason: 'failed' }),
-    unlink: async () => ({})
+    unlink: async () => ({}),
+    // Defaults only, and nothing is stored: changing settings would suggest they apply.
+    'settings.get': async () => ({ values: defaults, defaults }),
+    'settings.set': async () => ({ values: defaults, defaults }),
+    presence: async () => ({}),
+    'archive.claim': async () => ({ sessions: [] }),
+    'archive.report': async () => ({}),
+    'archive.exclude': async () => ({}),
+    'cleanup.plan': async () => ({ confirmed: false, worktrees: [] }),
+    'cleanup.run': async ({ directories }) => ({
+      removed: [],
+      kept: directories.map((directory) => ({
+        directory,
+        reason: 'the plugin options are invalid'
+      }))
+    })
   });
 }

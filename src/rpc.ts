@@ -1,5 +1,6 @@
 import { Rpc } from '@opencode/plugin/rpc';
 import { z } from 'zod';
+import { keepModeSchema } from './config.js';
 import { providerIdSchema, refLinkSchema, refSchema, refStateSchema } from './refs/ref.js';
 
 export const availabilitySchema = z.enum(['ok', 'missing-tool', 'unauthenticated']);
@@ -33,6 +34,52 @@ export const searchHitSchema = z.strictObject({
   /** Higher sorts first. Ties keep the server's most-recently-updated order. */
   score: z.number()
 });
+
+// Settings the server plugin applies, changed from the TUI's settings dialog.
+
+export const providerChoiceSchema = z.enum(['github', 'gitlab', 'both']);
+const days = z.number().int().min(0).max(365);
+
+/** Every server setting. `null` days mean the rule is off. */
+export const serverSettingsSchema = z.strictObject({
+  /** Days after a session becomes Done before it is archived; 0 archives at the next sweep. */
+  autoArchiveDays: days.nullable(),
+  trackMentions: z.boolean(),
+  trackPrompts: z.boolean(),
+  providers: providerChoiceSchema,
+  cleanupDeleted: z.boolean(),
+  cleanupMerged: z.boolean(),
+  cleanupInactiveDays: days.min(1).nullable(),
+  cleanupDoneDays: days.nullable(),
+  cleanupUnchanged: z.boolean(),
+  keepLocalChanges: keepModeSchema
+});
+
+/** Effective values and the plugin-option defaults they override. */
+export const serverSettingsViewSchema = z.strictObject({
+  values: serverSettingsSchema,
+  defaults: serverSettingsSchema
+});
+
+export const cleanupRuleSchema = z.enum(['deleted', 'merged', 'inactive', 'done', 'unchanged']);
+
+/** What cleanup would do with one worktree OpenCode knows, and why. */
+export const worktreeDecisionSchema = z.strictObject({
+  directory: z.string(),
+  action: z.enum(['remove', 'keep']),
+  /** The rule that selected a removal. */
+  rule: cleanupRuleSchema.optional(),
+  /** Short reason in plain words, shown in the dry run and logs. */
+  reason: z.string()
+});
+
+const directories = z.array(z.string()).max(200);
+
+export type ProviderChoice = z.output<typeof providerChoiceSchema>;
+export type ServerSettings = z.output<typeof serverSettingsSchema>;
+export type ServerSettingsView = z.output<typeof serverSettingsViewSchema>;
+export type CleanupRule = z.output<typeof cleanupRuleSchema>;
+export type WorktreeDecision = z.output<typeof worktreeDecisionSchema>;
 
 export type Availability = z.output<typeof availabilitySchema>;
 export type SessionRefView = z.output<typeof sessionRefViewSchema>;
@@ -86,7 +133,79 @@ export const SuperSessions = Rpc.define({
     unlink: {
       input: z.strictObject({ sessionID: z.string(), key: z.string() }),
       output: z.strictObject({})
+    },
+    'settings.get': {
+      input: z.strictObject({}),
+      output: serverSettingsViewSchema
+    },
+    /** Overrides the given settings. A value equal to its default drops the override. */
+    'settings.set': {
+      input: z.strictObject({ values: serverSettingsSchema.partial() }),
+      output: serverSettingsViewSchema
+    },
+    /**
+     * What one TUI shows: its pins and the sessions it has open. Auto-archive skips pins and
+     * cleanup keeps worktrees of open sessions. Entries expire when a TUI stops reporting.
+     */
+    presence: {
+      input: z.strictObject({
+        clientID: z.string().min(1).max(100),
+        pinned: z.array(z.string()).max(500),
+        open: z.array(z.string()).max(200)
+      }),
+      output: z.strictObject({})
+    },
+    /**
+     * Hands out sessions due for auto-archive. The server plugin cannot archive, so a TUI does it
+     * over HTTP. Each session goes to one TUI at a time, and comes back after a lease if that TUI
+     * never reports it.
+     */
+    'archive.claim': {
+      input: z.strictObject({ clientID: z.string().min(1).max(100) }),
+      output: z.strictObject({
+        sessions: z.array(z.strictObject({ sessionID: z.string(), title: z.string() }))
+      })
+    },
+    'archive.report': {
+      input: z.strictObject({
+        clientID: z.string().min(1).max(100),
+        archived: z.array(z.string()).max(200),
+        skipped: z.array(z.string()).max(200)
+      }),
+      output: z.strictObject({})
+    },
+    /** Never auto-archives these sessions again, for example after the user undid it. */
+    'archive.exclude': {
+      input: z.strictObject({ sessionIDs: z.array(z.string()).max(200) }),
+      output: z.strictObject({})
+    },
+    /** Dry run: what cleanup would remove and keep now. Removes nothing. */
+    'cleanup.plan': {
+      input: z.strictObject({}),
+      output: z.strictObject({
+        /** Whether the user already confirmed a removal once, so sweeps remove on their own. */
+        confirmed: z.boolean(),
+        worktrees: z.array(worktreeDecisionSchema)
+      })
+    },
+    /**
+     * Removes the listed worktrees that still qualify when checked again, and marks cleanup as
+     * confirmed. Directories that no longer qualify are kept and listed with their reason.
+     */
+    'cleanup.run': {
+      input: z.strictObject({ directories }),
+      output: z.strictObject({
+        removed: z.array(z.string()),
+        kept: z.array(z.strictObject({ directory: z.string(), reason: z.string() }))
+      })
     }
   },
-  events: {}
+  events: {
+    /** Sessions are due for auto-archive; TUIs call `archive.claim`. */
+    'archive.due': { schema: z.strictObject({ count: z.number().int() }) },
+    /** A sweep would remove worktrees but the user has not confirmed cleanup yet. */
+    'cleanup.confirm': { schema: z.strictObject({ worktrees: z.array(worktreeDecisionSchema) }) },
+    /** A sweep removed worktrees. */
+    'cleanup.removed': { schema: z.strictObject({ directories: z.array(z.string()) }) }
+  }
 });

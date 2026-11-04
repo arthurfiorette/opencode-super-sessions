@@ -5,6 +5,8 @@ import { dismissLink, mergeLinks } from '../refs/store.js';
 import type { SuperSessions } from '../rpc.js';
 import { linksOf, parseReference, resolveCandidates, resolveRepo } from './links.js';
 import type { Runtime } from './runtime.js';
+import type { SettingsPatch } from './settings.js';
+import { maintenanceHandlers } from './sweep.js';
 import { buildViews, searchSessions } from './views.js';
 
 /** RPC handlers for one Location, backed by the shared runtime. */
@@ -62,6 +64,21 @@ export function rpcHandlers(
     async unlink({ sessionID, key }) {
       await runtime.writes.update(context.session, sessionID, (refs) => dismissLink(refs, key));
       return {};
-    }
+    },
+
+    ...settingsHandlers(runtime, context),
+    ...maintenanceHandlers(runtime)
+  };
+}
+
+/** `settings.get` and `settings.set`, persisted in the plugin's key-value storage. */
+function settingsHandlers(runtime: Runtime, context: Plugin.Context) {
+  return {
+    async 'settings.get'() {
+      await runtime.settings.load(context.storage);
+      return runtime.settings.view();
+    },
+    'settings.set': ({ values }: { values: SettingsPatch }) =>
+      runtime.settings.set(context.storage, values)
   };
 }
