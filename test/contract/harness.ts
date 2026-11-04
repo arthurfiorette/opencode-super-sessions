@@ -13,10 +13,13 @@ import type { Plugin } from '@opencode/plugin';
  * developer's real OpenCode config, credentials, database or sessions.
  */
 export const root = mkdtempSync(path.join(tmpdir(), 'opencode-super-sessions-contract-'));
-const keep = ['PATH', 'SystemRoot', 'WINDIR', 'PATHEXT', 'COMSPEC', 'SHELL'];
+/** The `opencode` binary the TUI test starts, read before the scrub below drops the variable. */
+export const OPENCODE_BIN = process.env.OPENCODE_BIN ?? 'opencode';
+// Upper case, because Windows lists names as stored (`Path`, `ComSpec`).
+const keep = ['PATH', 'SYSTEMROOT', 'WINDIR', 'PATHEXT', 'COMSPEC', 'SHELL'];
 for (const key of Object.keys(process.env)) {
   // Model keys and personal service settings would leak into the host otherwise.
-  if (!keep.includes(key)) delete process.env[key];
+  if (!keep.includes(key.toUpperCase())) delete process.env[key];
 }
 Object.assign(process.env, {
   TEMP: root,
