@@ -26,7 +26,7 @@ import {
 } from 'solid-js';
 import { openUrl, refUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
-import { HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
+import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
 import { regenerateTitle, setArchived } from '../host/session-api.js';
 import { dialogTheme, sessionBackground } from '../host/theme.js';
 import { createMarquee } from '../marquee.js';
@@ -515,6 +515,13 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Super Sessions settings',
       run: () => context.keymap.dispatch('super-sessions.settings')
     },
+    // A plain binding, not the host's id: a command with that id here would catch its own
+    // dispatch. The palette opens above the browser, and closing it gives the keys back.
+    {
+      bind: 'ctrl+p',
+      title: 'Show command palette',
+      run: () => context.keymap.dispatch(COMMAND_PALETTE)
+    },
     {
       bind: 'tab',
       title: 'Next view',
@@ -862,7 +869,15 @@ export default function SessionBrowser(props: PageProps) {
                   () => (current() ? theme().text.base : theme().text.muted),
                   current()
                 ),
-                ...(fit.counts ? [span(` ${model.counts()[view]}`, () => theme().text.muted)] : [])
+                // A view with sessions in it reads in the base color, an empty one stays muted.
+                ...(fit.counts
+                  ? [
+                      span(
+                        () => ` ${model.counts()[view]}`,
+                        () => (model.counts()[view] > 0 ? theme().text.base : theme().text.muted)
+                      )
+                    ]
+                  : [])
               ];
             }
           });
@@ -1082,33 +1097,34 @@ export default function SessionBrowser(props: PageProps) {
     if (focus() === 'work')
       return [
         ['open', 'enter'],
-        ['back', 'left/esc']
+        ['back', '←/esc']
       ];
     const current = selected();
     const items: Array<[string, string]> = [
       ['peek', 'space'],
-      [memory.view === 'archived' ? 'restore' : 'archive', 'ctrl+s'],
-      ['view', 'tab/shift+tab'],
-      ['rename', shortcut(HOST_COMMANDS.rename, 'ctrl+r')],
-      ['retitle', shortcut('super-sessions.retitle', 'ctrl+t')],
+      [memory.view === 'archived' ? 'restore' : 'archive', keyLabel('ctrl+s')],
+      ['view', keyLabel('tab/shift+tab')],
+      ['rename', keyLabel(shortcut(HOST_COMMANDS.rename, 'ctrl+r'))],
+      ['retitle', keyLabel(shortcut('super-sessions.retitle', 'ctrl+t'))],
       [
         current && props.pins.has(current.id) ? 'unpin' : 'pin',
-        shortcut(HOST_COMMANDS.pin, 'ctrl+f')
+        keyLabel(shortcut(HOST_COMMANDS.pin, 'ctrl+f'))
       ],
-      ['delete', shortcut(HOST_COMMANDS.delete, 'ctrl+d')]
+      ['delete', keyLabel(shortcut(HOST_COMMANDS.delete, 'ctrl+d'))]
     ];
     if (memory.view === 'done' && !data.search)
-      items.push(['archive all', shortcut('super-sessions.archive.done', 'ctrl+y')]);
+      items.push(['archive all', keyLabel(shortcut('super-sessions.archive.done', 'ctrl+y'))]);
     items.push(
-      ['link', shortcut('super-sessions.link', 'ctrl+l')],
-      ['open PR', shortcut('super-sessions.open.ref', 'ctrl+g')],
-      ['settings', 'ctrl+o']
+      ['link', keyLabel(shortcut('super-sessions.link', 'ctrl+l'))],
+      ['open PR', keyLabel(shortcut('super-sessions.open.ref', 'ctrl+g'))],
+      ['commands', keyLabel('ctrl+p')],
+      ['settings', keyLabel('ctrl+o')]
     );
     return items;
   });
   const scopeHint = (): [string, string] => [
     scope() === 'project' ? 'all projects' : 'this project',
-    'ctrl+a'
+    keyLabel('ctrl+a')
   ];
   const hint = ([title, key]: [string, string], index: number) => [
     ...(index > 0 ? [span(' '.repeat(HINT_GAP), () => theme().text.muted)] : []),
@@ -1319,6 +1335,24 @@ export function PeekBanner(props: PeekBannerProps) {
       ]
     })
   });
+}
+
+/**
+ * A key as the footer shows it, short enough that every hint fits one row at 200 columns: caret
+ * notation for control letters (`ctrl+s` -> `^S`), `⇧` for shift and arrows for left and right.
+ * Each alternative of `a/b` is shortened on its own; other keys stay as the host writes them.
+ */
+function keyLabel(binding: string): string {
+  return binding
+    .split('/')
+    .map((key) => {
+      const control = /^ctrl\+([a-z])$/i.exec(key);
+      if (control) return `^${control[1]?.toUpperCase()}`;
+      if (key === 'left') return '←';
+      if (key === 'right') return '→';
+      return key.replace(/^shift\+/, '⇧');
+    })
+    .join('/');
 }
 
 /** A view tab's name, after its icon when `icons` is set. Active has no icon. */

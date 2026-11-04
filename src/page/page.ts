@@ -10,6 +10,7 @@ import {
   lazy,
   on
 } from 'solid-js';
+import { COMMAND_GROUP } from '../commands.js';
 import type { Options } from '../config.js';
 import { BASE_MODE, CLASSIC_LIST, DIALOG_MODE, OVER_PROMPT, SESSION_LIST } from '../host/keymap.js';
 import type { Pins } from '../pins.js';
@@ -225,7 +226,7 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
       {
         id: 'super-sessions.peek.return',
         title: 'Back to sessions',
-        group: 'Session',
+        group: COMMAND_GROUP,
         bind: 'escape',
         enabled: () => peekActive((mode) => mode !== DIALOG_MODE),
         run: () => open()
@@ -233,7 +234,7 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
       {
         id: 'super-sessions.peek.previous',
         title: 'Peek previous session',
-        group: 'Session',
+        group: COMMAND_GROUP,
         bind: 'up',
         enabled: () => peekActive((mode) => mode === BASE_MODE),
         run: () => (typing() ? false : step(-1))
@@ -241,7 +242,7 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
       {
         id: 'super-sessions.peek.next',
         title: 'Peek next session',
-        group: 'Session',
+        group: COMMAND_GROUP,
         bind: 'down',
         enabled: () => peekActive((mode) => mode === BASE_MODE),
         run: () => (typing() ? false : step(1))

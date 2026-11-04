@@ -49,6 +49,16 @@ test('the real TUI hands session.list, the peek arrows and its dialogs to the pl
     await tui.type(' renamed');
     await tui.call('ui.enter');
     await tui.waitFor('Scripted title renamed');
+
+    // ctrl+p dispatches the host's palette command (COMMAND_PALETTE) from the browser's mode;
+    // esc closes the palette and hands the keys back to the browser.
+    // The palette's title row; the browser footer only says "commands" in lower case.
+    const palette = /Commands\s+esc/;
+    await tui.press('p', { ctrl: true });
+    await tui.waitFor(palette);
+    await tui.press('escape');
+    const after = await tui.waitFor(BROWSER);
+    assert.doesNotMatch(after, palette);
   } finally {
     await tui.close();
     await model.close();

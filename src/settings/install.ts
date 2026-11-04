@@ -1,6 +1,7 @@
 import type { Plugin } from '@opencode/plugin/tui';
 import type { KeymapCommand } from '@opencode/plugin/tui/context';
 import { createComponent, createMemo, type JSX, lazy } from 'solid-js';
+import { COMMAND_GROUP } from '../commands.js';
 import type { Options } from '../config.js';
 import { BASE_MODE, DIALOG_MODE } from '../host/keymap.js';
 import type { Pins } from '../pins.js';
@@ -92,7 +93,7 @@ export function installSettings(
     {
       id: 'super-sessions.settings',
       title: 'Super Sessions settings',
-      group: 'System',
+      group: COMMAND_GROUP,
       palette: true,
       run: () => {
         if (context.keymap.mode.current() === DIALOG_MODE) context.ui.dialog.clear();
@@ -102,7 +103,7 @@ export function installSettings(
     {
       id: 'super-sessions.archive.undo',
       title: 'Undo auto-archive',
-      group: 'Session',
+      group: COMMAND_GROUP,
       palette: true,
       enabled: () => maintenance.undoable(),
       run: () => void maintenance.undo()

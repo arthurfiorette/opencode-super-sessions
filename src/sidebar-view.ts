@@ -13,6 +13,7 @@ import {
 } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { useCliSettings } from './cli-settings.js';
+import { COMMAND_GROUP } from './commands.js';
 import { createMarquee } from './marquee.js';
 import { STATE_WORDS } from './page/icons.js';
 import { type Ref, type RefStatus, refKey } from './refs/ref.js';
@@ -105,7 +106,7 @@ export default function Sidebar(props: SidebarProps) {
       {
         id: 'super-sessions.sidebar.toggle',
         title: 'Toggle Work sidebar section',
-        group: 'Super Sessions',
+        group: COMMAND_GROUP,
         palette: true,
         run: toggle
       }

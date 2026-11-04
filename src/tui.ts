@@ -2,6 +2,7 @@ import type { SessionInfo } from '@opencode/client';
 import { Plugin } from '@opencode/plugin/tui';
 import type { KeymapCommand } from '@opencode/plugin/tui/context';
 import { z } from 'zod';
+import { COMMAND_GROUP } from './commands.js';
 import { type Options, parseOptions } from './config.js';
 import {
   CLASSIC_LIST,
@@ -68,6 +69,7 @@ export default Plugin.define({
     const takeover: KeymapCommand[] = [
       {
         id: SESSION_LIST,
+        // The host's own title and group, since this entry replaces the host's.
         title: 'Switch session',
         group: 'Session',
         palette: true,
@@ -80,7 +82,7 @@ export default Plugin.define({
       {
         id: 'super-sessions.open',
         title: 'Open Super Sessions',
-        group: 'Session',
+        group: COMMAND_GROUP,
         palette: true,
         // Takes an argument so `/super-sessions settings` reaches the dialog.
         slash: { name: 'super-sessions', arguments: true },
@@ -99,7 +101,7 @@ export default Plugin.define({
       {
         id: 'super-sessions.classic',
         title: 'Classic session list',
-        group: 'Session',
+        group: COMMAND_GROUP,
         palette: true,
         slash: { name: 'sessions-classic' },
         run: () => context.keymap.dispatch(SESSION_LIST, CLASSIC_LIST)
@@ -107,7 +109,7 @@ export default Plugin.define({
       {
         id: 'super-sessions.archive.current',
         title: 'Archive session',
-        group: 'Session',
+        group: COMMAND_GROUP,
         palette: true,
         slash: { name: 'archive' },
         run: () => setCurrentArchived(context, settings.tui, true)
@@ -115,7 +117,7 @@ export default Plugin.define({
       {
         id: 'super-sessions.unarchive.current',
         title: 'Restore archived session',
-        group: 'Session',
+        group: COMMAND_GROUP,
         palette: true,
         slash: { name: 'unarchive' },
         run: () => setCurrentArchived(context, settings.tui, false)
@@ -123,7 +125,7 @@ export default Plugin.define({
       {
         id: 'super-sessions.status',
         title: 'Super Sessions status',
-        group: 'Session',
+        group: COMMAND_GROUP,
         palette: true,
         run: () => void showStatus(context)
       },
@@ -145,7 +147,7 @@ export default Plugin.define({
           {
             id: 'super-sessions.archive.marked',
             title: suffix ? `Archive sessions ending in "${suffix}"` : 'Archive marked sessions',
-            group: 'Session',
+            group: COMMAND_GROUP,
             palette: true,
             enabled: suffix !== undefined,
             slash: { name: 'archive-marked' },

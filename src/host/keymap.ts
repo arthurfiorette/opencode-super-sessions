@@ -21,6 +21,13 @@ export const HOST_COMMANDS = {
   exit: 'app.exit'
 } as const;
 
+/**
+ * The host's command palette (packages/tui/src/context/keymap.tsx:53, run in app.tsx:756). The
+ * browser dispatches it on ctrl+p, which the browser's mode would otherwise swallow; the palette
+ * opens as a host dialog above the browser.
+ */
+export const COMMAND_PALETTE = 'command.palette.show';
+
 /** The quick switch command of slot `slot` (packages/tui/src/config/keybind.ts:143). */
 export function quickSwitchCommand(slot: number): string {
   return `session.quick_switch.${slot}`;
