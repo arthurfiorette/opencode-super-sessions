@@ -13,7 +13,7 @@ Complete a successful publish within two days of creating the trusted publisher,
 ## Prepare and publish
 
 1. Open the session browser in a real OpenCode TUI and check archiving and pull request tracking with `gh` logged in to GitHub, and with `glab` logged in to GitLab when GitLab code changed. Record this separately from the stubbed `gh` and `glab` tests.
-2. Update the package version and lockfile. Document the release's behavior and any migration requirements. Bumping the `@opencode/*` pins also raises `TESTED_UP_TO`, the newest OpenCode version the browser takes over by default; close any open "Compatibility with OpenCode <version>" issue the bump resolves.
+2. Update the package version and lockfile. Document the release's behavior and any migration requirements. Bumping the `@opencode/*` pins also raises `TESTED_UP_TO`, the newest OpenCode version the browser takes over by default; close any open "Compatibility with OpenCode <version>" issue the bump resolves. Dependabot leaves `@opentui/*` alone: set `@opentui/core` and `@opentui/solid` to the exact version the new `@opencode/theme` depends on (`npm view @opencode/theme@<version> dependencies`) in the same change.
 3. Run `pnpm install --frozen-lockfile` and `pnpm check` with the declared Node and pnpm versions, with the `opencode` binary of the pinned `@opencode/sdk` version on `PATH` or in `OPENCODE_BIN`.
 4. Commit and push. Wait for all CI jobs to pass.
 5. Create a GitHub release with tag `v<package.json version>`. The publishing workflow ignores prereleases and rejects a tag that does not match the package version.
