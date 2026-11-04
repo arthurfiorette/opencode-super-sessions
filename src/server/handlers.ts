@@ -3,6 +3,7 @@ import type { RpcHandlers } from '@opencode/plugin/promise/rpc';
 import { refKey } from '../refs/ref.js';
 import { dismissLink, mergeLinks, setDone } from '../refs/store.js';
 import type { SuperSessions } from '../rpc.js';
+import { scanHistory } from './history.js';
 import { linksOf, parseReference, resolveCandidates, resolveRepo } from './links.js';
 import type { Runtime } from './runtime.js';
 import type { SettingsPatch } from './settings.js';
@@ -75,6 +76,8 @@ export function rpcHandlers(
       );
       return {};
     },
+
+    'history.scan': (input) => scanHistory(runtime, context.session, input),
 
     ...settingsHandlers(runtime, context),
     ...maintenanceHandlers(runtime)

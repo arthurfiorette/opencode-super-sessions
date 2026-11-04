@@ -106,6 +106,20 @@ export function setDone(current: SessionRefs, done: boolean | null, now: number)
   return { next: done ? { ...rest, done, doneAt: now } : { ...rest, done }, changed: true };
 }
 
+/**
+ * Records that the history scan read the session, through `lastMessageID`. A session already
+ * marked keeps its first marker, so a second scan of it writes nothing.
+ */
+export function markScanned(
+  current: SessionRefs,
+  scannedAt: number,
+  lastMessageID: string | undefined
+): RefsUpdate {
+  if (current.scanned !== undefined) return { next: current, changed: false };
+  const scanned = lastMessageID === undefined ? { scannedAt } : { scannedAt, lastMessageID };
+  return { next: { ...current, scanned }, changed: true };
+}
+
 /** Removes a key from `dismissed` so detection may add it again. */
 export function undismiss(current: SessionRefs, key: string): RefsUpdate {
   if (!current.dismissed.includes(key)) return { next: current, changed: false };
