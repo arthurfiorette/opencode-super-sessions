@@ -6,6 +6,7 @@ import type { ForgeDefinition, ForgeProvider } from '../providers/provider.js';
 import { definitions } from '../providers/registry.js';
 import { type ProviderId, refKey } from '../refs/ref.js';
 import { createRepoResolver, type RepoResolver } from '../repo.js';
+import { type Backfill, createBackfill } from './backfill.js';
 import { type BodyIndex, bodyIndexPath, openBodyIndex } from './body-index.js';
 import { type BranchCache, createBranchCache } from './branches.js';
 import { createEventHub, type EventContext, type EventHub, type HandledEvent } from './events.js';
@@ -27,6 +28,7 @@ export interface Runtime {
   readonly refreshing: Set<string>;
   /** The message search index, opened on first use. */
   readonly bodyIndex: () => Promise<BodyIndex>;
+  readonly backfill: Backfill;
 }
 
 /** Handles one subscribed event. Set by the server entry, which owns the detection logic. */
@@ -119,7 +121,12 @@ function createRuntime(options: Options, handle: EventHandler): Runtime {
     bodyIndex: () => {
       bodyIndex ??= openBodyIndex(bodyIndexPath(), warn);
       return bodyIndex;
-    }
+    },
+    backfill: createBackfill({
+      index: () => runtime.bodyIndex(),
+      context: () => runtime.events.current(),
+      warn
+    })
   };
   return runtime;
 }

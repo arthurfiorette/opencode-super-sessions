@@ -23,6 +23,8 @@ export interface EventHub {
    * to the next live context, or stops it when none is left.
    */
   attach(context: EventContext): () => void;
+  /** The oldest live context, for background jobs; undefined once every Location detached. */
+  current(): EventContext | undefined;
 }
 
 export interface EventHubOptions {
@@ -108,6 +110,7 @@ export function createEventHub(options: EventHubOptions): EventHub {
         owner = undefined;
         start();
       };
-    }
+    },
+    current: () => live[0]
   };
 }

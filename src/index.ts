@@ -24,7 +24,10 @@ export default Plugin.define({
     await registerShellHook(runtime, context);
     await context.rpc.register(SuperSessions, rpcHandlers(runtime, context));
     // Attached last so a failed registration above never leaves a subscriber behind.
-    return runtime.events.attach(context);
+    const detach = runtime.events.attach(context);
+    // After attach: the backfill borrows the live contexts the event hub tracks.
+    runtime.backfill.start();
+    return detach;
   }
 });
 
