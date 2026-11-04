@@ -448,7 +448,7 @@ function bgAt(rendered, text) {
 }
 
 test('rows take a line per detail they have, with no gap between rows and one blank line before a group', async () => {
-  const { lines, row } = await mount(100);
+  const { rendered, lines, row } = await mount(100);
   const frame = lines();
 
   // Running has a PR with review trouble and an issue it closes: PR, status and issues lines,
@@ -470,11 +470,27 @@ test('rows take a line per detail they have, with no gap between rows and one bl
   assert.equal(row('Running'), pinned + 3);
   assert.equal(row('Pinned'), pinned - 1, 'No blank line between a header and its first row.');
 
-  const long = frame[row('Investigate why the deployer')];
-  const title = long.slice(long.indexOf('Investigate'), long.indexOf('…') + 1);
-  assert.ok(title.endsWith('…'), 'A title that does not fit ends with an ellipsis.');
-  assert.ok(title.length > 60, `The title uses the row width, got ${title.length} cells.`);
-  assert.ok(!long.includes('END'));
+  // A long title wraps under its first character, the age only on its first line, whether or
+  // not the row is selected.
+  const long = row('Investigate why the deployer');
+  const end = row('END');
+  const column = frame[long].indexOf('Investigate');
+  assert.ok(end > long, 'A title too long for one line wraps.');
+  assert.match(frame[long], / 4h\b/);
+  for (const line of frame.slice(long + 1, end + 1)) {
+    assert.equal(line.search(/\S/), column, `continuation line: ${line}`);
+    assert.doesNotMatch(line, / 4h\b|…/);
+  }
+  const first = frame[long].slice(column).split(/\s{2,}/)[0];
+  assert.ok(first.length > 60, `The first line uses the row width, got ${first.length} cells.`);
+  // Hovering selects the row; no row grows or shrinks for it.
+  const positions = () =>
+    ['Homelab Mastra', 'can you find', 'Mastra build', '#4930', 'Investigate why', 'END'].map(row);
+  const before = positions();
+  const selection = String(dialog.background.action.primary.focused.toInts());
+  await rendered.mockMouse.moveTo(column, end);
+  await eventually(rendered, () => String(bgAt(rendered, 'END')) === selection);
+  assert.deepEqual(positions(), before);
 
   // Pin slot, spinner and no marker must all leave the title in the same column.
   const columns = ['Homelab Mastra', 'Mastra build', 'Investigate why'].map((text) =>

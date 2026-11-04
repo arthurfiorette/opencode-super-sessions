@@ -18,7 +18,8 @@ export interface Segment {
 /** Everything a session row draws. Built by the view for each visible row. */
 export interface RowModel {
   marker: Segment | undefined;
-  title: string;
+  /** The title word-wrapped at the title column (see {@link wrapTitle}), one entry per line. */
+  title: string[];
   /** Muted note before the age, such as why a search matched. Empty for none. */
   label: string;
   /** Age, or archive and update ages in the Archived view, right-aligned on the title line. */
@@ -32,11 +33,6 @@ export interface RowModel {
   running: boolean;
   /** The first delete press turned this row into a confirmation. */
   deleting: boolean;
-  /**
-   * The selected row's title wrapped at the title column (see {@link wrapTitle}); undefined for
-   * other rows, which cut the title to one line.
-   */
-  wrapped: string[] | undefined;
   /** Background of every line of the row when not selected; undefined keeps the panel's. */
   stripe: RGBA | undefined;
 }
@@ -324,7 +320,7 @@ export function titleLine(
         const color = current.running ? runningColor(theme()) : theme().text.base;
         return jsx('span', {
           style: { fg: fg(color), bold: current.selected },
-          children: current.wrapped?.[0] ?? fitText(current.title, room)
+          children: fitText(current.title[0] ?? '', room)
         });
       }
     }),
@@ -343,8 +339,8 @@ export function titleLine(
 }
 
 /**
- * A later line of the selected row's wrapped title, starting in the title's column. The age
- * stays on the first line.
+ * A later line of a row's wrapped title, starting in the title's column. The age stays on the
+ * first line.
  */
 export function wrapLine(
   index: number,
@@ -364,7 +360,7 @@ export function wrapLine(
         const color = current.running ? runningColor(theme()) : theme().text.base;
         return jsx('span', {
           style: { fg: rowColors(theme(), current).fg ?? color, bold: current.selected },
-          children: current.wrapped?.[index] ?? ''
+          children: current.title[index] ?? ''
         });
       }
     })
