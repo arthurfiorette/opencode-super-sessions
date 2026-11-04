@@ -76,16 +76,14 @@ export interface Sweeper {
   schedule(delay?: number): void;
 }
 
-const sweepers = new WeakMap<Runtime, Sweeper>();
-
-/** The sweeper of `runtime`, created on first use and hooked into its events. */
+/**
+ * The sweeper of `runtime`, created on first use and hooked into its events. It lives on the
+ * runtime, not in module state: a local-path plugin loads as one module per Location, and each
+ * module's own sweeper would sweep and remove in parallel.
+ */
 export function getSweeper(runtime: Runtime): Sweeper {
-  let sweeper = sweepers.get(runtime);
-  if (sweeper === undefined) {
-    sweeper = createSweeper(runtime);
-    sweepers.set(runtime, sweeper);
-  }
-  return sweeper;
+  runtime.sweeper ??= createSweeper(runtime);
+  return runtime.sweeper;
 }
 
 /** RPC handlers for auto-archive and cleanup, backed by the process-wide sweeper. */

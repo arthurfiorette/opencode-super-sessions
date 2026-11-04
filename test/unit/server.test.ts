@@ -4,6 +4,7 @@ import { type RefLink, readSessionRefs } from '../../src/refs/ref.js';
 import { mergeLinks } from '../../src/refs/store.js';
 import { createEventHub, type EventContext, type HandledEvent } from '../../src/server/events.js';
 import { createWriteQueue, type SessionAccess } from '../../src/server/queue.js';
+import type { Runtime } from '../../src/server/runtime.js';
 
 /** Yields to the event loop so concurrent fake calls interleave the way real I/O does. */
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -87,6 +88,18 @@ function fakeBus() {
     }
   };
 }
+
+test('every copy of the plugin module gets the one sweeper of the shared runtime', async () => {
+  // The daemon loads a local-path plugin once per Location, each a module of its own; a query
+  // string gives the same file a new module instance the same way.
+  type SweepModule = typeof import('../../src/server/sweep.js');
+  const path = '../../src/server/sweep.js';
+  const first: SweepModule = await import(`${path}?location=a`);
+  const second: SweepModule = await import(`${path}?location=b`);
+  assert.notEqual(first.getSweeper, second.getSweeper);
+  const runtime = {} as Runtime;
+  assert.equal(first.getSweeper(runtime), second.getSweeper(runtime));
+});
 
 test('one subscriber handles each event once across Locations, including after a handover', async () => {
   const bus = fakeBus();

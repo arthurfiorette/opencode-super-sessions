@@ -28,6 +28,7 @@ import {
   type SettingsStore,
   serverDefaults
 } from './settings.js';
+import type { Sweeper } from './sweep.js';
 
 /** State shared by every Location of the daemon. */
 export interface Runtime {
@@ -56,6 +57,8 @@ export interface Runtime {
    */
   onMerged?: () => void;
   onLifecycle?: (event: LifecycleEvent, context: EventContext) => void;
+  /** The process-wide auto-archive and cleanup scheduler; see `getSweeper`. */
+  sweeper?: Sweeper;
 }
 
 /** Handles one subscribed event. Set by the server entry, which owns the detection logic. */
