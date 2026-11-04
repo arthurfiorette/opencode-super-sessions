@@ -2,6 +2,7 @@ import { mock, test } from 'bun:test';
 import assert from 'node:assert/strict';
 import * as childProcess from 'node:child_process';
 import { migrateV1, resolveThemeDocument } from '@opencode/theme/tui';
+import { RGBA } from '@opentui/core';
 import { testRender } from '@opentui/solid';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import { createSignal } from 'solid-js';
@@ -90,8 +91,9 @@ test('the Work section lists tracked refs, collapses, opens refs and hides witho
       toast: { show() {} }
     }
   };
+  const openColor = '#00ff00';
   const unregister = installSidebar(context, {
-    colors: {},
+    colors: { open: openColor },
     previewWidth: 0.4,
     closeTabOnArchive: true
   });
@@ -125,6 +127,13 @@ test('the Work section lists tracked refs, collapses, opens refs and hides witho
       order.every((index, position) => index > (order[position - 1] ?? -1)),
       `rows: ${order}\n${rendered.captureCharFrame()}`
     );
+    // Rows start in the triangle's column, like the native MCP dots.
+    const arrow = lines()[row('Work')].indexOf('▼');
+    for (const index of order) assert.equal(lines()[index].search(/\S/), arrow, lines()[index]);
+    const branchRow = (part) =>
+      rendered.renderer.root.findDescendantById(`super-sessions-sidebar-ref-0-${part}`);
+    assert.ok(branchRow('icon').fg.equals(RGBA.fromHex(openColor)), 'The icon shows the state.');
+    assert.ok(branchRow('number').fg.equals(theme.text.base), 'The number reads as plain text.');
 
     const header = rendered.renderer.root.findDescendantById('super-sessions-sidebar-header');
     await rendered.mockMouse.click(header.x + 2, header.y);

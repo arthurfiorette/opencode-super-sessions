@@ -1,4 +1,4 @@
-import { type BoxRenderable, MouseButton, type MouseEvent } from '@opentui/core';
+import { type BoxRenderable, MouseButton, type MouseEvent, TextAttributes } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import {
   createComponent,
@@ -13,6 +13,7 @@ import {
 } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { openUrl, refUrl } from './browser.js';
+import { createMarquee, marqueeText } from './marquee.js';
 import { refColor, refIcon, STATE_WORDS } from './page/icons.js';
 import { cells, fitText } from './page/row.js';
 import { type Ref, type RefStatus, refKey, refNumber } from './refs/ref.js';
@@ -22,8 +23,8 @@ import type { SidebarProps } from './sidebar.js';
 import { createSidebarState } from './sidebar-state.js';
 
 const REFRESH_INTERVAL = 60_000;
-// Rows sit under the header text, past the 2-cell arrow column.
-const INDENT = 2;
+// Cells taken by a ref glyph and its trailing space (see `ICONS`).
+const ICON = 2;
 
 /** The "Work" sidebar section: the session's tracked pull requests and issues. */
 export default function Sidebar(props: SidebarProps) {
@@ -32,6 +33,8 @@ export default function Sidebar(props: SidebarProps) {
   const [prefs, setPrefs] = context.storage.store('sidebar', { initial: { expanded: true } });
   const [data, setData] = createStore<{ view: SessionRefView | undefined }>({ view: undefined });
   const [width, setWidth] = createSignal(0);
+  // One timer for every row: only the hovered title scrolls, and unmounting clears it.
+  const marquee = createMarquee();
   let box: BoxRenderable | undefined;
 
   const rpc = context.client.rpc(SuperSessions);
@@ -108,18 +111,29 @@ export default function Sidebar(props: SidebarProps) {
     ]
   }));
 
-  /** One ref line. Built once per position, so polling updates properties, never the tree. */
+  /**
+   * One ref line: state icon in the triangle's column, like the native MCP dots, then the number
+   * and the title. Built once per position, so polling updates properties, never the tree.
+   */
   const row = (ref: () => Ref, index: number) => {
     const [hovered, setHovered] = createSignal(false);
     const id = `super-sessions-sidebar-ref-${index}`;
-    const label = () => `${refIcon(ref().kind, stateOf(ref())?.status)} ${refNumber(ref())}`;
+    const number = () => refNumber(ref());
+    const title = () => stateOf(ref())?.title ?? '';
+    /** Cells left for the title after the icon, the number and the space before the title. */
+    const room = () => Math.floor(width()) - ICON - cells(number()) - 1;
     return jsx('box', {
       id,
       flexDirection: 'row',
       height: 1,
-      paddingLeft: INDENT,
-      onMouseOver: () => setHovered(true),
-      onMouseOut: () => setHovered(false),
+      onMouseOver: () => {
+        setHovered(true);
+        marquee.enter(refKey(ref()), title(), room());
+      },
+      onMouseOut: () => {
+        setHovered(false);
+        marquee.leave(refKey(ref()));
+      },
       onMouseUp: (event: MouseEvent) => {
         if (event.button !== MouseButton.LEFT) return;
         event.stopPropagation();
@@ -128,14 +142,29 @@ export default function Sidebar(props: SidebarProps) {
       },
       children: [
         jsx('text', {
-          id: `${id}-number`,
+          id: `${id}-icon`,
           flexShrink: 0,
           wrapMode: 'none',
           get fg() {
             return refColor(props.options, stateOf(ref())?.status, theme(), context.themeMode);
           },
           get children() {
-            return label();
+            return `${refIcon(ref().kind, stateOf(ref())?.status)} `;
+          }
+        }),
+        jsx('text', {
+          id: `${id}-number`,
+          flexShrink: 0,
+          wrapMode: 'none',
+          get fg() {
+            return theme().text.base;
+          },
+          // The number is already `text.base`, so hover brightens it with weight, like host toasts.
+          get attributes() {
+            return hovered() ? TextAttributes.BOLD : TextAttributes.NONE;
+          },
+          get children() {
+            return number();
           }
         }),
         jsx('text', {
@@ -148,9 +177,10 @@ export default function Sidebar(props: SidebarProps) {
             return hovered() ? theme().text.base : theme().text.muted;
           },
           get children() {
-            const title = stateOf(ref())?.title;
-            if (!title) return '';
-            return fitText(` ${title}`, Math.floor(width()) - INDENT - cells(label()));
+            if (!title() || room() <= 0) return '';
+            return marquee.active() === refKey(ref())
+              ? ` ${marqueeText(title(), room(), marquee.offset())}`
+              : ` ${fitText(title(), room())}`;
           }
         })
       ]
@@ -217,7 +247,6 @@ export default function Sidebar(props: SidebarProps) {
             children: row
           }),
           jsx('box', {
-            paddingLeft: INDENT,
             get visible() {
               return listed().mentioned > 0;
             },
