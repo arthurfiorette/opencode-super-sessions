@@ -120,6 +120,7 @@ export default function Sidebar(props: SidebarProps) {
     const id = `super-sessions-sidebar-ref-${index}`;
     const number = () => refNumber(ref());
     const title = () => stateOf(ref())?.title ?? '';
+    /** Cells left for the title after the icon, the number and the space before the title. */
     const room = () => Math.floor(width()) - ICON - cells(number()) - 1;
     return jsx('box', {
       id,
