@@ -38,10 +38,21 @@ Object.assign(process.env, {
   XDG_STATE_HOME: path.join(root, 'state'),
   XDG_CACHE_HOME: path.join(root, 'cache')
 });
-// Windows refuses to delete a file a process still holds; the retries cover one still exiting.
-process.on('exit', () =>
-  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
-);
+// Windows releases a killed process tree's files a moment after the exit is reported, and
+// fs.rmSync gives up on that access-denied error at once even with `maxRetries`.
+process.on('exit', () => {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (process.platform !== 'win32' || Date.now() > deadline) throw error;
+      // `exit` listeners run synchronously, so the wait blocks.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    }
+  }
+});
 
 /** Model id the scripted provider serves; the host config selects it as the default model. */
 export const MODEL = 'contract/scripted';
