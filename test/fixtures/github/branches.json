@@ -1,0 +1,111 @@
+{
+  "_comment": "Captured from gh 2.103.3 against github.com with the document buildBranchQuery builds; headers dropped, long node lists trimmed.",
+  "axios/axios@dev": {
+    "code": 0,
+    "status": "HTTP/2.0 200 OK",
+    "headers": {},
+    "body": {
+      "data": {
+        "rateLimit": { "remaining": 4771, "resetAt": "2026-11-04T00:58:48Z" },
+        "repository": {
+          "pullRequests": {
+            "nodes": [
+              {
+                "number": 6275,
+                "state": "CLOSED",
+                "headRepository": { "nameWithOwner": "ych5680/axios_ych" }
+              },
+              { "number": 4368, "state": "CLOSED", "headRepository": null },
+              {
+                "number": 4225,
+                "state": "CLOSED",
+                "headRepository": { "nameWithOwner": "axios/axios" }
+              },
+              { "number": 3450, "state": "CLOSED", "headRepository": null }
+            ]
+          }
+        }
+      }
+    },
+    "stderr": ""
+  },
+  "cli/cli@patch-1": {
+    "code": 0,
+    "status": "HTTP/2.0 200 OK",
+    "headers": {},
+    "body": {
+      "data": {
+        "rateLimit": { "remaining": 4846, "resetAt": "2026-11-04T00:46:40Z" },
+        "repository": {
+          "pullRequests": {
+            "nodes": [
+              {
+                "number": 14873,
+                "state": "CLOSED",
+                "headRepository": { "nameWithOwner": "dkarlovi/cli" }
+              },
+              {
+                "number": 14664,
+                "state": "CLOSED",
+                "headRepository": { "nameWithOwner": "astrojuanlu/cli" }
+              },
+              {
+                "number": 14373,
+                "state": "OPEN",
+                "headRepository": { "nameWithOwner": "acoulton/cli" }
+              },
+              {
+                "number": 13296,
+                "state": "MERGED",
+                "headRepository": { "nameWithOwner": "travellertales/cli" }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "stderr": ""
+  },
+  "cli/cli@babakks/auth-status-expired-hint": {
+    "code": 0,
+    "status": "HTTP/2.0 200 OK",
+    "headers": {},
+    "body": {
+      "data": {
+        "rateLimit": { "remaining": 4770, "resetAt": "2026-11-04T00:58:48Z" },
+        "repository": {
+          "pullRequests": {
+            "nodes": [
+              {
+                "number": 14815,
+                "state": "MERGED",
+                "headRepository": { "nameWithOwner": "cli/cli" }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "stderr": ""
+  },
+  "arthurfiorette/does-not-exist-zz@x": {
+    "code": 1,
+    "status": "HTTP/2.0 200 OK",
+    "headers": {},
+    "body": {
+      "data": {
+        "rateLimit": { "remaining": 4769, "resetAt": "2026-11-04T00:58:48Z" },
+        "repository": null
+      },
+      "errors": [
+        {
+          "type": "NOT_FOUND",
+          "path": ["repository"],
+          "locations": [{ "line": 3, "column": 3 }],
+          "message": "Could not resolve to a Repository with the name 'arthurfiorette/does-not-exist-zz'."
+        }
+      ]
+    },
+    "stderr": "gh: Could not resolve to a Repository with the name 'arthurfiorette/does-not-exist-zz'.\n"
+  }
+}

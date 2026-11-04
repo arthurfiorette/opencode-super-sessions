@@ -1,0 +1,59 @@
+{
+  "_comment": "bad-credentials and logged-out are captured from gh 2.103.3 (GH_TOKEN=bad, empty GH_CONFIG_DIR). The rate limit cases cannot be triggered with read-only calls; they follow the response shapes in GitHub's REST and GraphQL rate limit docs.",
+  "bad-credentials": {
+    "code": 1,
+    "status": "HTTP/2.0 401 Unauthorized",
+    "headers": {},
+    "body": {
+      "message": "Bad credentials",
+      "documentation_url": "https://docs.github.com/rest",
+      "status": "401"
+    },
+    "stderr": "gh: Bad credentials (HTTP 401)\n"
+  },
+  "logged-out": {
+    "code": 4,
+    "stdout": "",
+    "stderr": "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.\n"
+  },
+  "graphql-rate-limit": {
+    "code": 1,
+    "status": "HTTP/2.0 200 OK",
+    "headers": {
+      "X-Ratelimit-Limit": "5000",
+      "X-Ratelimit-Remaining": "0",
+      "X-Ratelimit-Reset": "1793753928",
+      "X-Ratelimit-Resource": "graphql"
+    },
+    "body": {
+      "errors": [{ "type": "RATE_LIMITED", "message": "API rate limit exceeded for user ID 1." }]
+    },
+    "stderr": "gh: API rate limit exceeded for user ID 1.\n"
+  },
+  "secondary-rate-limit": {
+    "code": 1,
+    "status": "HTTP/2.0 403 Forbidden",
+    "headers": {
+      "Retry-After": "90",
+      "X-Ratelimit-Remaining": "4200",
+      "X-Ratelimit-Reset": "1793753928"
+    },
+    "body": {
+      "message": "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+      "documentation_url": "https://docs.github.com/graphql/overview/rate-limits-and-node-limits-for-the-graphql-api#secondary-rate-limits",
+      "status": "403"
+    },
+    "stderr": "gh: You have exceeded a secondary rate limit. Please wait a few minutes before you try again. (HTTP 403)\n"
+  },
+  "saml-forbidden": {
+    "code": 1,
+    "status": "HTTP/2.0 403 Forbidden",
+    "headers": { "X-Ratelimit-Remaining": "4200" },
+    "body": {
+      "message": "Resource protected by organization SAML enforcement. You must grant your Personal Access token access to this organization.",
+      "documentation_url": "https://docs.github.com/articles/authenticating-to-a-github-organization-with-saml-single-sign-on/",
+      "status": "403"
+    },
+    "stderr": "gh: Resource protected by organization SAML enforcement. You must grant your Personal Access token access to this organization. (HTTP 403)\n"
+  }
+}
