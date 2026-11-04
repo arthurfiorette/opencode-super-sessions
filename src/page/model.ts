@@ -1,4 +1,4 @@
-import type { LocationPublicInfo, LocationRef } from '@opencode/client';
+import type { LocationPublicInfo, LocationRef, SessionInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import type { Route } from '@opencode/plugin/tui/context';
 import { createEffect, createMemo, createRoot, createSignal, on } from 'solid-js';
@@ -9,13 +9,16 @@ import { type SearchScope, SuperSessions } from '../rpc.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import {
   createPageController,
+  filterPulls,
   type Group,
+  groupPulls,
   groupSearch,
   groupSessions,
   type PageData,
   type PageMemory,
   type PageScope,
   type PageView,
+  pullRows,
   rowsOf
 } from './state.js';
 
@@ -182,21 +185,43 @@ export function createBrowserModel(
         return [];
       }
     });
+    // Archived sessions count too: a pull request someone worked on stays listed after cleanup.
+    const allPulls = createMemo(() => pullRows([...data.active, ...data.archived], data.refs));
+    const pullGroups = createMemo(() =>
+      memory.view === 'pulls' ? groupPulls(filterPulls(allPulls(), memory.query), now()) : []
+    );
+    /** Session groups of the list on screen; the Pull requests view lists pull requests instead. */
     const groups = createMemo((): Group[] => {
+      if (memory.view === 'pulls') return [];
       if (data.search) return searchGroups();
       if (memory.view === 'done') return doneGroups();
       if (memory.view === 'archived') return archivedGroups();
       return activeGroups();
     });
+    /**
+     * Sessions in list order, which peeking walks. In the Pull requests view, each pull request's
+     * newest session, once.
+     */
+    const rows = createMemo((): SessionInfo[] => {
+      if (memory.view !== 'pulls') return rowsOf(groups());
+      const newest = new Map<string, SessionInfo>();
+      for (const pull of pullGroups().flatMap((group) => group.pulls)) {
+        const session = pull.sessions[0];
+        if (session && !newest.has(session.id)) newest.set(session.id, session);
+      }
+      return [...newest.values()];
+    });
     return {
       dispose,
       doneGroups,
       groups,
-      rows: createMemo(() => rowsOf(groups())),
+      pullGroups,
+      rows,
       counts: createMemo(() => ({
         active: rowsOf(activeGroups()).length,
         done: rowsOf(doneGroups()).length,
-        archived: rowsOf(archivedGroups()).length
+        archived: rowsOf(archivedGroups()).length,
+        pulls: allPulls().length
       }))
     };
   });
@@ -266,6 +291,7 @@ export function createBrowserModel(
     counts: lists.counts,
     doneGroups: lists.doneGroups,
     groups: lists.groups,
+    pullGroups: lists.pullGroups,
     rows: lists.rows,
     /** Merges a patch into the remembered browser state. */
     remember(patch: Partial<PageMemory>) {

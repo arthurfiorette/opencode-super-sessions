@@ -341,7 +341,7 @@ interface Syntax {
  * destroyed only after the renderer goes idle, because a frame in flight may still draw with it
  * (same as the host's `createSyntaxStyleMemo`).
  */
-function createSyntax(context: Plugin.Context, theme: () => ResolvedTheme) {
+export function createSyntax(context: Plugin.Context, theme: () => ResolvedTheme) {
   const retained = new Set<SyntaxStyle>();
   let current: Syntax | undefined;
   const release = (syntax: Syntax) => {

@@ -244,8 +244,87 @@ export function runningColor(theme: ResolvedTheme): RGBA {
   return theme.text.feedback.warning.base;
 }
 
+/** What a row's colors depend on. */
+type RowLook = Pick<RowModel, 'deleting' | 'selected' | 'stripe'>;
+
+/** Everything a row of the Pull requests view draws. */
+export interface PullRowModel extends RowLook {
+  /** Review and CI icons, then the state icon and number in the state color. */
+  lead: Segment[];
+  title: string;
+  /** Muted note at the right end, such as `3 sessions`. */
+  right: string;
+  /** Cells inside the row's padding. */
+  width: number;
+}
+
+/** A pull request's review and CI icons, then its state icon and number in the state color. */
+export function pullLead(
+  ref: Ref,
+  state: RefState | undefined,
+  look: { options: Options; theme: ResolvedTheme; mode: 'dark' | 'light' }
+): Segment[] {
+  const color = refColor(look.options, state?.status, look.theme, look.mode);
+  return [
+    ...stateBadges(state, look.theme),
+    { text: `${refIcon(ref.kind, state?.status)} `, fg: color },
+    { text: refNumber(ref), fg: color }
+  ];
+}
+
+/**
+ * The one line of a Pull requests view row: the icons and number, the title cut to the room left,
+ * and the session count at the right end.
+ */
+export function pullLine(
+  theme: () => ResolvedTheme,
+  model: () => PullRowModel,
+  events: RowEvents
+): JSX.Element {
+  const fg = (fallback: string | RGBA) => rowColors(theme(), model()).fg ?? fallback;
+  const lead = () => model().lead.reduce((sum, segment) => sum + cells(segment.text), 0);
+  return lineBox(theme, model, events, [
+    jsx('text', {
+      flexShrink: 0,
+      wrapMode: 'none',
+      get children() {
+        return model().lead.map((segment) =>
+          jsx('span', {
+            style: { fg: fg(segment.fg), bold: model().selected },
+            children: segment.text
+          })
+        );
+      }
+    }),
+    jsx('text', {
+      flexGrow: 1,
+      flexShrink: 1,
+      minWidth: 0,
+      wrapMode: 'none',
+      get children() {
+        const current = model();
+        const room = current.width - lead() - 1 - RIGHT_GAP - cells(current.right);
+        return jsx('span', {
+          style: { fg: fg(theme().text.base), bold: current.selected },
+          children: ` ${fitText(current.title, room)}`
+        });
+      }
+    }),
+    jsx('text', {
+      flexShrink: 0,
+      wrapMode: 'none',
+      get fg() {
+        return fg(theme().text.muted);
+      },
+      get children() {
+        return `${' '.repeat(RIGHT_GAP)}${model().right}`;
+      }
+    })
+  ]);
+}
+
 /** Background and foreground of a row for its selection and delete state. */
-function rowColors(theme: ResolvedTheme, model: RowModel) {
+function rowColors(theme: ResolvedTheme, model: RowLook) {
   if (model.deleting) {
     return {
       bg: theme.background.action.destructive.focused,
@@ -261,7 +340,7 @@ function rowColors(theme: ResolvedTheme, model: RowModel) {
 /** A row line's outer box: height, padding, colors and pointer handlers. */
 function lineBox(
   theme: () => ResolvedTheme,
-  model: () => RowModel,
+  model: () => RowLook,
   events: RowEvents,
   children: JSX.Element
 ) {

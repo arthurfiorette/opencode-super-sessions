@@ -37,6 +37,7 @@ import { ICONS, titleGradient } from './icons.js';
 import { guardActions, type PageProps, type PeekBannerProps, routeKey } from './page.js';
 import { Preview } from './preview.js';
 import { workLines } from './preview-header.js';
+import { PullPreview } from './pull-preview.js';
 import {
   cells,
   detailKinds,
@@ -44,6 +45,9 @@ import {
   findRef,
   formatAge,
   NO_DETAILS,
+  type PullRowModel,
+  pullLead,
+  pullLine,
   type RowDetails,
   type RowModel,
   rowDetails,
@@ -58,8 +62,10 @@ import {
   keepSelection,
   type Line,
   layoutLines,
+  layoutPulls,
   moveSelection,
   type PageView,
+  type PullRow,
   rowsOf,
   type SearchReason,
   scrollFor,
@@ -75,12 +81,14 @@ const SCOPE_DELAY = 200;
 const VIEW_LABELS: Record<PageView, string> = {
   active: 'Active',
   done: 'Done',
-  archived: 'Archived'
+  archived: 'Archived',
+  pulls: 'Pull requests'
 };
 const EMPTY: Record<PageView, string> = {
   active: 'No sessions',
   done: 'No Done sessions',
-  archived: 'No archived sessions'
+  archived: 'No archived sessions',
+  pulls: 'No pull requests'
 };
 // Header row layout, shared by the boxes and the measure that decides which pieces fit. The title
 // never drops; the pieces after it do.
@@ -195,12 +203,18 @@ export default function SessionBrowser(props: PageProps) {
     });
     return wrapTitle(live(session).title || 'Untitled session', room);
   };
+  const pullView = () => memory.view === 'pulls';
+  /** Rows of the Pull requests view in display order. */
+  const pulls = createMemo(() => model.pullGroups().flatMap((group) => group.pulls));
+  const selectedPull = () => pulls().find((pull) => pull.key === memory.pull);
   const lines = createMemo(() =>
-    layoutLines(
-      model.groups(),
-      (session) => detailKinds(detailsOf(session)),
-      (session) => titleOf(session).length
-    )
+    pullView()
+      ? layoutPulls(model.pullGroups())
+      : layoutLines(
+          model.groups(),
+          (session) => detailKinds(detailsOf(session)),
+          (session) => titleOf(session).length
+        )
   );
   const visible = createMemo(() => lines().slice(memory.scroll, memory.scroll + listHeight()));
 
@@ -218,10 +232,44 @@ export default function SessionBrowser(props: PageProps) {
       if (keep !== untrack(() => memory.selected)) remember({ selected: keep });
     })
   );
+  /**
+   * Selects a pull request, and its newest session as the selected session, which `enter`,
+   * `space` and the peek keys act on.
+   */
+  const selectPull = (key: string | undefined) => {
+    const pull = pulls().find((item) => item.key === key);
+    remember({ pull: pull?.key, selected: pull?.sessions[0]?.id });
+  };
+  // Like the session rows: a pull request that left the list hands the selection to the row
+  // that took its place.
+  createEffect(
+    on(pulls, (next, previous) => {
+      if (next.length === 0) return;
+      const current = untrack(() => memory.pull);
+      const kept = next.find((pull) => pull.key === current);
+      if (kept !== undefined) {
+        if (kept.sessions[0]?.id !== untrack(() => memory.selected)) selectPull(kept.key);
+        return;
+      }
+      const index = (previous ?? []).findIndex((pull) => pull.key === current);
+      selectPull(next[index === -1 ? 0 : Math.min(index, next.length - 1)]?.key);
+    })
+  );
+  // Coming back from a peek selects the session the peek ended on; its pull request follows.
+  createEffect(
+    on(
+      () => memory.selected,
+      (id) => {
+        if (!untrack(pullView) || untrack(selectedPull)?.sessions[0]?.id === id) return;
+        const owner = untrack(pulls).find((pull) => pull.sessions[0]?.id === id);
+        if (owner !== undefined) remember({ pull: owner.key });
+      }
+    )
+  );
   createEffect(() => {
     const scroll = scrollFor(
       lines(),
-      memory.selected,
+      pullView() ? memory.pull : memory.selected,
       untrack(() => memory.scroll),
       listHeight()
     );
@@ -246,8 +294,17 @@ export default function SessionBrowser(props: PageProps) {
     void context.data.location.vcs.sync({ directory }).catch(() => {});
   });
 
+  // A pull request's state refreshes through its newest session.
   const visibleIDs = () =>
-    untrack(() => visible().flatMap((line) => (line.kind === 'title' ? [line.session.id] : [])));
+    untrack(() =>
+      visible().flatMap((line) =>
+        line.kind === 'title'
+          ? [line.session.id]
+          : line.kind === 'pull'
+            ? line.pull.sessions.slice(0, 1).map((session) => session.id)
+            : []
+      )
+    );
   // Cached lists draw at once; a reload, when due, and the forge refresh run behind them.
   const refreshVisible = () => void controller.refresh(visibleIDs());
   const sync = () => {
@@ -270,7 +327,10 @@ export default function SessionBrowser(props: PageProps) {
     )
   );
   onCleanup(() => clearTimeout(scopeTimer));
-  createEffect(() => controller.search(memory.query, memory.view === 'archived', scope()));
+  // The Pull requests view filters its own rows; session search stays off there.
+  createEffect(() =>
+    controller.search(pullView() ? '' : memory.query, memory.view === 'archived', scope())
+  );
   onMount(() => {
     input?.focus();
     // Closing a host dialog refocuses what it took focus from one tick later, which can land
@@ -317,9 +377,22 @@ export default function SessionBrowser(props: PageProps) {
       draft.scroll = 0;
     });
   const select = (sessionID: string | undefined) => remember({ selected: sessionID });
-  const move = (delta: number) => select(moveSelection(rows(), memory.selected, delta));
+  /** Moves the selection by `delta` rows, clamped to the list: sessions, or pull requests. */
+  const move = (delta: number) => {
+    if (!pullView()) return select(moveSelection(rows(), memory.selected, delta));
+    const list = pulls();
+    const index = list.findIndex((pull) => pull.key === memory.pull);
+    const to = Math.min(list.length - 1, Math.max(0, (index === -1 ? 0 : index) + delta));
+    selectPull(list[to]?.key);
+  };
+  /** Rows in the list, for `home` and `end`. */
+  const rowCount = () => (pullView() ? pulls().length : rows().length);
   // Rows on screen now, from the real line heights, so a page jump never skips past one.
-  const pageRows = () => Math.max(1, visible().filter((line) => line.kind === 'title').length - 1);
+  const pageRows = () =>
+    Math.max(
+      1,
+      visible().filter((line) => line.kind === 'title' || line.kind === 'pull').length - 1
+    );
   const open = (sessionID = memory.selected) => {
     if (sessionID === undefined) return;
     props.close();
@@ -458,6 +531,11 @@ export default function SessionBrowser(props: PageProps) {
     void controller.refresh([session.id]);
   };
   const openRef = () => {
+    const pull = pullView() ? selectedPull() : undefined;
+    if (pull !== undefined) {
+      if (!openUrl(refUrl(pull.ref, pull.state))) toast('Could not open the browser.', 'error');
+      return;
+    }
     const session = selected();
     const view = session ? data.refs[session.id] : undefined;
     const summary = view ? rowRefs(view) : undefined;
@@ -485,30 +563,47 @@ export default function SessionBrowser(props: PageProps) {
     return workLines(view).flatMap((line) => (line.kind === 'ref' ? [line.ref] : []));
   });
   /** The Work row the keyboard selected, while the Work rows have the keys. */
-  const workRef = () => (focus() === 'work' ? workRefs()[workIndex()] : undefined);
-  // The Work rows belong to the selected session; another session or search hands the keys back.
-  createEffect(on(() => [memory.selected, memory.query], focusList, { defer: true }));
+  const workRef = () => (focus() === 'work' && !pullView() ? workRefs()[workIndex()] : undefined);
+  /**
+   * Rows `right` moves the arrow keys to: the preview's Work rows, or in the Pull requests view
+   * the sessions that worked on the selected pull request.
+   */
+  const workCount = () => (pullView() ? (selectedPull()?.sessions.length ?? 0) : workRefs().length);
+  // The Work rows belong to the selected row; another row or search hands the keys back.
+  createEffect(
+    on(() => [memory.selected, memory.pull, memory.query, memory.view], focusList, {
+      defer: true
+    })
+  );
   // A refresh can drop rows under the cursor.
   createEffect(() => {
-    const count = workRefs().length;
+    const count = workCount();
     if (count === 0) focusList();
     else if (untrack(workIndex) >= count) setWorkIndex(count - 1);
   });
   /** Moves the Work selection by `delta`, clamped to the rows. */
   const moveWork = (delta: number) => {
-    setWorkIndex((index) => Math.min(workRefs().length - 1, Math.max(0, index + delta)));
+    setWorkIndex((index) => Math.min(workCount() - 1, Math.max(0, index + delta)));
   };
   /** `right`: into the Work rows, unless the search cursor still has text to move over. */
   const focusWork = () => {
     if (focus() === 'work') return;
     if (input && input.cursorOffset < cells(input.value)) return false;
     // The preview is hidden on narrow terminals, and a session without refs has no rows.
-    if (!wide() || workRefs().length === 0) return;
+    if (!wide() || workCount() === 0) return;
     setWorkIndex(0);
     setFocus('work');
   };
-  /** `enter` in the Work rows: opens the selected ref's page, like a click on the row. */
+  /**
+   * `enter` in the Work rows: opens the selected ref's page, like a click on the row, or in the
+   * Pull requests view the selected session.
+   */
   const openWork = () => {
+    if (pullView()) {
+      const session = selectedPull()?.sessions[workIndex()];
+      if (session) open(session.id);
+      return;
+    }
     const ref = workRef();
     const session = selected();
     if (!ref || !session) return;
@@ -532,6 +627,7 @@ export default function SessionBrowser(props: PageProps) {
    * the Done view, are left out.
    */
   const keyActions = (): Array<{ title: string; key: string; run: () => unknown }> => {
+    if (pullView()) return pullKeyActions();
     const current = selected();
     return [
       { title: 'Open session', key: 'enter', run: () => open() },
@@ -609,6 +705,40 @@ export default function SessionBrowser(props: PageProps) {
     ];
   };
   /**
+   * The keys of the Pull requests view, where a row is a pull request: the session keys act on
+   * its newest session, and the actions that edit one session are left out.
+   */
+  const pullKeyActions = (): Array<{ title: string; key: string; run: () => unknown }> => [
+    { title: 'Open newest session', key: 'enter', run: () => open() },
+    { title: 'Peek newest session', key: 'space', run: peek },
+    {
+      title: 'Open pull request in browser',
+      key: shortcut('super-sessions.open.ref', 'ctrl+g'),
+      run: openRef
+    },
+    ...(wide() && workCount() > 0
+      ? [{ title: 'Focus the sessions in the preview', key: 'right', run: focusWork }]
+      : []),
+    { title: 'Next view', key: 'tab', run: () => nextView(1) },
+    { title: 'Previous view', key: 'shift+tab', run: () => nextView(-1) },
+    {
+      title: scope() === 'project' ? 'Show all projects' : 'Show this project',
+      key: 'ctrl+a',
+      run: () => model.toggleScope().catch(() => {})
+    },
+    {
+      title: 'Show command palette',
+      key: 'ctrl+p',
+      run: () => context.keymap.dispatch(COMMAND_PALETTE)
+    },
+    {
+      title: 'Super Sessions settings',
+      key: 'ctrl+o',
+      run: () => context.keymap.dispatch('super-sessions.settings')
+    },
+    { title: 'Close', key: 'esc', run: props.close }
+  ];
+  /**
    * The keys dialog: the browser's actions in the host's select dialog, key on the right like the
    * command palette. Picking one closes the dialog and runs it on the selected session.
    */
@@ -631,6 +761,8 @@ export default function SessionBrowser(props: PageProps) {
     void actions[index]?.run();
   };
 
+  /** Whether the list rows are sessions, which the session-editing keys need. */
+  const sessionRows = () => !pullView();
   // Host dialogs push the "modal" mode above this one, which turns this layer off while a rename
   // prompt or confirm is open and back on when it closes. Created inside the component, so the
   // layer goes away with the browser.
@@ -656,8 +788,8 @@ export default function SessionBrowser(props: PageProps) {
     },
     { bind: 'pageup', title: 'Page up', run: () => move(-pageRows()) },
     { bind: 'pagedown', title: 'Page down', run: () => move(pageRows()) },
-    { bind: 'home', title: 'First session', run: () => move(-rows().length) },
-    { bind: 'end', title: 'Last session', run: () => move(rows().length) },
+    { bind: 'home', title: 'First session', run: () => move(-rowCount()) },
+    { bind: 'end', title: 'Last session', run: () => move(rowCount()) },
     {
       bind: 'return',
       title: 'Open session',
@@ -716,25 +848,49 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Toggle all projects',
       run: () => void model.toggleScope().catch(() => {})
     },
-    { bind: 'ctrl+s', title: 'Archive or restore', run: () => void archive() },
-    { bind: DONE_KEY, title: 'Mark Done or not Done', run: () => void toggleDone() },
-    { id: HOST_COMMANDS.rename, title: 'Rename session', run: () => void rename() },
-    { id: HOST_COMMANDS.delete, title: 'Delete session', run: () => void remove() },
+    // A Pull requests view row is a pull request, so the keys that change one session are off.
+    {
+      bind: 'ctrl+s',
+      title: 'Archive or restore',
+      enabled: sessionRows,
+      run: () => void archive()
+    },
+    {
+      bind: DONE_KEY,
+      title: 'Mark Done or not Done',
+      enabled: sessionRows,
+      run: () => void toggleDone()
+    },
+    {
+      id: HOST_COMMANDS.rename,
+      title: 'Rename session',
+      enabled: sessionRows,
+      run: () => void rename()
+    },
+    {
+      id: HOST_COMMANDS.delete,
+      title: 'Delete session',
+      enabled: sessionRows,
+      run: () => void remove()
+    },
     {
       id: HOST_COMMANDS.pin,
       title: 'Pin or unpin session',
+      enabled: sessionRows,
       run: togglePin
     },
     {
       id: 'super-sessions.retitle',
       title: 'Regenerate title',
       bind: 'ctrl+t',
+      enabled: sessionRows,
       run: () => void retitle()
     },
     {
       id: 'super-sessions.link',
       title: 'Link pull request or issue',
       bind: 'ctrl+l',
+      enabled: sessionRows,
       run: () => void link()
     },
     {
@@ -850,6 +1006,53 @@ export default function SessionBrowser(props: PageProps) {
     stripe: (stripes().get(session.id) ?? 0) % 2 === 1 ? stripe() : undefined
   });
 
+  // Pull requests stripe like sessions: every second row of a day.
+  const pullStripes = createMemo(
+    () =>
+      new Map(
+        model.pullGroups().flatMap((group) => group.pulls.map((pull, index) => [pull.key, index]))
+      )
+  );
+  /** Everything a Pull requests view row draws. */
+  const pullModel = (pull: PullRow): PullRowModel => {
+    const count = pull.sessions.length;
+    return {
+      lead: pullLead(pull.ref, pull.state, {
+        options: props.options,
+        theme: theme(),
+        mode: context.themeMode
+      }),
+      title: pull.state?.title ?? '',
+      right: `${count} ${count === 1 ? 'session' : 'sessions'}`,
+      // The row box pads one cell on each side.
+      width: listWidth() - 2,
+      selected: memory.pull === pull.key,
+      deleting: false,
+      stripe: (pullStripes().get(pull.key) ?? 0) % 2 === 1 ? stripe() : undefined
+    };
+  };
+  /** A Pull requests view line; `enter` and a click open its newest session. */
+  const renderPull = (line: () => Line, initial: PullRow) => {
+    const pull = () => {
+      const current = line();
+      return current.kind === 'pull' ? current.pull : initial;
+    };
+    let last = pullModel(initial);
+    const row = createMemo(() => {
+      try {
+        last = pullModel(pull());
+      } catch (error) {
+        props.fail(error);
+      }
+      return last;
+    });
+    return pullLine(theme, row, {
+      hover: () => selectPull(pull().key),
+      leave,
+      open: () => open(pull().sessions[0]?.id)
+    });
+  };
+
   /** One list line. The node is rebuilt only when the line changes kind or session. */
   const renderLine = (line: () => Line) => {
     const key = createMemo(() => {
@@ -858,14 +1061,17 @@ export default function SessionBrowser(props: PageProps) {
         ? `h:${value.title}`
         : value.kind === 'blank'
           ? 'b'
-          : value.kind === 'wrap'
-            ? `w${value.index}:${value.session.id}`
-            : `${value.kind}:${value.session.id}`;
+          : value.kind === 'pull'
+            ? `p:${value.pull.key}`
+            : value.kind === 'wrap'
+              ? `w${value.index}:${value.session.id}`
+              : `${value.kind}:${value.session.id}`;
     });
     return createMemo(() => {
       key();
       return untrack(() => {
         const value = line();
+        if (value.kind === 'pull') return renderPull(line, value.pull);
         // A text node, because an empty box in this column collapses to zero height.
         if (value.kind === 'blank') return jsx('text', { height: 1, flexShrink: 0, children: ' ' });
         if (value.kind === 'header') {
@@ -887,7 +1093,9 @@ export default function SessionBrowser(props: PageProps) {
         // Reads the latest line, but tolerates the moment before the key memo rebuilds this node.
         const session = () => {
           const current = line();
-          return current.kind === 'blank' || current.kind === 'header' ? initial : current.session;
+          return current.kind === 'blank' || current.kind === 'header' || current.kind === 'pull'
+            ? initial
+            : current.session;
         };
         // A failed memo reads as undefined, and the row's render effects would throw on it again
         // after the crash fallback, outside any boundary. So the first model is read here, where
@@ -914,6 +1122,15 @@ export default function SessionBrowser(props: PageProps) {
   };
 
   const listMessage = createMemo(() => {
+    if (pullView()) {
+      if (data.status === 'loading') return { text: 'Loading sessions…', error: false };
+      if (data.status === 'error') return { text: 'Could not load sessions.', error: true };
+      if (pulls().length > 0) return undefined;
+      return {
+        text: memory.query.trim() ? 'No pull requests found' : EMPTY.pulls,
+        error: false
+      };
+    }
     if (data.search) {
       if (data.search.sessions.length > 0) return undefined;
       if (data.search.status === 'error')
@@ -1068,7 +1285,11 @@ export default function SessionBrowser(props: PageProps) {
       jsx('input', {
         flexGrow: 1,
         value: memory.query,
-        placeholder: 'Search sessions, #numbers, PR and issue titles',
+        get placeholder() {
+          return pullView()
+            ? 'Search pull requests by #number or title'
+            : 'Search sessions, #numbers, PR and issue titles';
+        },
         // The host's search field tokens, so the field reads as the same control.
         get textColor() {
           return theme().text.formfield.focused;
@@ -1196,10 +1417,23 @@ export default function SessionBrowser(props: PageProps) {
   const split = (): number => settings.previewWidth();
   /** Cells of the preview column, its blank first cell included. */
   const previewWidth = () => Math.floor(panelWidth() * split());
+  // Only one pane loads at a time: the session preview stays empty in the Pull requests view.
+  const pullPane = createComponent(PullPreview, {
+    context,
+    options: props.options,
+    pull: () => (wide() && pullView() ? selectedPull() : undefined),
+    refs: (sessionID) => data.refs[sessionID],
+    details: (ref) => model.rpc()['pull.details']({ ref }, model.rpcOptions()),
+    selectedSession: () => (focus() === 'work' && pullView() ? workIndex() : undefined),
+    open: (sessionID) => open(sessionID),
+    now: model.now,
+    width: () => previewWidth() - 3,
+    theme: () => context.theme
+  });
   const pane = createComponent(Preview, {
     context,
     options: props.options,
-    selected: () => (wide() ? memory.selected : undefined),
+    selected: () => (wide() && !pullView() ? memory.selected : undefined),
     // The column's blank first cell plus the pane's padding on each side.
     width: () => previewWidth() - 3,
     session: (sessionID) => {
@@ -1248,7 +1482,7 @@ export default function SessionBrowser(props: PageProps) {
         flexGrow: 1,
         flexShrink: 1,
         minHeight: 0,
-        children: pane
+        children: [pane, pullPane]
       })
     ]
   });
@@ -1260,6 +1494,14 @@ export default function SessionBrowser(props: PageProps) {
       return [
         ['open', 'enter'],
         ['back', 'left']
+      ];
+    // A row is a pull request here: enter and space act on its newest session.
+    if (pullView())
+      return [
+        ['open', 'enter'],
+        ['peek', 'space'],
+        ['open PR', shortcut('super-sessions.open.ref', 'ctrl+g')],
+        ['keys', 'ctrl+/']
       ];
     // The same hints in the same places whatever the state, so the eye learns where each key is;
     // the rest of the actions live in the keys dialog.
@@ -1489,7 +1731,14 @@ export function PeekBanner(props: PeekBannerProps) {
 
 /** A view tab's name, after its icon when `icons` is set. Active has no icon. */
 function tabLabel(view: PageView, icons: boolean): string {
-  const icon = view === 'done' ? ICONS.done : view === 'archived' ? ICONS.archived : undefined;
+  const icon =
+    view === 'done'
+      ? ICONS.done
+      : view === 'archived'
+        ? ICONS.archived
+        : view === 'pulls'
+          ? ICONS.prOpen
+          : undefined;
   return icons && icon ? `${icon} ${VIEW_LABELS[view]}` : VIEW_LABELS[view];
 }
 

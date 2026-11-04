@@ -284,6 +284,12 @@ test('session.list opens the browser cold and lists active sessions with their r
   await import('../../dist/page/view.js');
   await eventually(rendered, (frame) => frame.includes('Mastra build') && frame.includes('#4930'));
   assert.doesNotMatch(rendered.captureCharFrame(), /Old spike on Rollup plugins/);
+  // The Pull requests view, last in the tab cycle, draws its rows from the same loaded refs.
+  terminal.layers
+    .flatMap((layer) => layer.commands ?? [])
+    .find((command) => command.bind === 'shift+tab')
+    .run();
+  await eventually(rendered, (frame) => /#4930 Migrate build to Rspack\s+1 session/.test(frame));
 });
 
 // On a release CI never ran, the host's own list must answer its keys, and the user must learn

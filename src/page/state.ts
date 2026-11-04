@@ -1,14 +1,14 @@
 import type { SessionInfo } from '@opencode/client';
-import { refKey } from '../refs/ref.js';
+import { type Ref, type RefState, refKey } from '../refs/ref.js';
 import { rankSessions } from '../refs/search.js';
-import { doneAt, isDone } from '../refs/summary.js';
+import { doneAt, isDone, trackedRefs } from '../refs/summary.js';
 import type { SearchHit, SearchMatch, SessionRefView } from '../rpc.js';
 
-export type PageView = 'active' | 'done' | 'archived';
+export type PageView = 'active' | 'done' | 'archived' | 'pulls';
 export type PageScope = 'project' | 'all';
 
 /** Views in `tab` order. */
-export const VIEWS: readonly PageView[] = ['active', 'done', 'archived'];
+export const VIEWS: readonly PageView[] = ['active', 'done', 'archived', 'pulls'];
 
 /**
  * Page state kept in `storage.memory`, so returning with `<leader>l` after a peek restores it.
@@ -17,9 +17,117 @@ export const VIEWS: readonly PageView[] = ['active', 'done', 'archived'];
 export interface PageMemory {
   query: string;
   view: PageView;
+  /**
+   * The selected session. In the Pull requests view it is the selected pull request's newest
+   * session, so peeking and the way back work as in the other views.
+   */
   selected: string | undefined;
+  /** `refKey` of the selected pull request in the Pull requests view. */
+  pull?: string | undefined;
   /** First visible list line. */
   scroll: number;
+}
+
+/** A pull request in the Pull requests view and the sessions that track it, newest first. */
+export interface PullRow {
+  key: string;
+  ref: Ref;
+  state: RefState | undefined;
+  sessions: SessionInfo[];
+}
+
+/** A day of the Pull requests view. */
+export interface PullGroup {
+  title: string;
+  pulls: PullRow[];
+}
+
+/**
+ * One row per pull request the given top-level sessions track (stored links and branch pull
+ * requests, mentions left out), with its sessions newest first.
+ */
+export function pullRows(
+  sessions: readonly SessionInfo[],
+  refs: Readonly<Record<string, SessionRefView>>
+): PullRow[] {
+  const rows = new Map<string, PullRow>();
+  for (const session of sessions) {
+    const view = refs[session.id];
+    if (session.parentID !== undefined || view === undefined) continue;
+    for (const ref of trackedRefs(view)) {
+      if (ref.kind !== 'pr') continue;
+      const key = refKey(ref);
+      const row = rows.get(key) ?? { key, ref, state: view.states[key], sessions: [] };
+      row.state ??= view.states[key];
+      row.sessions.push(session);
+      rows.set(key, row);
+    }
+  }
+  for (const row of rows.values()) row.sessions.sort((a, b) => b.time.updated - a.time.updated);
+  return [...rows.values()];
+}
+
+/**
+ * When a pull request last changed: its `updatedAt` on the forge, else its merge or close, else
+ * the newest update of its sessions (states cached before `updatedAt` existed have none).
+ */
+export function pullUpdated(row: PullRow): number {
+  return (
+    row.state?.updatedAt ??
+    row.state?.mergedAt ??
+    row.state?.closedAt ??
+    row.sessions[0]?.time.updated ??
+    0
+  );
+}
+
+/**
+ * Pull requests whose title holds the query, or whose number it names (`12`, `#12`, `!12`). A
+ * number matches only whole, like the session search.
+ */
+export function filterPulls(rows: readonly PullRow[], query: string): PullRow[] {
+  const text = query.trim().toLowerCase();
+  if (text === '') return [...rows];
+  const number = /^[#!]?(\d+)$/.exec(text)?.[1];
+  return rows.filter(
+    (row) =>
+      (number !== undefined && String(row.ref.number) === number) ||
+      (row.state?.title.toLowerCase().includes(text) ?? false)
+  );
+}
+
+/**
+ * Groups pull requests by the day they last changed on the forge, newest day first. Within a
+ * day, open and draft ones come first, then merged and closed ones, newest change first.
+ */
+export function groupPulls(rows: readonly PullRow[], now: number): PullGroup[] {
+  const open = (row: PullRow) =>
+    row.state?.status === 'merged' || row.state?.status === 'closed' ? 1 : 0;
+  const sorted = [...rows].sort(
+    (a, b) =>
+      startOfDay(pullUpdated(b)) - startOfDay(pullUpdated(a)) ||
+      open(a) - open(b) ||
+      pullUpdated(b) - pullUpdated(a)
+  );
+  const today = new Date(now).toDateString();
+  const groups: PullGroup[] = [];
+  for (const row of sorted) {
+    const date = new Date(pullUpdated(row)).toDateString();
+    const title = date === today ? 'Today' : date;
+    const last = groups.at(-1);
+    if (last?.title === title) last.pulls.push(row);
+    else groups.push({ title, pulls: [row] });
+  }
+  return groups;
+}
+
+/** Lays the Pull requests view out like the session list: one line per pull request. */
+export function layoutPulls(groups: readonly PullGroup[]): Line[] {
+  return groups.flatMap((group, index): Line[] => [
+    ...(index > 0 ? [{ kind: 'blank' as const }] : []),
+    { kind: 'header' as const, title: group.title },
+    ...group.pulls.map((pull) => ({ kind: 'pull' as const, pull }))
+  ]);
 }
 
 /** A titled run of sessions. */
@@ -37,7 +145,9 @@ export type Line =
   | { kind: 'header'; title: string }
   | { kind: 'title' | DetailKind; session: SessionInfo }
   /** The `index`th line (1 and up) of a title that wraps. */
-  | { kind: 'wrap'; session: SessionInfo; index: number };
+  | { kind: 'wrap'; session: SessionInfo; index: number }
+  /** A row of the Pull requests view. */
+  | { kind: 'pull'; pull: PullRow };
 
 /** What the Done rule needs beyond refs. Fetched only for sessions that could be Done. */
 export interface DoneExtra {
@@ -248,7 +358,8 @@ export function keepSelection(
 
 /**
  * Returns the first visible line so every line of the selected row is on screen. When the row is
- * the first of its group, its header is kept in view too.
+ * the first of its group, its header is kept in view too. `selected` is a session id, or a pull
+ * request's key in the Pull requests view.
  */
 export function scrollFor(
   lines: readonly Line[],
@@ -257,14 +368,18 @@ export function scrollFor(
   height: number
 ): number {
   const max = Math.max(0, lines.length - height);
-  const at = lines.findIndex((line) => line.kind === 'title' && line.session.id === selected);
+  const at = lines.findIndex(
+    (line) =>
+      (line.kind === 'title' && line.session.id === selected) ||
+      (line.kind === 'pull' && line.pull.key === selected)
+  );
   if (at === -1 || height <= 0) return Math.min(Math.max(0, scroll), max);
   const top = lines[at - 1]?.kind === 'header' ? at - 1 : at;
   let end = at + 1;
   while (end < lines.length) {
     const line = lines[end];
     if (line === undefined || line.kind === 'blank' || line.kind === 'header') break;
-    if (line.kind === 'title' || line.session.id !== selected) break;
+    if (line.kind === 'title' || line.kind === 'pull' || line.session.id !== selected) break;
     end++;
   }
   let next = scroll;
