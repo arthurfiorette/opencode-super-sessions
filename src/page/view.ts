@@ -1248,12 +1248,12 @@ export default function SessionBrowser(props: PageProps) {
         ['open', 'enter'],
         ['back', '←/esc']
       ];
-    // The rest of the actions live in the keys dialog.
+    // The same hints in the same places whatever the state, so the eye learns where each key is;
+    // the rest of the actions live in the keys dialog.
     return [
-      ['open', 'enter'],
       ['peek', 'space'],
-      [memory.view === 'archived' ? 'restore' : 'archive', keyLabel('ctrl+s')],
-      ['view', 'tab'],
+      ['archive', keyLabel('ctrl+s')],
+      ['done', keyLabel(DONE_KEY)],
       ['keys', '^/']
     ];
   });
