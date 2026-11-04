@@ -22,7 +22,7 @@ export interface PageMemory {
   scroll: number;
 }
 
-/** A titled run of sessions. Search results use one group without a title. */
+/** A titled run of sessions. */
 export interface Group {
   title?: string;
   sessions: SessionInfo[];
@@ -128,6 +128,40 @@ export function groupSessions(input: GroupInput): Group[] {
     ...(pinned.length > 0 ? [{ title: 'Pinned', sessions: pinned }] : []),
     ...(running.length > 0 ? [{ title: 'Running', sessions: running }] : []),
     ...byDay(idle, (session) => session.time.updated, input.now)
+  ];
+}
+
+// Match tiers in the order a day group lists them.
+const MATCH_TIER: Record<SearchMatch, number> = {
+  title: 0,
+  'ref-number': 1,
+  'ref-title': 2,
+  body: 3
+};
+
+/**
+ * Groups search results like the Active list: Running first, then one group per day of
+ * `time.updated`, with pins left in place. Within a group, title matches come first, then ref
+ * numbers, ref titles and message hits, newest update first within a tier. Hits the server adds
+ * later land in their day group by the same rule instead of after the local ones.
+ */
+export function groupSearch(
+  sessions: readonly SessionInfo[],
+  reasons: Readonly<Record<string, SearchReason>>,
+  running: (sessionID: string) => boolean,
+  now: number
+): Group[] {
+  const tier = (session: SessionInfo) => MATCH_TIER[reasons[session.id]?.match ?? 'body'];
+  const ranked = (a: SessionInfo, b: SessionInfo) =>
+    tier(a) - tier(b) || b.time.updated - a.time.updated;
+  const active = sessions.filter((session) => running(session.id)).sort(ranked);
+  const day = (session: SessionInfo) => startOfDay(session.time.updated);
+  const idle = sessions
+    .filter((session) => !running(session.id))
+    .sort((a, b) => day(b) - day(a) || ranked(a, b));
+  return [
+    ...(active.length > 0 ? [{ title: 'Running', sessions: active }] : []),
+    ...byDay(idle, (session) => session.time.updated, now)
   ];
 }
 
@@ -313,8 +347,8 @@ export function localSearch(
 }
 
 /**
- * Local hits first, in their order, then the server's other hits in its order. A session both
- * found keeps the local reason, so rows do not move or relabel when the server answers.
+ * Local hits plus the server's other hits. A session both found keeps the local reason, so rows
+ * do not move or relabel when the server answers; {@link groupSearch} decides the order.
  */
 function mergeHits(local: readonly SearchHit[], remote: readonly SearchHit[]): SearchHit[] {
   const seen = new Set(local.map((hit) => hit.sessionID));

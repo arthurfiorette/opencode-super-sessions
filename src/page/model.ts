@@ -10,6 +10,7 @@ import { tuiSettingsFor } from '../settings/store.js';
 import {
   createPageController,
   type Group,
+  groupSearch,
   groupSessions,
   type PageData,
   type PageMemory,
@@ -171,9 +172,18 @@ export function createBrowserModel(
     const doneGroups = createMemo(() => groupsFor('done'));
     const archivedGroups = createMemo(() => groupsFor('archived'));
     /** Groups of the list on screen: the search results, or the current view. */
+    const searchGroups = createMemo((): Group[] => {
+      const search = data.search;
+      if (!search) return [];
+      try {
+        return groupSearch(search.sessions, search.reasons, running, now());
+      } catch (error) {
+        onError(error);
+        return [];
+      }
+    });
     const groups = createMemo((): Group[] => {
-      if (data.search)
-        return data.search.sessions.length > 0 ? [{ sessions: data.search.sessions }] : [];
+      if (data.search) return searchGroups();
       if (memory.view === 'done') return doneGroups();
       if (memory.view === 'archived') return archivedGroups();
       return activeGroups();

@@ -539,14 +539,22 @@ test('search lists local matches before the server answers and says why each mat
   assert.ok(lines()[row('Mastra build')].includes('PR title'));
   assert.ok(!rendered.captureCharFrame().includes('Investigate why'));
 
-  // The server adds a message match the client cannot see; local hits keep their place.
+  // The server adds message matches the client cannot see, the older one first. Each lands in
+  // its day group under Running, like the unfiltered list, and the pin is not set apart.
   answer([
+    { sessionID: 'pinned', match: 'body', score: 2 },
     { sessionID: 'long', match: 'body', score: 0 },
     { sessionID: 'running', match: 'ref-title', ref: key(pr4930), score: 1 }
   ]);
-  await eventually(rendered, (frame) => frame.includes('in messages'));
-  assert.ok(row('Mastra build') < row('Investigate why'));
+  await eventually(rendered, (frame) => frame.includes('Homelab Mastra'));
+  const order = ['Running', 'Mastra build', 'Today', 'Investigate why', 'Homelab Mastra'].map(row);
+  assert.deepEqual(
+    [...order].sort((a, b) => a - b),
+    order,
+    `line order: ${order}`
+  );
   assert.ok(lines()[row('Investigate why')].includes('in messages'));
+  assert.equal(row('Pinned'), -1);
 });
 
 test('space peeks, the arrows walk the list from the session, and esc comes back to that row', async () => {
