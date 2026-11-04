@@ -3,13 +3,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { test } from 'node:test';
+import { type TestContext, test } from 'node:test';
 import { type ArchiveFacts, isArchiveDue } from '../../src/server/auto-archive.js';
 import {
   type CleanupSettings,
   decideWorktree,
   parseStatus,
   readPullHead,
+  readWorktreeGit,
   type WorktreeFacts,
   type WorktreeSession
 } from '../../src/server/cleanup.js';
@@ -51,6 +52,9 @@ const worktree = (patch: Partial<WorktreeFacts> = {}): WorktreeFacts => ({
   contained: true,
   ...patch
 });
+
+/** Facts of a detached HEAD with one commit the default branch lacks and no ref holds. */
+const detached: Partial<WorktreeFacts> = { ahead: 1, contained: false, referenced: false };
 
 test('cleanup removes a worktree only under an enabled rule and never against a keep reason', () => {
   const cases: Array<[string, Partial<CleanupSettings>, Partial<WorktreeFacts>, string]> = [
@@ -164,7 +168,52 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
     // A worktree created moments ago has no commits and no session yet.
     ['unchanged, no session uses it', { cleanupUnchanged: true }, { sessions: [] }, 'keep'],
     ['one commit ahead', { cleanupUnchanged: true }, { ahead: 1 }, 'keep'],
-    ['ahead unknown', { cleanupUnchanged: true }, { ahead: undefined }, 'keep']
+    ['ahead unknown', { cleanupUnchanged: true }, { ahead: undefined }, 'keep'],
+    // OpenCode creates worktrees on a detached HEAD: a commit there that no ref holds is lost
+    // with the worktree, whichever rule matches.
+    [
+      'deleted, commits only HEAD holds',
+      { cleanupDeleted: true },
+      { sessions: [], deleted: true, ...detached },
+      'keep:has commits no branch or tag contains'
+    ],
+    [
+      'Done, commits only HEAD holds',
+      { cleanupDoneDays: 0 },
+      { merged: false, ...detached },
+      'keep:has commits no branch or tag contains'
+    ],
+    [
+      'inactive, commits only HEAD holds',
+      { cleanupInactiveDays: 7 },
+      { sessions: [session({ done: false })], ...detached },
+      'keep:has commits no branch or tag contains'
+    ],
+    [
+      'inactive, commits a branch holds',
+      { cleanupInactiveDays: 7 },
+      { sessions: [session({ done: false })], ...detached, referenced: true },
+      'remove:inactive'
+    ],
+    [
+      'inactive, refs unreadable',
+      { cleanupInactiveDays: 7 },
+      { sessions: [session({ done: false })], ...detached, referenced: undefined },
+      'keep'
+    ],
+    [
+      'inactive, default branch unknown and refs unreadable',
+      { cleanupInactiveDays: 7 },
+      { sessions: [session({ done: false })], ahead: undefined, contained: undefined },
+      'keep'
+    ],
+    // The merged pull request's head has every commit HEAD has, so the forge keeps them.
+    [
+      'merged by squash, commits only HEAD and the pull request hold',
+      { cleanupMerged: true },
+      { ...detached, head: 'included' },
+      'remove:merged'
+    ]
   ];
   for (const [name, settings, facts, expected] of cases) {
     const decision = decideWorktree(worktree(facts), { ...OFF, ...settings }, NOW);
@@ -178,7 +227,8 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
   }
 });
 
-test('a squash-merged branch counts as merged only while HEAD has nothing beyond the PR head', async (t) => {
+/** A throwaway git repository on `main`, removed after the test. */
+async function tempRepo(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'super-sessions-cleanup-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   /** Runs git with identity, hooks and signing pinned, and returns its trimmed output. */
@@ -206,6 +256,23 @@ test('a squash-merged branch counts as merged only while HEAD has nothing beyond
     return git('rev-parse', 'HEAD');
   };
   git('init', '-q', '-b', 'main');
+  return { directory, git, commit };
+}
+
+test('a commit on a detached HEAD counts as unreferenced until a branch holds it', async (t) => {
+  const { directory, git, commit } = await tempRepo(t);
+  commit('init');
+  git('checkout', '-q', '--detach');
+  commit('work on the detached HEAD');
+  const facts = await readWorktreeGit(directory, 'refs/heads/main');
+  assert.equal(facts.ahead, 1);
+  assert.equal(facts.referenced, false);
+  git('branch', 'keep-it');
+  assert.equal((await readWorktreeGit(directory, 'refs/heads/main')).referenced, true);
+});
+
+test('a squash-merged branch counts as merged only while HEAD has nothing beyond the PR head', async (t) => {
+  const { directory, git, commit } = await tempRepo(t);
   commit('init');
   const first = commit('first PR commit');
   const head = commit('second PR commit');

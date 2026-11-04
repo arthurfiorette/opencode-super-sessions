@@ -351,6 +351,7 @@ function createSweeper(runtime: Runtime): Sweeper {
           ahead: git.ahead,
           merged,
           contained: git.contained,
+          referenced: git.referenced,
           head
         };
         facts.set(worktree.directory, { projectID: worktree.projectID, facts: fact });

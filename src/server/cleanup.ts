@@ -43,6 +43,12 @@ export interface WorktreeFacts {
   merged?: boolean | undefined;
   /** HEAD is in the default branch, as after a plain merge. */
   contained?: boolean | undefined;
+  /**
+   * A local branch, remote branch or tag contains HEAD, so its commits outlive the worktree.
+   * OpenCode creates worktrees on a detached HEAD, where a new commit has no ref until the agent
+   * makes a branch.
+   */
+  referenced?: boolean | undefined;
   /** HEAD against the merged pull requests' head commits; see {@link PullHead}. */
   head?: PullHead | undefined;
 }
@@ -80,9 +86,9 @@ export function cleanupEnabled(settings: CleanupSettings): boolean {
 
 /**
  * Decides whether cleanup removes one worktree. Keep reasons are checked first, in order: the
- * main checkout, a session that is running, waiting, open or pinned, unreadable git state and
- * local changes. Only then do the enabled rules get a say, and the first matching rule names the
- * removal.
+ * main checkout, a session that is running, waiting, open or pinned, unreadable git state, local
+ * changes and commits only the worktree's HEAD holds. Only then do the enabled rules get a say,
+ * and the first matching rule names the removal.
  */
 export function decideWorktree(
   facts: WorktreeFacts,
@@ -113,6 +119,8 @@ export function decideWorktree(
   // `git worktree remove` without `--force` refuses these anyway; keeping them here means a
   // sweep does not retry and log a failure every time.
   if (facts.changed) return keep('has local changes');
+  const unreferenced = unreferencedCommits(facts);
+  if (unreferenced !== undefined) return keep(unreferenced);
 
   // A session counts as settled once it is archived or Done; the rules for merged, Done and
   // unchanged worktrees never take one from a session the user is still working in.
@@ -161,6 +169,20 @@ export function decideWorktree(
   return keep('no cleanup rule matches');
 }
 
+/**
+ * The keep reason when HEAD may hold commits that only the worktree reaches, or undefined when
+ * every commit is safe elsewhere: in the default branch, in a ref, or in a merged pull request's
+ * head on the forge.
+ */
+function unreferencedCommits(facts: WorktreeFacts): string | undefined {
+  if (facts.ahead === 0 || facts.contained === true || facts.head === 'included') return undefined;
+  if (facts.referenced === true) return undefined;
+  if (facts.referenced === false && facts.ahead !== undefined) {
+    return 'has commits no branch or tag contains';
+  }
+  return 'could not tell whether a branch holds its commits';
+}
+
 /** "1 day", "3 days". */
 function days(count: number): string {
   return `${count} ${count === 1 ? 'day' : 'days'}`;
@@ -180,6 +202,8 @@ export interface WorktreeGit {
   ahead?: number;
   /** Whether HEAD is contained in `base`. */
   contained?: boolean;
+  /** See {@link WorktreeFacts.referenced}. Only read when HEAD may be ahead of `base`. */
+  referenced?: boolean;
 }
 
 /**
@@ -205,8 +229,8 @@ export async function readPullHead(
 }
 
 /**
- * Reads a worktree's local changes and, given the default branch's ref, its commits beyond it
- * and whether HEAD is part of it.
+ * Reads a worktree's local changes, whether a ref holds HEAD and, given the default branch's
+ * ref, its commits beyond it and whether HEAD is part of it.
  */
 export async function readWorktreeGit(
   directory: string,
@@ -219,14 +243,28 @@ export async function readWorktreeGit(
   const status = await git('status', '--porcelain=v1', '--untracked-files=all');
   const result: WorktreeGit = {};
   if (status.code === 0) result.changed = parseStatus(status.stdout);
-  if (base === undefined) return result;
-  const ahead = await git('rev-list', '--count', `${base}..HEAD`);
-  const count = Number.parseInt(ahead.stdout.trim(), 10);
-  if (ahead.code === 0 && Number.isFinite(count)) result.ahead = count;
-  // Exit 0: contained, 1: not contained, anything else: git failed, so unknown.
-  const ancestor = await git('merge-base', '--is-ancestor', 'HEAD', base);
-  if (ancestor.code === 0) result.contained = true;
-  if (ancestor.code === 1) result.contained = false;
+  if (base !== undefined) {
+    const ahead = await git('rev-list', '--count', `${base}..HEAD`);
+    const count = Number.parseInt(ahead.stdout.trim(), 10);
+    if (ahead.code === 0 && Number.isFinite(count)) result.ahead = count;
+    // Exit 0: contained, 1: not contained, anything else: git failed, so unknown.
+    const ancestor = await git('merge-base', '--is-ancestor', 'HEAD', base);
+    if (ancestor.code === 0) result.contained = true;
+    if (ancestor.code === 1) result.contained = false;
+  }
+  if (result.ahead === 0) return result;
+  // Only shared refs count: per-worktree refs such as `refs/bisect` go with the worktree.
+  const refs = await git(
+    'for-each-ref',
+    '--contains',
+    'HEAD',
+    '--count=1',
+    '--format=%(refname)',
+    'refs/heads',
+    'refs/remotes',
+    'refs/tags'
+  );
+  if (refs.code === 0) result.referenced = refs.stdout.trim() !== '';
   return result;
 }
 
