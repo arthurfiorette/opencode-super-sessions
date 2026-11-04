@@ -88,6 +88,7 @@ export default function SessionBrowser(props: PageProps) {
   const theme = () => context.theme.surface('dialog');
   const client = context.client;
   const [panelWidth, setPanelWidth] = createSignal(0);
+  const [leftWidth, setLeftWidth] = createSignal(0);
   const [listHeight, setListHeight] = createSignal(0);
   const [listWidth, setListWidth] = createSignal(0);
   const [frame, setFrame] = createSignal(0);
@@ -98,6 +99,7 @@ export default function SessionBrowser(props: PageProps) {
   let input: InputRenderable | undefined;
   let listBox: BoxRenderable | undefined;
   let panelBox: BoxRenderable | undefined;
+  let leftBox: BoxRenderable | undefined;
 
   const remember = model.remember;
   const scope = model.scope;
@@ -610,6 +612,24 @@ export default function SessionBrowser(props: PageProps) {
       }
     });
 
+  /** The `esc` hint, which closes the browser on click. */
+  const closeHint = (visible: () => boolean) =>
+    jsx('text', {
+      flexShrink: 0,
+      wrapMode: 'none',
+      get visible() {
+        return visible();
+      },
+      get fg() {
+        return theme().text.muted;
+      },
+      onMouseUp: (event: MouseEvent) => {
+        event.stopPropagation();
+        props.close();
+      },
+      children: 'esc'
+    });
+
   const header = jsx('box', {
     flexDirection: 'row',
     height: 1,
@@ -661,18 +681,8 @@ export default function SessionBrowser(props: PageProps) {
           });
         })
       }),
-      jsx('text', {
-        flexShrink: 0,
-        wrapMode: 'none',
-        get fg() {
-          return theme().text.muted;
-        },
-        onMouseUp: (event: MouseEvent) => {
-          event.stopPropagation();
-          props.close();
-        },
-        children: 'esc'
-      })
+      // With the preview open, `esc` moves to the top right of the preview column.
+      closeHint(() => !wide())
     ]
   });
 
@@ -808,9 +818,27 @@ export default function SessionBrowser(props: PageProps) {
   });
 
   const previewWidth = () => Math.floor(panelWidth() * props.options.previewWidth);
+  const pane = createComponent(Preview, {
+    context,
+    options: props.options,
+    selected: () => (wide() ? memory.selected : undefined),
+    // Left border plus one cell of padding on each side.
+    width: () => previewWidth() - 3,
+    session: (sessionID) => {
+      const found = rows().find((session) => session.id === sessionID);
+      return found ? live(found) : context.data.session.get(sessionID);
+    },
+    refs: (sessionID) => data.refs[sessionID],
+    branch: branchOf,
+    running: model.running,
+    theme
+  });
+  // A full-height column beside the list, with `esc` on the line of the browser's header.
   const preview = jsx('box', {
-    flexDirection: 'row',
+    flexDirection: 'column',
     flexShrink: 0,
+    paddingTop: 1,
+    paddingBottom: 1,
     get visible() {
       return wide();
     },
@@ -821,21 +849,23 @@ export default function SessionBrowser(props: PageProps) {
     get borderColor() {
       return theme().border.base;
     },
-    children: createComponent(Preview, {
-      context,
-      options: props.options,
-      selected: () => (wide() ? memory.selected : undefined),
-      // Left border plus one cell of padding on each side.
-      width: () => previewWidth() - 3,
-      session: (sessionID) => {
-        const found = rows().find((session) => session.id === sessionID);
-        return found ? live(found) : context.data.session.get(sessionID);
-      },
-      refs: (sessionID) => data.refs[sessionID],
-      branch: branchOf,
-      running: model.running,
-      theme
-    })
+    children: [
+      jsx('box', {
+        flexDirection: 'row',
+        height: 1,
+        flexShrink: 0,
+        justifyContent: 'flex-end',
+        paddingRight: 2,
+        children: closeHint(() => true)
+      }),
+      jsx('box', {
+        flexDirection: 'row',
+        flexGrow: 1,
+        flexShrink: 1,
+        minHeight: 0,
+        children: pane
+      })
+    ]
   });
 
   // Same shape as the host's dialog footer: "title key" pairs, actions on the selected session
@@ -888,7 +918,7 @@ export default function SessionBrowser(props: PageProps) {
         get children() {
           // Whole hints only: a hint cut in half reads as a different key.
           const [title, key] = scopeHint();
-          let room = panelWidth() - 4 - cells(`${title} ${key}`) - 2;
+          let room = leftWidth() - 4 - cells(`${title} ${key}`) - 2;
           const shown = footerItems().filter(([itemTitle, itemKey], index) => {
             const size = cells(`${index > 0 ? '  ' : ''}${itemTitle} ${itemKey}`);
             if (size > room) {
@@ -914,11 +944,37 @@ export default function SessionBrowser(props: PageProps) {
   // Same dismissal rule as the host's dialog backdrop: a click outside the panel closes it, but
   // releasing a text selection there does not.
   let dismiss = false;
-  const panel = jsx('box', {
-    flexGrow: 1,
+  // The left column: header, search, list and hints. The preview column beside it runs the
+  // panel's full height.
+  const left = jsx('box', {
     flexDirection: 'column',
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
     paddingTop: 1,
     paddingBottom: 1,
+    ref: (value: BoxRenderable) => {
+      leftBox = value;
+    },
+    onSizeChange: () => setLeftWidth(leftBox?.width ?? 0),
+    children: [
+      header,
+      search,
+      jsx('box', { height: 1, flexShrink: 0 }),
+      jsx('box', {
+        flexDirection: 'row',
+        flexGrow: 1,
+        flexShrink: 1,
+        minHeight: 0,
+        children: [list, listBar]
+      }),
+      jsx('box', { height: 1, flexShrink: 0 }),
+      footer
+    ]
+  });
+  const panel = jsx('box', {
+    flexGrow: 1,
+    flexDirection: 'row',
     get backgroundColor() {
       return theme().background.base;
     },
@@ -931,20 +987,7 @@ export default function SessionBrowser(props: PageProps) {
       dismiss = false;
       event.stopPropagation();
     },
-    children: [
-      header,
-      search,
-      jsx('box', { height: 1, flexShrink: 0 }),
-      jsx('box', {
-        flexDirection: 'row',
-        flexGrow: 1,
-        flexShrink: 1,
-        minHeight: 0,
-        children: [list, listBar, preview]
-      }),
-      jsx('box', { height: 1, flexShrink: 0 }),
-      footer
-    ]
+    children: [left, preview]
   });
 
   // Absolute inside the host's main column, so it covers the route and the horizontal tabs but
