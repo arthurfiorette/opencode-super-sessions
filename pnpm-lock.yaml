@@ -171,7 +171,7 @@ importers:
         version: 2.2.5(effect@4.0.6)(solid-js@1.9.17)
       '@opencode/plugin':
         specifier: 2.2.5
-        version: 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
+        version: 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
       '@opencode/theme':
         specifier: 2.2.5
         version: 2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10)
@@ -187,13 +187,13 @@ importers:
         version: 2.6.4
       '@opencode/sdk':
         specifier: 2.2.5
-        version: 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.1)
+        version: 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.1)
       '@opentui/core':
-        specifier: 0.8.0
-        version: 0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10)
+        specifier: 0.8.1
+        version: 0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10)
       '@opentui/solid':
-        specifier: 0.8.0
-        version: 0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)
+        specifier: 0.8.1
+        version: 0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
@@ -1145,8 +1145,18 @@ packages:
     cpu: [arm64]
     os: [darwin]
 
+  '@opentui/core-darwin-arm64@0.8.1':
+    resolution: {integrity: sha512-22jdbN55W9hCraw6k1y3TklzCvF90UJG7d1wvtUYwsn9LOEvOZn+i3fUyqkpP+kBgL31RBt+sB4RKsUmNzjWaw==}
+    cpu: [arm64]
+    os: [darwin]
+
   '@opentui/core-darwin-x64@0.8.0':
     resolution: {integrity: sha512-Jp4pzdIuKsS3XYq9xuWuAO52tTj9gnWeeoI3bg456CF6XnY2yQMasWOd/WmjfvYfAaJzGDFa4DNXhByBMPVuTw==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@opentui/core-darwin-x64@0.8.1':
+    resolution: {integrity: sha512-rlqzXisgUl3U7WmrWySFLLZq6x9ZQiSRSGLyyULBFWTZLJY4qrs2a7y/8B0NpIFY7Ngku17qVIKcVwQZZBoLbw==}
     cpu: [x64]
     os: [darwin]
 
@@ -1156,8 +1166,19 @@ packages:
     os: [linux]
     libc: [musl]
 
+  '@opentui/core-linux-arm64-musl@0.8.1':
+    resolution: {integrity: sha512-BzVCOuG5Vw/nB9ffLwZq82uEg0f0BE4wkd5EvrqOET9qK5D5emT4Zo8tZJFY8NG0/xBuWj6S9xVpazQWjZR17A==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
   '@opentui/core-linux-arm64@0.8.0':
     resolution: {integrity: sha512-b6D/VP9y0Z18tO86GSTp9BBykgR6r5CQM1ol9UMJfUt+PjN5HGksbOCDTMIQufXvt4WIUFHrSBProysJRFzbYw==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@opentui/core-linux-arm64@0.8.1':
+    resolution: {integrity: sha512-UtJzpwvAy67RU60T1IFNBYHH3tUrmcIHsLrNI+8WFFxoOk6btwRp67NKiZd3qoDcztTz2q/yKf9KQI0yr+P6MQ==}
     cpu: [arm64]
     os: [linux]
 
@@ -1167,8 +1188,19 @@ packages:
     os: [linux]
     libc: [musl]
 
+  '@opentui/core-linux-x64-musl@0.8.1':
+    resolution: {integrity: sha512-RB/u2G5X4KpW1/rT5iabCLYbmfMWKF3OASj2Z29+RAj38I7caRU3/TTntpX3CpHzjQrDTVWyMYzcnu+WFF8thg==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
   '@opentui/core-linux-x64@0.8.0':
     resolution: {integrity: sha512-aXBNIdE6iMf58/Tdnd6UzXeFjYfaHzQ6E0nukjLe2ir41/meJJYEAHUQ62EBr/gxvuCNZHTBQB4T9BzF7PdENQ==}
+    cpu: [x64]
+    os: [linux]
+
+  '@opentui/core-linux-x64@0.8.1':
+    resolution: {integrity: sha512-du4V6YlGvCWs/ggc6Tj7Oc7qaoYdPpzwAeJMKUbjrg+Zv5zweNHFMN4YLbzIutTi6Ukz4KsW/hwEaQIjXHlUcA==}
     cpu: [x64]
     os: [linux]
 
@@ -1177,8 +1209,18 @@ packages:
     cpu: [arm64]
     os: [win32]
 
+  '@opentui/core-win32-arm64@0.8.1':
+    resolution: {integrity: sha512-wF5AZRWDCjkfRHT1cRfyvHkf+RI/Pxjb0oMFVg2h2ayndBu8CSgyQDhtNgZd0ON+xrP4xceikCkHDhDLe5bv1w==}
+    cpu: [arm64]
+    os: [win32]
+
   '@opentui/core-win32-x64@0.8.0':
     resolution: {integrity: sha512-P5X2RcDDntIJ4q1WvQawGWCae5BzHrm50PMy7+PZ3Su8GGwnaCQ5xRHvDIQfhki8pZMo2SoTOkpStR0Wj1QoXQ==}
+    cpu: [x64]
+    os: [win32]
+
+  '@opentui/core-win32-x64@0.8.1':
+    resolution: {integrity: sha512-+rIrkvwBJMGWdXn4GGQAmM4y+RH1Xvb9nveNyJ58SOsTOBqyWyi+63qMlxe58WVl+sVAJodEjAILcWdwrzMJ3Q==}
     cpu: [x64]
     os: [win32]
 
@@ -1188,8 +1230,14 @@ packages:
     peerDependencies:
       web-tree-sitter: 0.25.10
 
-  '@opentui/solid@0.8.0':
-    resolution: {integrity: sha512-fk035Q9iGXFgpkXSbpdyWYnT1jFuY0gOhzxaqBXDVtuWrQPB5MRxUxXHgESIMXJPsMTROIjOcKuW+PPhsakpnw==}
+  '@opentui/core@0.8.1':
+    resolution: {integrity: sha512-WmnpnVZn2MdyYNEahQNn4k3OrIkQKfcwPVrX/DjguLtl/S2g5fPeXCqHZjCg2GLMf1N4HJap0LEkTPJEvfrDXw==}
+    engines: {bun: '>=1.3.14', node: '>=26.4.0'}
+    peerDependencies:
+      web-tree-sitter: 0.25.10
+
+  '@opentui/solid@0.8.1':
+    resolution: {integrity: sha512-jnGtUnPrySoTSYkM669yGXVzps0GKLuLPkeFnmqxn9cwmelcSEMH3M8FHu4OLpRP9yF48lPg7zRVBSVQTtVxPA==}
     peerDependencies:
       solid-js: ^1.9.12
 
@@ -1672,8 +1720,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  baseline-browser-mapping@2.11.35:
-    resolution: {integrity: sha512-GNk8KX52CHqeNKGk8+7tZnQab/2k1t/BgrUHPKNdijzpEhF1saPQZHVKb6m5loSAxB39gyrTYw34Qf9CQ3u1qQ==}
+  baseline-browser-mapping@2.11.34:
+    resolution: {integrity: sha512-Aqr8mA1kIvyJ3UY5YAY7ib8LSo1DmDMbMnVqGPtsKW1LxaFQFwn9Eb3yvq2fUKJsRvaXjnAV7R5osqETapzNiA==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -1980,8 +2028,8 @@ packages:
   effect@4.0.6:
     resolution: {integrity: sha512-Tc3mkzuLR6t6P9dhLt0D2GrxYtmU5td4XEJEiXCmILz53IRIfJyHsKZWjTA3xEjiwpNTtXBgI4iqYPxMztBDrw==}
 
-  electron-to-chromium@1.5.473:
-    resolution: {integrity: sha512-9njcRQK+6FOXNAWw5g+h2RPiyazqo5RFMVJ39ZMHjDHUNnnFlhnOGV7O0WmJetODDx19ES5p+FLi+KCVFQGugw==}
+  electron-to-chromium@1.5.472:
+    resolution: {integrity: sha512-s4+nfT29b0FKpVKoaIxl2pWsoNcn7A/nMPSrxayw4T3BsmPeV2lF9Y06BsAQeMGhCTQ4nYJ5XST7jkqe4ZEqFw==}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -2657,8 +2705,8 @@ packages:
     resolution: {integrity: sha512-vfD3pmTzGpufjScBh50YHKzEu2lxBWhVEHsNGoEXmCmn2hKGfeNLYMzCJpe8cD7gqX7TJluOVpBkAequ6dgMmA==}
     engines: {node: '>=4'}
 
-  semver@6.3.2:
-    resolution: {integrity: sha512-GYrCADwpu6yV5OAvchkQ27Z5wwMxWAEMg5NNWjyHh/5DboFFqbdbvYNIvZouQpxXyeMPoTOh0vdPYKlf0ZswdQ==}
+  semver@6.3.1:
+    resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
     hasBin: true
 
   semver@7.8.6:
@@ -3198,7 +3246,7 @@ snapshots:
       debug: 4.4.3
       gensync: 1.0.0-beta.2
       json5: 2.2.3
-      semver: 6.3.2
+      semver: 6.3.1
     transitivePeerDependencies:
       - supports-color
 
@@ -3220,7 +3268,7 @@ snapshots:
       '@babel/helper-validator-option': 7.29.7
       browserslist: 4.29.5
       lru-cache: 5.1.1
-      semver: 6.3.2
+      semver: 6.3.1
 
   '@babel/helper-create-class-features-plugin@7.29.12(@babel/core@7.29.7)':
     dependencies:
@@ -3231,7 +3279,7 @@ snapshots:
       '@babel/helper-replace-supers': 7.29.7(@babel/core@7.29.7)
       '@babel/helper-skip-transparent-expression-wrappers': 7.29.7
       '@babel/traverse': 7.29.12
-      semver: 6.3.2
+      semver: 6.3.1
     transitivePeerDependencies:
       - supports-color
 
@@ -3811,7 +3859,7 @@ snapshots:
       acorn: 8.15.0
       effect: 4.0.6
 
-  '@opencode/core@2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(ws@8.21.0)':
+  '@opencode/core@2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(ws@8.21.0)':
     dependencies:
       '@ai-sdk/provider': 3.0.19
       '@ai-sdk/provider-utils': 4.0.62(zod@4.6.7)
@@ -3823,8 +3871,8 @@ snapshots:
       '@modelcontextprotocol/server': 2.3.1
       '@opencode/ai': 2.2.5
       '@opencode/codemode': 2.2.5
-      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
-      '@opencode/plugin-browser': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
+      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
+      '@opencode/plugin-browser': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
       '@opencode/pty': 0.4.0
       '@opencode/schema': 2.2.5
       '@opencode/util': 2.2.5(@opentelemetry/semantic-conventions@1.44.0)(redis@6.3.1(@opentelemetry/api@1.9.0))
@@ -3914,7 +3962,7 @@ snapshots:
       - vite-plugin-solid
       - ws
 
-  '@opencode/core@2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(ws@8.22.1)':
+  '@opencode/core@2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(ws@8.22.1)':
     dependencies:
       '@ai-sdk/provider': 3.0.19
       '@ai-sdk/provider-utils': 4.0.62(zod@4.6.7)
@@ -3926,8 +3974,8 @@ snapshots:
       '@modelcontextprotocol/server': 2.3.1
       '@opencode/ai': 2.2.5
       '@opencode/codemode': 2.2.5
-      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
-      '@opencode/plugin-browser': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
+      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
+      '@opencode/plugin-browser': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
       '@opencode/pty': 0.4.0
       '@opencode/schema': 2.2.5
       '@opencode/util': 2.2.5(@opentelemetry/semantic-conventions@1.44.0)(redis@6.3.1(@opentelemetry/api@1.9.0))
@@ -4017,9 +4065,9 @@ snapshots:
       - vite-plugin-solid
       - ws
 
-  '@opencode/plugin-browser@2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)':
+  '@opencode/plugin-browser@2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)':
     dependencies:
-      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
+      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
       '@opencode/schema': 2.2.5
       effect: 4.0.6
     transitivePeerDependencies:
@@ -4037,7 +4085,27 @@ snapshots:
       - vite
       - vite-plugin-solid
 
-  '@opencode/plugin@2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)':
+  '@opencode/plugin-browser@2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)':
+    dependencies:
+      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
+      '@opencode/schema': 2.2.5
+      effect: 4.0.6
+    transitivePeerDependencies:
+      - '@opencode/theme'
+      - '@opentelemetry/sdk-trace-web'
+      - '@opentelemetry/semantic-conventions'
+      - '@opentui/core'
+      - '@opentui/solid'
+      - bufferutil
+      - electron
+      - redis
+      - solid-js
+      - supports-color
+      - utf-8-validate
+      - vite
+      - vite-plugin-solid
+
+  '@opencode/plugin@2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)':
     dependencies:
       '@ai-sdk/provider': 3.0.8
       '@opencode/ai': 2.2.5
@@ -4049,7 +4117,29 @@ snapshots:
     optionalDependencies:
       '@opencode/theme': 2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10)
       '@opentui/core': 0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10)
-      '@opentui/solid': 0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)
+      '@opentui/solid': 0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)
+      solid-js: 1.9.17
+    transitivePeerDependencies:
+      - '@opentelemetry/sdk-trace-web'
+      - '@opentelemetry/semantic-conventions'
+      - bufferutil
+      - redis
+      - supports-color
+      - utf-8-validate
+
+  '@opencode/plugin@2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.8
+      '@opencode/ai': 2.2.5
+      '@opencode/client': 2.2.5(effect@4.0.6)(solid-js@1.9.17)
+      '@opencode/protocol': 2.2.5
+      '@opencode/schema': 2.2.5
+      '@opencode/util': 2.2.5(@opentelemetry/semantic-conventions@1.44.0)(redis@6.3.1(@opentelemetry/api@1.9.0))
+      effect: 4.0.6
+    optionalDependencies:
+      '@opencode/theme': 2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10)
+      '@opentui/core': 0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10)
+      '@opentui/solid': 0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)
       solid-js: 1.9.17
     transitivePeerDependencies:
       - '@opentelemetry/sdk-trace-web'
@@ -4104,13 +4194,13 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       effect: 4.0.6
 
-  '@opencode/sdk@2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.1)':
+  '@opencode/sdk@2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.1)':
     dependencies:
       '@opencode/client': 2.2.5(effect@4.0.6)(solid-js@1.9.17)
-      '@opencode/core': 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(ws@8.22.1)
-      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
+      '@opencode/core': 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(ws@8.22.1)
+      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
       '@opencode/schema': 2.2.5
-      '@opencode/server': 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.1)
+      '@opencode/server': 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.1)
       '@opencode/util': 2.2.5(@opentelemetry/semantic-conventions@1.44.0)(redis@6.3.1(@opentelemetry/api@1.9.0))
       effect: 4.0.6
     transitivePeerDependencies:
@@ -4183,14 +4273,14 @@ snapshots:
       - web-tree-sitter
       - ws
 
-  '@opencode/server@2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.1)':
+  '@opencode/server@2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)(ws@8.22.1)':
     dependencies:
       '@effect/platform-node': 4.0.6(effect@4.0.6)(redis@6.3.1(@opentelemetry/api@1.9.0))
       '@effect/platform-node-shared': 4.0.6(effect@4.0.6)
-      '@opencode/core': 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(ws@8.22.1)
+      '@opencode/core': 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(ws@8.22.1)
       '@opencode/protocol': 2.2.5
       '@opencode/schema': 2.2.5
-      '@opencode/simulation': 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)
+      '@opencode/simulation': 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)
       '@opencode/util': 2.2.5(@opentelemetry/semantic-conventions@1.44.0)(redis@6.3.1(@opentelemetry/api@1.9.0))
       effect: 4.0.6
     transitivePeerDependencies:
@@ -4263,11 +4353,11 @@ snapshots:
       - web-tree-sitter
       - ws
 
-  '@opencode/simulation@2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)':
+  '@opencode/simulation@2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)':
     dependencies:
       '@opencode/ai': 2.2.5
-      '@opencode/core': 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(ws@8.21.0)
-      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
+      '@opencode/core': 2.2.5(@aws-sdk/credential-provider-node@3.972.92)(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)(ws@8.21.0)
+      '@opencode/plugin': 2.2.5(@opencode/theme@2.2.5(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.17)
       '@opencode/protocol': 2.2.5
       '@opencode/util': 2.2.5(@opentelemetry/semantic-conventions@1.44.0)(redis@6.3.1(@opentelemetry/api@1.9.0))
       '@opentui/core': 0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10)
@@ -4460,25 +4550,49 @@ snapshots:
   '@opentui/core-darwin-arm64@0.8.0':
     optional: true
 
+  '@opentui/core-darwin-arm64@0.8.1':
+    optional: true
+
   '@opentui/core-darwin-x64@0.8.0':
+    optional: true
+
+  '@opentui/core-darwin-x64@0.8.1':
     optional: true
 
   '@opentui/core-linux-arm64-musl@0.8.0':
     optional: true
 
+  '@opentui/core-linux-arm64-musl@0.8.1':
+    optional: true
+
   '@opentui/core-linux-arm64@0.8.0':
+    optional: true
+
+  '@opentui/core-linux-arm64@0.8.1':
     optional: true
 
   '@opentui/core-linux-x64-musl@0.8.0':
     optional: true
 
+  '@opentui/core-linux-x64-musl@0.8.1':
+    optional: true
+
   '@opentui/core-linux-x64@0.8.0':
+    optional: true
+
+  '@opentui/core-linux-x64@0.8.1':
     optional: true
 
   '@opentui/core-win32-arm64@0.8.0':
     optional: true
 
+  '@opentui/core-win32-arm64@0.8.1':
+    optional: true
+
   '@opentui/core-win32-x64@0.8.0':
+    optional: true
+
+  '@opentui/core-win32-x64@0.8.1':
     optional: true
 
   '@opentui/core@0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10)':
@@ -4500,11 +4614,30 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@opentui/solid@0.8.0(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)':
+  '@opentui/core@0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10)':
+    dependencies:
+      bun-ffi-structs: 0.3.1(typescript@7.0.2)
+      diff: 9.0.0
+      marked: 17.0.1
+      string-width: 7.2.0
+      web-tree-sitter: 0.25.10
+    optionalDependencies:
+      '@opentui/core-darwin-arm64': 0.8.1
+      '@opentui/core-darwin-x64': 0.8.1
+      '@opentui/core-linux-arm64': 0.8.1
+      '@opentui/core-linux-arm64-musl': 0.8.1
+      '@opentui/core-linux-x64': 0.8.1
+      '@opentui/core-linux-x64-musl': 0.8.1
+      '@opentui/core-win32-arm64': 0.8.1
+      '@opentui/core-win32-x64': 0.8.1
+    transitivePeerDependencies:
+      - typescript
+
+  '@opentui/solid@0.8.1(solid-js@1.9.17)(typescript@7.0.2)(web-tree-sitter@0.25.10)':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/preset-typescript': 7.27.1(@babel/core@7.29.7)
-      '@opentui/core': 0.8.0(typescript@7.0.2)(web-tree-sitter@0.25.10)
+      '@opentui/core': 0.8.1(typescript@7.0.2)(web-tree-sitter@0.25.10)
       babel-plugin-module-resolver: 5.0.2
       babel-preset-solid: 1.9.16(@babel/core@7.29.7)(solid-js@1.9.17)
       entities: 7.0.1
@@ -4865,7 +4998,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  baseline-browser-mapping@2.11.35: {}
+  baseline-browser-mapping@2.11.34: {}
 
   bignumber.js@9.3.1: {}
 
@@ -4893,9 +5026,9 @@ snapshots:
 
   browserslist@4.29.5:
     dependencies:
-      baseline-browser-mapping: 2.11.35
+      baseline-browser-mapping: 2.11.34
       caniuse-lite: 1.0.30001820
-      electron-to-chromium: 1.5.473
+      electron-to-chromium: 1.5.472
       node-releases: 2.0.63
       update-browserslist-db: 1.3.4(browserslist@4.29.5)
 
@@ -5013,7 +5146,7 @@ snapshots:
 
   effect@4.0.6: {}
 
-  electron-to-chromium@1.5.473: {}
+  electron-to-chromium@1.5.472: {}
 
   emoji-regex@10.6.0: {}
 
@@ -5769,7 +5902,7 @@ snapshots:
       extend-shallow: 2.0.1
       kind-of: 6.0.3
 
-  semver@6.3.2: {}
+  semver@6.3.1: {}
 
   semver@7.8.6: {}
 
