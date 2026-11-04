@@ -29,6 +29,8 @@ pnpm check
 
 SDK native parser addons may require Python and a C/C++ build toolchain. Their build scripts are approved in `pnpm-workspace.yaml`.
 
+`pnpm demo` starts a real TUI on fake sessions and forge data for screenshots, isolated from your own OpenCode data; see [demo/README.md](../demo/README.md).
+
 ## Tests
 
 | Layer       | Files                       | Runner       | Covers                                                                                                                                                                                                                                                                         |
