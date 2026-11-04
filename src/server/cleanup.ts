@@ -1,6 +1,10 @@
+import { realpath } from 'node:fs/promises';
+import path from 'node:path';
 import { gitIn } from '../host/git.js';
 import { type Runner, run } from '../process.js';
-import type { CleanupRule, ServerSettings, WorktreeDecision } from '../rpc.js';
+import { refKey } from '../refs/ref.js';
+import { trackedRefs } from '../refs/summary.js';
+import type { CleanupRule, ServerSettings, SessionRefView, WorktreeDecision } from '../rpc.js';
 
 // Worktree cleanup decides from facts gathered per sweep. Removing a worktree has no undo, so the
 // decision keeps a worktree whenever a fact is unknown, and every keep reason wins over every rule.
@@ -181,6 +185,77 @@ function unreferencedCommits(facts: WorktreeFacts): string | undefined {
     return 'has commits no branch or tag contains';
   }
   return 'could not tell whether a branch holds its commits';
+}
+
+/**
+ * Maps each worktree directory to the sessions in it. A session belongs to the deepest worktree
+ * containing its directory, since linked worktrees often sit inside the main checkout
+ * (`.worktrees/<name>`).
+ */
+export async function assignSessions(
+  sessions: ReadonlyArray<{ id: string; directory: string }>,
+  worktrees: readonly string[]
+): Promise<Map<string, string[]>> {
+  const owners = new Map<string, string[]>();
+  // OpenCode stores worktrees resolved, but a session's directory keeps the path it was opened
+  // with (`/var` and `/private/var` on macOS), so both sides are compared resolved.
+  const resolved = new Map<string, Promise<string>>();
+  /** The resolved path of `directory`, or the path itself when it no longer exists. */
+  const real = (directory: string) => {
+    let value = resolved.get(directory);
+    if (value === undefined) {
+      value = realpath(directory).catch(() => directory);
+      resolved.set(directory, value);
+    }
+    return value;
+  };
+  // Deepest first, so `.worktrees/a` wins over the checkout that contains it.
+  const targets = (
+    await Promise.all(
+      worktrees.map(async (directory) => ({ directory, real: await real(directory) }))
+    )
+  ).sort((a, b) => b.real.length - a.real.length);
+  for (const session of sessions) {
+    const directory = await real(session.directory);
+    // The separator keeps `a` from claiming the sessions of its sibling `ab`.
+    const owner = targets.find(
+      (target) =>
+        directory === target.real ||
+        directory.startsWith(target.real.endsWith(path.sep) ? target.real : target.real + path.sep)
+    )?.directory;
+    if (owner === undefined) continue;
+    const list = owners.get(owner) ?? [];
+    list.push(session.id);
+    owners.set(owner, list);
+  }
+  return owners;
+}
+
+/**
+ * Whether the sessions' tracked pull requests count as merged: one is merged and every other is
+ * merged or closed. An unknown state, or one still open or a draft, blocks it.
+ */
+export function mergedPull(views: readonly SessionRefView[]): boolean {
+  const pulls = views.flatMap((view) =>
+    trackedRefs(view)
+      .filter((ref) => ref.kind === 'pr')
+      .map((ref) => view.states[refKey(ref)]?.status)
+  );
+  return (
+    pulls.includes('merged') &&
+    pulls.every((status) => status !== undefined && status !== 'open' && status !== 'draft')
+  );
+}
+
+/** Head commits of the tracked pull requests that are merged, as the forge last reported them. */
+export function mergedHeads(views: readonly SessionRefView[]): string[] {
+  const heads = views.flatMap((view) =>
+    trackedRefs(view).flatMap((ref) => {
+      const state = ref.kind === 'pr' ? view.states[refKey(ref)] : undefined;
+      return state?.status === 'merged' && state.headSha !== undefined ? [state.headSha] : [];
+    })
+  );
+  return [...new Set(heads)];
 }
 
 /** "1 day", "3 days". */

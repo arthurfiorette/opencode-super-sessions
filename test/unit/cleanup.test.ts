@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type TestContext, test } from 'node:test';
+import { type Ref, type RefLink, type RefStatus, refKey } from '../../src/refs/ref.js';
+import type { SessionRefView } from '../../src/rpc.js';
 import { type ArchiveFacts, isArchiveDue } from '../../src/server/auto-archive.js';
 import {
+  assignSessions,
   type CleanupSettings,
   decideWorktree,
+  mergedPull,
   parseStatus,
   readPullHead,
   readWorktreeGit,
@@ -225,6 +229,111 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
           : 'keep';
     assert.equal(actual, expected, `${name}: ${decision.reason}`);
   }
+});
+
+test('a session belongs to the deepest worktree that contains its resolved directory', async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'super-sessions-owners-')));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const main = join(root, 'repo');
+  const nested = join(main, '.worktrees', 'a');
+  const sibling = join(main, '.worktrees', 'ab');
+  await mkdir(join(nested, 'src'), { recursive: true });
+  await mkdir(sibling, { recursive: true });
+  // A session opened through a symlink, as macOS reaches /private/var through /var.
+  const alias = join(root, 'alias');
+  await symlink(main, alias);
+
+  const owners = await assignSessions(
+    [
+      { id: 'in-main', directory: main },
+      { id: 'in-a', directory: join(nested, 'src') },
+      { id: 'in-ab', directory: sibling },
+      { id: 'through-alias', directory: join(alias, '.worktrees', 'a') },
+      { id: 'elsewhere', directory: root }
+    ],
+    // `ab` is a plain directory of the main checkout, not a worktree, so `a` must not claim it.
+    [main, nested]
+  );
+  assert.deepEqual(Object.fromEntries(owners), {
+    [main]: ['in-main', 'in-ab'],
+    [nested]: ['in-a', 'through-alias']
+  });
+});
+
+test('pull requests count as merged when one merged and the rest are merged or closed', () => {
+  const pr = (number: number): Ref => ({
+    provider: 'github',
+    host: 'github.com',
+    repo: 'acme/app',
+    kind: 'pr',
+    number
+  });
+  /** A session view tracking PRs by number with these states; `undefined` leaves it unknown. */
+  const view = (
+    pulls: Array<[number, RefStatus | undefined]>,
+    source: RefLink['source'] = 'agent'
+  ): SessionRefView => ({
+    links: pulls.map(([number]) => ({ ref: pr(number), source, linkedAt: number })),
+    branchRefs: [],
+    states: Object.fromEntries(
+      pulls.flatMap(([number, status]) =>
+        status === undefined ? [] : [[refKey(pr(number)), { status, title: '', url: '' }]]
+      )
+    )
+  });
+  const cases: Array<[string, SessionRefView[], boolean]> = [
+    ['merged', [view([[1, 'merged']])], true],
+    [
+      'merged and closed',
+      [
+        view([
+          [1, 'merged'],
+          [2, 'closed']
+        ])
+      ],
+      true
+    ],
+    [
+      'merged and open',
+      [
+        view([
+          [1, 'merged'],
+          [2, 'open']
+        ])
+      ],
+      false
+    ],
+    [
+      'merged and draft',
+      [
+        view([
+          [1, 'merged'],
+          [2, 'draft']
+        ])
+      ],
+      false
+    ],
+    [
+      'merged and unknown',
+      [
+        view([
+          [1, 'merged'],
+          [2, undefined]
+        ])
+      ],
+      false
+    ],
+    ['closed only', [view([[1, 'closed']])], false],
+    [
+      'open in another session of the worktree',
+      [view([[1, 'merged']]), view([[2, 'open']])],
+      false
+    ],
+    // Mentions are not the session's work, so an open one does not hold the worktree.
+    ['merged and an open mention', [view([[1, 'merged']]), view([[2, 'open']], 'mention')], true],
+    ['no pull request', [view([])], false]
+  ];
+  for (const [name, views, expected] of cases) assert.equal(mergedPull(views), expected, name);
 });
 
 /** A throwaway git repository on `main`, removed after the test. */

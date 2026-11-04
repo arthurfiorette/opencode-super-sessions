@@ -1,18 +1,18 @@
-import { realpath } from 'node:fs/promises';
-import path from 'node:path';
 import type { SessionInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin';
 import type { RpcHandlers, RpcRegistration } from '@opencode/plugin/promise/rpc';
 import { isBusy } from '../host/session-api.js';
 import { projectWorktrees, removeWorktree } from '../host/worktree.js';
-import { refKey } from '../refs/ref.js';
-import { doneAt, isDone, trackedRefs } from '../refs/summary.js';
+import { doneAt, isDone } from '../refs/summary.js';
 import type { SessionRefView, SuperSessions, WorktreeDecision } from '../rpc.js';
 import { type ArchiveFacts, createArchiveQueue, isArchiveDue } from './auto-archive.js';
 import {
+  assignSessions,
   cleanupEnabled,
   decideWorktree,
   defaultBranchRef,
+  mergedHeads,
+  mergedPull,
   readPullHead,
   readWorktreeGit,
   type WorktreeFacts,
@@ -251,7 +251,10 @@ function createSweeper(runtime: Runtime): Sweeper {
       ])
     ].filter((id) => id !== 'global');
     const worktrees = want.cleaning ? await listWorktrees(runtime, context, projects) : [];
-    const owners = await assignSessions(roots, worktrees);
+    const owners = await assignSessions(
+      roots.map((info) => ({ id: info.id, directory: info.location.directory })),
+      worktrees.map((worktree) => worktree.directory)
+    );
 
     // Done needs forge state; only sessions a decision reads pay for it. The main checkout is
     // always kept, so its sessions are left out.
@@ -637,72 +640,6 @@ async function listWorktrees(
     }
   }
   return result;
-}
-
-/**
- * Maps each worktree directory to the top-level sessions in it. A session belongs to the deepest
- * worktree containing its directory, since linked worktrees often sit inside the main checkout
- * (`.worktrees/<name>`).
- */
-async function assignSessions(
-  roots: SessionInfo[],
-  worktrees: KnownWorktree[]
-): Promise<Map<string, string[]>> {
-  const owners = new Map<string, string[]>();
-  // OpenCode stores worktrees resolved, but a session's directory keeps the path it was opened
-  // with (`/var` and `/private/var` on macOS), so both sides are compared resolved.
-  const resolved = new Map<string, Promise<string>>();
-  const real = (directory: string) => {
-    let value = resolved.get(directory);
-    if (value === undefined) {
-      value = realpath(directory).catch(() => directory);
-      resolved.set(directory, value);
-    }
-    return value;
-  };
-  // Deepest first, so `.worktrees/a` wins over the checkout that contains it.
-  const targets = (
-    await Promise.all(
-      worktrees.map(async (worktree) => ({ worktree, real: await real(worktree.directory) }))
-    )
-  ).sort((a, b) => b.real.length - a.real.length);
-  for (const info of roots) {
-    const directory = await real(info.location.directory);
-    const owner = targets.find(
-      (target) =>
-        directory === target.real ||
-        directory.startsWith(target.real.endsWith(path.sep) ? target.real : target.real + path.sep)
-    )?.worktree;
-    if (owner === undefined) continue;
-    const list = owners.get(owner.directory) ?? [];
-    list.push(info.id);
-    owners.set(owner.directory, list);
-  }
-  return owners;
-}
-
-/** A tracked pull request is merged and none is still open or a draft. */
-function mergedPull(views: SessionRefView[]): boolean {
-  const pulls = views.flatMap((view) =>
-    trackedRefs(view)
-      .filter((ref) => ref.kind === 'pr')
-      .map((ref) => view.states[refKey(ref)]?.status)
-  );
-  return (
-    pulls.includes('merged') &&
-    pulls.every((status) => status !== undefined && status !== 'open' && status !== 'draft')
-  );
-}
-
-/** Head commits of the tracked pull requests that are merged, as the forge last reported them. */
-function mergedHeads(views: SessionRefView[]): string[] {
-  const heads = views.flatMap((view) =>
-    trackedRefs(view).flatMap((ref) => {
-      const state = ref.kind === 'pr' ? view.states[refKey(ref)] : undefined;
-      return state?.status === 'merged' && state.headSha !== undefined ? [state.headSha] : [];
-    })
-  );
-  return [...new Set(heads)];
 }
 
 /**
