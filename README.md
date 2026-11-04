@@ -154,7 +154,21 @@ While you peek at a running session, `esc` returns to the list instead of interr
 
 ### Work links
 
-`right` moves the arrow keys from the list to the preview's Work rows. It does so only while the search cursor is at the end of the query and the preview shows Work rows; otherwise it moves the cursor. In the Work rows, `up` and `down` select a row, `enter` opens it in your web browser, and `left` or `esc` returns to the list. Selecting another session or typing also returns to the list. A left click on a Work row opens it too.
+`right` moves the arrow keys from the list to the preview's Work rows. It does so only while the search cursor is at the end of the query and the preview shows Work rows; otherwise it moves the cursor. In the Work rows, `up` and `down` select a row, `enter` opens it in your web browser, and `left` or `esc` returns to the list. Selecting another session or typing also returns to the list. A left click on a Work row opens it too, and `c` copies the selected row's URL.
+
+### Copying links
+
+A ctrl+click on any link the plugin draws copies its URL instead of opening it: Work rows in the preview and the sidebar, rows of the Pull requests view, and checks in its preview. The copy goes through the terminal (OSC 52) and a toast confirms it, or says the terminal refused.
+
+Some terminals keep ctrl+click for themselves:
+
+| Terminal     | ctrl+click                                                                                               |
+| ------------ | -------------------------------------------------------------------------------------------------------- |
+| Ghostty      | Passed to the plugin                                                                                     |
+| kitty        | Passed to the plugin                                                                                     |
+| WezTerm      | Passed to the plugin, unless you bound it with `mouse_reporting = true`                                  |
+| iTerm2       | Opens iTerm2's menu, unless Settings > Pointer > "Ctrl-click reported to apps, does not open menu" is on |
+| Terminal.app | Opens the context menu; use `c` in the Work rows instead                                                 |
 
 ### Keys
 
@@ -196,7 +210,7 @@ A left click on a row opens the session, hovering selects it, and a click outsid
 
 ## Sidebar
 
-The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first with a `branch` note, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests show their [review and CI icons](#review-and-ci-icons) between the number and the title, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), and a click opens it in your web browser. A session without pull requests, issues or mentions shows nothing there.
+The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first with a `branch` note, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests show their [review and CI icons](#review-and-ci-icons) between the number and the title, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), a click opens it in your web browser, and a ctrl+click copies its URL (see [Copying links](#copying-links)). A session without pull requests, issues or mentions shows nothing there.
 
 ## Pull request and issue tracking
 

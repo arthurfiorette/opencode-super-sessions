@@ -29,6 +29,7 @@ import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
 import { rpcError } from '../host/rpc.js';
 import { isUnread, regenerateTitle, setArchived } from '../host/session-api.js';
 import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.js';
+import { copyLink } from '../link.js';
 import { type ProviderId, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import { excludeFromAutoArchive } from '../settings/maintenance.js';
@@ -684,6 +685,12 @@ export default function SessionBrowser(props: PageProps) {
     if (!openUrl(refUrl(ref, data.refs[session.id]?.states[refKey(ref)])))
       toast('Could not open the browser.', 'error');
   };
+  /** `c` in the Work rows: copies the selected ref's URL. */
+  const copyWork = () => {
+    const ref = workRef();
+    const session = selected();
+    if (ref && session) copyLink(context, refUrl(ref, data.refs[session.id]?.states[refKey(ref)]));
+  };
 
   const nextView = (step: number) =>
     setView(VIEWS[(VIEWS.indexOf(memory.view) + VIEWS.length + step) % VIEWS.length] ?? 'active');
@@ -765,6 +772,9 @@ export default function SessionBrowser(props: PageProps) {
       { title: reloadTitle(), key: RELOAD_KEY, run: reload },
       ...(wide() && workRefs().length > 0
         ? [{ title: 'Focus the preview links', key: 'right', run: focusWork }]
+        : []),
+      ...(workRef() !== undefined
+        ? [{ title: 'Copy the selected link', key: 'c', run: copyWork }]
         : []),
       {
         title: 'Show command palette',
@@ -861,6 +871,13 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Back to the list',
       enabled: () => focus() === 'work',
       run: focusList
+    },
+    // Only while the Work links have the arrow keys; otherwise `c` types into the search.
+    {
+      bind: 'c',
+      title: 'Copy the selected link',
+      enabled: () => workRef() !== undefined,
+      run: copyWork
     },
     { bind: 'pageup', title: 'Page up', run: () => move(-pageRows()) },
     { bind: 'pagedown', title: 'Page down', run: () => move(pageRows()) },
@@ -1126,7 +1143,8 @@ export default function SessionBrowser(props: PageProps) {
     return pullLine(theme, row, {
       hover: () => selectPull(pull().key),
       leave,
-      open: () => open(pull().sessions[0]?.id)
+      open: () => open(pull().sessions[0]?.id),
+      copy: () => copyLink(context, refUrl(pull().ref, pull().state))
     });
   };
 
@@ -1572,6 +1590,7 @@ export default function SessionBrowser(props: PageProps) {
     if (focus() === 'work')
       return [
         ['open', 'enter'],
+        ...(pullView() ? [] : ([['copy', 'c']] as Array<[string, string]>)),
         ['back', 'left']
       ];
     // A row is a pull request here: enter and space act on its newest session.

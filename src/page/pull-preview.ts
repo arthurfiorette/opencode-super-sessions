@@ -19,9 +19,9 @@ import {
   onCleanup
 } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { openUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
 import type { Options } from '../config.js';
+import { clickLink } from '../link.js';
 import { createMarquee } from '../marquee.js';
 import { type PullCheck, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
 import { trackedRefs } from '../refs/summary.js';
@@ -147,8 +147,6 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
   const checks = () => details()?.checks ?? [];
   const review = () =>
     status() === 'open' || status() === 'draft' ? pull()?.state?.review : undefined;
-  const toast = () =>
-    context.ui.toast.show({ message: 'Could not open the browser.', variant: 'error' });
 
   /** A muted line, or one in `fg`, cut to the pane and hidden while empty. */
   const line = (text: () => string, fg: () => string | RGBA = muted) =>
@@ -331,9 +329,7 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
             onMouseOver: () => setHovered(check.url !== undefined),
             onMouseOut: () => setHovered(false),
             onMouseUp: (event: MouseEvent) => {
-              if (event.button !== MouseButton.LEFT || !check.url) return;
-              event.stopPropagation();
-              if (!openUrl(check.url)) toast();
+              clickLink(context, check.url, event);
             },
             children: segments(() => {
               const [glyph, fg] = checkLook(check.status, theme());

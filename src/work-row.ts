@@ -1,10 +1,11 @@
 import type { Plugin } from '@opencode/plugin/tui';
 import type { ResolvedTheme } from '@opencode/theme/tui';
-import { MouseButton, type MouseEvent, TextAttributes } from '@opentui/core';
+import { type MouseEvent, TextAttributes } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import { createSignal, type JSX } from 'solid-js';
-import { openUrl, refUrl } from './browser.js';
+import { refUrl } from './browser.js';
 import type { Options } from './config.js';
+import { clickLink } from './link.js';
 import { type createMarquee, marqueeText } from './marquee.js';
 import { refColor, refIcon } from './page/icons.js';
 import { cells, fitText, stateBadges } from './page/row.js';
@@ -87,7 +88,8 @@ export function workStatusLine(input: {
  * icon, starting in the column of the section's triangle like the host's MCP dots, the number in
  * `text.base`, an open pull request's review and CI icons (see {@link stateBadges}), then the
  * muted title. Hover brightens the number and the title and scrolls a cut title; a click opens
- * the ref's page. Built once per position, so updates change properties, never the tree.
+ * the ref's page and a ctrl+click copies its URL. Built once per position, so updates change
+ * properties, never the tree.
  */
 export function workRow(input: WorkRowInput): JSX.Element {
   const context = input.context;
@@ -135,10 +137,7 @@ export function workRow(input: WorkRowInput): JSX.Element {
       input.marquee.leave(key());
     },
     onMouseUp: (event: MouseEvent) => {
-      if (event.button !== MouseButton.LEFT) return;
-      event.stopPropagation();
-      if (!openUrl(refUrl(input.ref(), input.state())))
-        context.ui.toast.show({ message: 'Could not open the browser.', variant: 'error' });
+      clickLink(context, refUrl(input.ref(), input.state()), event);
     },
     children: [
       jsx('text', {

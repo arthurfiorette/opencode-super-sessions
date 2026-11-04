@@ -236,6 +236,8 @@ export interface RowEvents {
   /** The pointer left one of the row's lines. */
   leave(): void;
   open(): void;
+  /** A ctrl+click on a row that stands for a link, such as a pull request, copies its URL. */
+  copy?(): void;
 }
 
 /**
@@ -360,7 +362,8 @@ function lineBox(
     onMouseUp: (event: MouseEvent) => {
       if (event.button !== MouseButton.LEFT) return;
       event.stopPropagation();
-      events.open();
+      if (event.modifiers.ctrl && events.copy) events.copy();
+      else events.open();
     },
     children
   });
