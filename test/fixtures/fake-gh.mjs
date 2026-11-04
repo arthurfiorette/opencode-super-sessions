@@ -1,5 +1,6 @@
-// Stands in for `gh` in the configured host fixture. Answers `auth status` and the GraphQL
-// documents the GitHub provider builds from a fixed set of acme/widgets refs; anything else fails.
+// Stands in for `gh` in the configured host fixture and the manual live checks. Answers
+// `auth status` and the GraphQL documents the GitHub provider builds from a fixed set of
+// acme/widgets refs; anything else fails.
 
 const refs = {
   'acme/widgets#12': {
@@ -31,6 +32,7 @@ const refs = {
     url: 'https://github.com/acme/widgets/pull/78',
     mergedAt: '2026-11-01T10:00:00Z',
     closedAt: '2026-11-01T10:00:00Z',
+    updatedAt: '2026-11-01T10:00:00Z',
     closingIssuesReferences: { nodes: [] }
   },
   // Open with review trouble: changes requested, three of four threads open, a failing head.
@@ -57,7 +59,19 @@ const refs = {
         { isResolved: false }
       ]
     },
-    commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] }
+    updatedAt: '2026-11-03T16:20:00Z',
+    commits: {
+      nodes: [
+        {
+          commit: {
+            statusCheckRollup: {
+              state: 'FAILURE',
+              contexts: counts({ SUCCESS: 88, SKIPPED: 3, FAILURE: 2 }, { SUCCESS: 1 })
+            }
+          }
+        }
+      ]
+    }
   },
   // Issues for a session that tracks three at once.
   ...Object.fromEntries(
@@ -86,11 +100,57 @@ const refs = {
     url: 'https://github.com/acme/widgets/pull/34',
     mergedAt: null,
     closedAt: null,
+    updatedAt: '2026-11-04T09:10:00Z',
+    reviewDecision: 'APPROVED',
     closingIssuesReferences: {
       nodes: [{ number: 56, repository: { nameWithOwner: 'acme/widgets' } }]
+    },
+    latestReviews: { nodes: [{ state: 'APPROVED' }] },
+    reviewThreads: { totalCount: 0, nodes: [] },
+    commits: {
+      nodes: [
+        {
+          commit: {
+            statusCheckRollup: {
+              state: 'PENDING',
+              contexts: counts({ SUCCESS: 12, IN_PROGRESS: 2 }, {})
+            }
+          }
+        }
+      ]
     }
   }
 };
+
+/** A rollup's `contexts` block with GitHub's per-state counts, unlisted states at zero. */
+function counts(runs, statuses) {
+  const list = (states, given) => states.map((state) => ({ state, count: given[state] ?? 0 }));
+  return {
+    checkRunCountsByState: list(
+      [
+        'ACTION_REQUIRED',
+        'CANCELLED',
+        'COMPLETED',
+        'FAILURE',
+        'IN_PROGRESS',
+        'NEUTRAL',
+        'PENDING',
+        'QUEUED',
+        'SKIPPED',
+        'STALE',
+        'STARTUP_FAILURE',
+        'SUCCESS',
+        'TIMED_OUT',
+        'WAITING'
+      ],
+      runs
+    ),
+    statusContextCountsByState: list(
+      ['EXPECTED', 'ERROR', 'FAILURE', 'PENDING', 'SUCCESS'],
+      statuses
+    )
+  };
+}
 
 // Head branch of each pull request above, for `pullRequests(headRefName:)` lookups.
 const branches = { 'acme/widgets@fix-titles': [34], 'acme/widgets@group-search': [90] };

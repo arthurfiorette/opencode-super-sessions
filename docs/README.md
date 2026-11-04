@@ -175,6 +175,8 @@ Cleanup (`src/server/cleanup.ts`) gathers facts per worktree and calls `decideWo
 - `ForgeDefinition`: static and side-effect free, shared by the server, the TUI and tests. It recognizes remotes, parses URLs and typed references, scans text for refs and bare numbers, and holds the create, close and list command patterns.
 - `ForgeProvider`: the server-only runtime half, which spawns the CLI. `available(host)`, `branchPullRequests(repo, branch, headRepo?)`, and `snapshot(candidates)`, which resolves kinds and returns states in input order, with `not-found` for one missing number and `retryAt` on rate limits.
 
+A pull request's snapshot carries `updatedAt` and, while it is open or a draft, `review`: the verdict, resolvable threads, the head commit's CI result and `checksPassed`/`checksTotal`. GitHub's counts come from `statusCheckRollup.contexts(first: 0)`, whose `checkRunCountsByState` and `statusContextCountsByState` cost no node. Passed means SUCCESS, NEUTRAL and SKIPPED check runs plus SUCCESS statuses, which matched github.com's `N/M checks passing` on 2026-11-04 except for superseded re-runs: github.com drops a run another run of the same check replaced, and the counts cannot. GitLab counts the head pipeline's jobs with two `jobs(retried: false, statuses:)` connections: SUCCESS and SKIPPED over every status but MANUAL. They raise a merge request's complexity from 34 to 43 points.
+
 GitHub numbers pull requests and issues together, so a bare `#N` has no kind until the forge answers. GitLab numbers merge requests (`!N`) and issues (`#N`) separately, so `refKey` includes the kind.
 
 To add a forge:

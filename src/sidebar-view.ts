@@ -20,7 +20,7 @@ import { type SessionRefView, SuperSessions } from './rpc.js';
 import { tuiSettingsFor } from './settings/store.js';
 import type { SidebarProps } from './sidebar.js';
 import { createSidebarState } from './sidebar-state.js';
-import { workRow, workStatusLine } from './work-row.js';
+import { workRow } from './work-row.js';
 
 const REFRESH_INTERVAL = 60_000;
 
@@ -89,26 +89,20 @@ export default function Sidebar(props: SidebarProps) {
     return ref === undefined ? undefined : refKey(ref);
   };
   /**
-   * One ref line, plus the status line under a pull request; the shared Work row also draws the
-   * preview's Work section.
+   * One ref line; the shared Work row also draws the preview's Work section. Its review and CI
+   * icons stand in for the preview's status line, which the narrow sidebar has no room for.
    */
   const row = (ref: () => Ref, index: number) =>
-    jsx('box', {
-      flexShrink: 0,
-      children: [
-        workRow({
-          context,
-          options: props.options,
-          theme,
-          ref,
-          state: () => stateOf(ref()),
-          width,
-          marquee,
-          marker: () => (refKey(ref()) === branchKey() ? 'branch' : undefined),
-          id: `super-sessions-sidebar-ref-${index}`
-        }),
-        workStatusLine({ theme, state: () => stateOf(ref()), width })
-      ]
+    workRow({
+      context,
+      options: props.options,
+      theme,
+      ref,
+      state: () => stateOf(ref()),
+      width,
+      marquee,
+      marker: () => (refKey(ref()) === branchKey() ? 'branch' : undefined),
+      id: `super-sessions-sidebar-ref-${index}`
     });
 
   return jsx('box', {

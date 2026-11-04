@@ -29,7 +29,7 @@ export interface Group {
 }
 
 /** Lines a session row can draw under its title, in this order. */
-export type DetailKind = 'pr' | 'status' | 'issues';
+export type DetailKind = 'pr' | 'issues';
 
 /** One terminal line of the session list. A session takes a `title` line and the others it needs. */
 export type Line =

@@ -6,10 +6,11 @@ import type { GraphQLError, GraphQLResponse } from './output.js';
 // GitLab rejects a whole document above 200 complexity points when anonymous (250 signed in).
 // Costs were measured on gitlab.com with `queryComplexity { score }`; the budget leaves room
 // for the query itself and `metadata`. The review fields and `diffHeadSha` raised a merge
-// request from 21 to 34, so an all-merge-request batch holds 5 instead of 8.
+// request from 21 to 34, and `updatedAt` with the two job counts to 43, so an all-merge-request
+// batch holds 4.
 const COMPLEXITY_BUDGET = 180;
 const PROJECT_COST = 2;
-const MERGE_REQUEST_COST = 34;
+const MERGE_REQUEST_COST = 43;
 const ISSUE_COST = 6;
 
 /** GraphQL field that lists the issues a merge request closes. Older GitLab servers lack it. */
@@ -26,7 +27,8 @@ export const REVIEW_FIELDS: readonly string[] = [
   'detailedMergeStatus',
   'resolvableDiscussionsCount',
   'resolvedDiscussionsCount',
-  'headPipeline'
+  'headPipeline',
+  'jobs'
 ];
 
 export type SnapshotEntry = { ref: Ref; state: RefState } | ForgeError;
@@ -52,12 +54,15 @@ export interface SnapshotDocument {
 
 // `diffHeadSha` is the source branch head, the same commit REST calls `sha`; it stays the branch
 // head after a squash merge.
-const MERGE_REQUEST_FIELDS = 'state draft title webUrl mergedAt closedAt diffHeadSha';
+const MERGE_REQUEST_FIELDS = 'state draft title webUrl mergedAt closedAt updatedAt diffHeadSha';
 const CLOSES_SELECTION = `${CLOSES_FIELD}(types: [CLOSES], first: 10) { nodes { workItem { iid namespace { fullPath } } } }`;
-// One approver is enough to tell "someone approved" from "nobody did". The discussion counts are
-// precomputed by GitLab, so no discussion is read.
-const REVIEW_SELECTION =
-  'approved approvedBy(first: 1) { nodes { id } } detailedMergeStatus resolvableDiscussionsCount resolvedDiscussionsCount headPipeline { status }';
+// Every job status but MANUAL: a manual job waits for a person, so counting it would show a
+// passing pipeline as `56/60`. Retried jobs were replaced by a later run of the same job.
+const COUNTED_JOBS =
+  'CREATED, WAITING_FOR_RESOURCE, PREPARING, WAITING_FOR_CALLBACK, PENDING, RUNNING, FAILED, SUCCESS, CANCELED, CANCELING, SKIPPED, SCHEDULED';
+// One approver is enough to tell "someone approved" from "nobody did". The discussion and job
+// counts are precomputed by GitLab, so no discussion or job is read.
+const REVIEW_SELECTION = `approved approvedBy(first: 1) { nodes { id } } detailedMergeStatus resolvableDiscussionsCount resolvedDiscussionsCount headPipeline { status total: jobs(retried: false, statuses: [${COUNTED_JOBS}]) { count } passed: jobs(retried: false, statuses: [SUCCESS, SKIPPED]) { count } }`;
 const ISSUE_FIELDS = 'state title webUrl closedAt';
 
 /**
@@ -219,6 +224,12 @@ function decisionOf(node: Record<string, unknown>, enterprise: unknown): RefRevi
   return node.approved === true && approvals > 0 ? 'approved' : undefined;
 }
 
+/** Reads `{ count }` of a job connection. */
+function jobCount(connection: unknown): number | undefined {
+  const count = isRecord(connection) ? connection.count : undefined;
+  return Number.isSafeInteger(count) && (count as number) >= 0 ? (count as number) : undefined;
+}
+
 /**
  * Builds the review summary of an open or draft merge request. Merged and closed ones get none:
  * their snapshot is never refetched, so a running pipeline would show forever.
@@ -238,9 +249,15 @@ function reviewOf(
     review.threads = threads as number;
     review.unresolved = Math.max(0, (threads as number) - (resolved as number));
   }
-  const pipeline = isRecord(node.headPipeline) ? node.headPipeline.status : undefined;
-  const checks = typeof pipeline === 'string' ? CHECKS[pipeline] : undefined;
+  const pipeline = isRecord(node.headPipeline) ? node.headPipeline : undefined;
+  const checks = typeof pipeline?.status === 'string' ? CHECKS[pipeline.status] : undefined;
   if (checks) review.checks = checks;
+  const total = jobCount(pipeline?.total);
+  const passed = jobCount(pipeline?.passed);
+  if (total !== undefined && passed !== undefined && total > 0) {
+    review.checksPassed = passed;
+    review.checksTotal = total;
+  }
   return Object.keys(review).length > 0 ? review : undefined;
 }
 
@@ -336,6 +353,7 @@ export function parseSnapshotResponse(
     };
     const mergedAt = epoch(node.mergedAt);
     const closedAt = epoch(node.closedAt);
+    const updatedAt = kind === 'pr' ? epoch(node.updatedAt) : undefined;
     const review =
       kind === 'pr' && document.review ? reviewOf(node, status, enterprise) : undefined;
     const headSha = kind === 'pr' ? commitSha(node.diffHeadSha) : undefined;
@@ -345,6 +363,7 @@ export function parseSnapshotResponse(
       url: node.webUrl,
       ...(mergedAt === undefined ? {} : { mergedAt }),
       ...(closedAt === undefined ? {} : { closedAt }),
+      ...(updatedAt === undefined ? {} : { updatedAt }),
       ...(kind === 'pr' && document.closes
         ? { closes: closingIssues(node[CLOSES_FIELD], candidate.host) }
         : {}),

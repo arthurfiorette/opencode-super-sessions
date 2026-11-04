@@ -158,7 +158,7 @@ export default function SessionBrowser(props: PageProps) {
     const fallback = view?.defaultBranch ?? vcs?.default;
     return current && current !== fallback ? current : undefined;
   };
-  // The "PR and issue line" setting turns the PR, status and issues lines off together.
+  // The "PR and issue line" setting turns the PR and issues lines off together.
   const detailsOf = (session: SessionInfo): RowDetails =>
     settings.refLine()
       ? rowDetails({

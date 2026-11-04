@@ -3,10 +3,10 @@ import { MouseButton, type MouseEvent, type RGBA } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import type { JSX } from 'solid-js';
 import type { Options } from '../config.js';
-import { type Ref, type RefReview, refKey, refNumber } from '../refs/ref.js';
+import { type Ref, type RefReview, type RefState, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
-import { refColor, refIcon } from './icons.js';
+import { ICONS, refColor, refIcon } from './icons.js';
 
 /** A run of text in one color on a row line. */
 export interface Segment {
@@ -82,51 +82,67 @@ export function findRef(view: SessionRefView | undefined, key: string): Ref | un
 /**
  * Lines a row draws under its title. Each part is empty when its line is not drawn.
  *
- * - `pr`: the main PR with its title, a matched ref that is shown nowhere else, and `+N`.
- * - `status`: review and CI parts of the main PR worth acting on.
+ * - `pr`: the main PR's review and CI icons, then the PR with its title, a matched ref that is
+ *   shown nowhere else, and `+N`.
  * - `issues`: one piece per tracked issue (with its title when it is the only one), fitted to
  *   the width when drawn; `extra` is the `+N`
  *   the issues line carries when there is no PR line.
  */
 export interface RowDetails {
   pr: Segment[];
-  status: Segment[];
   issues: Segment[][];
   extra: number;
 }
 
 /** Details of a session without refs. */
-export const NO_DETAILS: RowDetails = { pr: [], status: [], issues: [], extra: 0 };
+export const NO_DETAILS: RowDetails = { pr: [], issues: [], extra: 0 };
 
 /** The detail lines a row has, in order, for laying out the list. */
-export function detailKinds(details: RowDetails): Array<'pr' | 'status' | 'issues'> {
+export function detailKinds(details: RowDetails): Array<'pr' | 'issues'> {
   return [
     ...(details.pr.length > 0 ? (['pr'] as const) : []),
-    ...(details.status.length > 0 ? (['status'] as const) : []),
     ...(details.issues.length > 0 ? (['issues'] as const) : [])
   ];
 }
 
 /**
- * The list row's status parts for an open pull request, in the colors the forge uses for them.
- * A pending review request and passing checks are the normal state, so they are left out.
+ * The review and CI icons drawn before an open pull request, in GitHub's colors: the review
+ * verdict, the CI result with `passed/total` muted, then the unresolved threads in the warning
+ * color. A part without data is left out. Each glyph takes a 2-cell slot like the ref icons.
  */
-export function statusSegments(review: RefReview | undefined, theme: ResolvedTheme): Segment[] {
+export function badgeSegments(review: RefReview | undefined, theme: ResolvedTheme): Segment[] {
   if (review === undefined) return [];
-  const feedback = theme.text.feedback;
+  const { feedback, muted } = theme.text;
   const parts: Segment[] = [];
   if (review.decision === 'changes_requested') {
-    parts.push({ text: 'changes requested', fg: feedback.error.base });
+    parts.push({ text: `${ICONS.changesRequested} `, fg: feedback.error.base });
+  } else if (review.decision === 'approved') {
+    parts.push({ text: `${ICONS.approved} `, fg: feedback.success.base });
+  } else if (review.decision === 'review_required') {
+    parts.push({ text: `${ICONS.reviewRequired} `, fg: muted });
+  }
+  if (review.checks !== undefined) {
+    const [glyph, fg] =
+      review.checks === 'passing'
+        ? [ICONS.checksPassing, feedback.success.base]
+        : review.checks === 'failing'
+          ? [ICONS.checksFailing, feedback.error.base]
+          : [ICONS.checksPending, feedback.warning.base];
+    parts.push({ text: `${glyph} `, fg });
+    if (review.checksTotal !== undefined && review.checksPassed !== undefined) {
+      parts.push({ text: `${review.checksPassed}/${review.checksTotal} `, fg: muted });
+    }
   }
   if (review.unresolved !== undefined && review.unresolved > 0) {
-    parts.push({ text: `${review.unresolved} unresolved`, fg: feedback.warning.base });
+    parts.push({ text: `${ICONS.threads} ${review.unresolved} `, fg: feedback.warning.base });
   }
-  if (review.checks === 'failing') parts.push({ text: 'checks failing', fg: feedback.error.base });
-  if (review.checks === 'pending') parts.push({ text: 'checks pending', fg: theme.text.muted });
-  if (review.decision === 'approved') parts.push({ text: 'approved', fg: feedback.success.base });
-  return parts.flatMap((part, index) =>
-    index === 0 ? [part] : [{ text: ' · ', fg: theme.text.muted }, part]
-  );
+  return parts;
+}
+
+/** {@link badgeSegments} for a ref's state, or none unless it is an open or draft pull request. */
+export function stateBadges(state: RefState | undefined, theme: ResolvedTheme): Segment[] {
+  const open = state?.status === 'open' || state?.status === 'draft';
+  return open ? badgeSegments(state.review, theme) : [];
 }
 
 /**
@@ -165,16 +181,15 @@ export function rowDetails(input: RefsInput): RowDetails {
   );
   const issues = [...summary.issues, ...(extraHit?.kind === 'issue' ? [extraHit] : [])];
 
+  const mainState = summary.pr ? view.states[refKey(summary.pr)] : undefined;
   const pr = prs.flatMap((ref, index) => [
     ...(index > 0 ? [{ text: '  ', fg: muted }] : []),
+    ...(ref === summary.pr ? stateBadges(mainState, input.theme) : []),
     ...piece(ref, ref === summary.pr || ref === extraHit)
   ]);
   if (pr.length > 0 && extra > 0) pr.push({ text: `  +${extra}`, fg: muted });
-  const mainState = summary.pr ? view.states[refKey(summary.pr)] : undefined;
-  const open = mainState?.status === 'open' || mainState?.status === 'draft';
   return {
     pr,
-    status: open ? statusSegments(mainState?.review, input.theme) : [],
     // A lone issue has the room for its title, like the PR line; several read as a number list.
     issues: issues.map((ref) => piece(ref, issues.length === 1)),
     extra: pr.length > 0 ? 0 : extra
@@ -439,7 +454,7 @@ function detailLine(
  * instead.
  */
 export function detailsLine(
-  kind: 'pr' | 'status' | 'issues',
+  kind: 'pr' | 'issues',
   theme: () => ResolvedTheme,
   model: () => RowModel,
   events: RowEvents

@@ -73,8 +73,7 @@ Pinned sessions stay in the Pinned group of Active even when they are Done. `ctr
 A row is its title line and, when they apply, the lines under it:
 
 - The title line: a marker, the title and the age of the last update. In the Archived view the age reads `archived 3d · updated 5d`.
-- The PR line, when the session has a [main pull request](#main-pull-request): its icon and number in the state color, then its title. A trailing `+N` counts the session's other pull requests and mentioned refs.
-- The status line, when the main pull request is open or a draft and has something to act on: `changes requested`, `N unresolved`, `checks failing` or `checks pending`, and `approved`, in that order.
+- The PR line, when the session has a [main pull request](#main-pull-request): its [review and CI icons](#review-and-ci-icons) while it is open or a draft, then its icon and number in the state color, then its title. A trailing `+N` counts the session's other pull requests and mentioned refs.
 - The issues line, when the session tracks issues: every issue number in its state color, joined as `#1230, #19083 and #8923`. The issues the main pull request closes come first. When they do not fit, the rest are counted in `+N`. A session that tracks one issue shows its title after the number, like the PR line.
 
 The marker column shows one of these, highest first:
@@ -87,7 +86,19 @@ The marker column shows one of these, highest first:
 | spinner    | The session is running. Its title also takes the warning color. |
 | `●`        | Unread: the session finished after you last viewed it           |
 
-With animations off in OpenCode, the spinner is a still `⋯`. Titles wrap onto as many lines as they need, so a row keeps its height when the selection or the mouse moves; the PR, status and issues lines are cut with `…`. The "PR and issue line" setting hides those lines.
+With animations off in OpenCode, the spinner is a still `⋯`. Titles wrap onto as many lines as they need, so a row keeps its height when the selection or the mouse moves; the PR and issues lines are cut with `…`. The "PR and issue line" setting hides those lines.
+
+### Review and CI icons
+
+An open or draft pull request shows these Nerd Font icons before its own icon, in this order, on list rows, in the preview's Work rows and in the sidebar. A part without data is left out.
+
+| Part    | Icons                                                                                               |
+| ------- | --------------------------------------------------------------------------------------------------- |
+| Review  | Changes requested (red), approved (green) or review required (muted)                                |
+| CI      | Passing (green check), failing (red x) or pending (yellow dot), then `passed/total` such as `91/93` |
+| Threads | A comment icon and the number of unresolved review threads, in yellow                               |
+
+On GitHub, successful, neutral and skipped check runs and successful statuses count as passed. github.com's own list leaves out a check run that a re-run replaced, so the totals here can be higher than there. On GitLab, the counts are the head pipeline's jobs: successful and skipped ones pass, and manual and retried jobs are not counted.
 
 ### Pins
 
@@ -118,7 +129,7 @@ The header holds the title and these sections:
 
 - Context: tokens in the context window and their share of the model's limit, the cost so far, and whether the session is running, idle, interrupted or failed.
 - Session: the project (only when it differs from the browser's), the worktree directory (only when it is not the project root) and the branch (only when it is not the default branch).
-- Work: every tracked pull request and issue, the main pull request first with a `branch` note when it is the branch's pull request. Under each open pull request a muted line gives the full status, such as `approved · 2/3 threads resolved · checks passing`. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
+- Work: every tracked pull request and issue, the main pull request first with a `branch` note when it is the branch's pull request. Open pull requests start with their [review and CI icons](#review-and-ci-icons), and a muted line under each gives the full status, such as `approved · 2/3 threads resolved · 12/12 checks passing`. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
 
 The transcript below draws messages the way OpenCode's session view does and follows your `cli.json` session settings (scrollbar, thinking, markdown, verbosity, grouping). It starts at the latest message; scrolling up loads older ones.
 
@@ -175,7 +186,7 @@ A left click on a row opens the session, hovering selects it, and a click outsid
 
 ## Sidebar
 
-The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first with a `branch` note, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests get the same status line as in the preview, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), and a click opens it in your web browser. A session without pull requests, issues or mentions shows nothing there.
+The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first with a `branch` note, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests start with their [review and CI icons](#review-and-ci-icons), and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), and a click opens it in your web browser. A session without pull requests, issues or mentions shows nothing there.
 
 ## Pull request and issue tracking
 

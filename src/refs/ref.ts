@@ -77,12 +77,17 @@ export const refStatusSchema = z.enum([
  * - `decision`: the forge's review verdict; absent when nobody reviewed and none is required.
  * - `unresolved` / `threads`: resolvable review threads still open, and all of them.
  * - `checks`: the head commit's combined CI result; absent when nothing ran.
+ * - `checksPassed` / `checksTotal`: how many checks passed out of all of them, drawn as `91/93`.
+ *   GitHub counts successful, neutral and skipped check runs and successful statuses as passed;
+ *   GitLab counts successful and skipped jobs of the head pipeline, without retried or manual ones.
  */
 export const refReviewSchema = z.strictObject({
   decision: z.enum(['approved', 'changes_requested', 'review_required']).optional(),
   unresolved: z.number().int().nonnegative().optional(),
   threads: z.number().int().nonnegative().optional(),
-  checks: z.enum(['passing', 'failing', 'pending']).optional()
+  checks: z.enum(['passing', 'failing', 'pending']).optional(),
+  checksPassed: z.number().int().nonnegative().optional(),
+  checksTotal: z.number().int().nonnegative().optional()
 });
 
 export const refStateSchema = z.strictObject({
@@ -91,6 +96,8 @@ export const refStateSchema = z.strictObject({
   url: z.string(),
   mergedAt: z.number().int().optional(),
   closedAt: z.number().int().optional(),
+  // Pull requests only: the last change on the forge, which the Pull requests view groups by.
+  updatedAt: z.number().int().optional(),
   // Pull requests: issues this PR closes when merged.
   closes: z.array(refSchema).optional(),
   // Issues: pull requests that reference this issue as closed by them.

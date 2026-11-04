@@ -7,7 +7,7 @@ import { openUrl, refUrl } from './browser.js';
 import type { Options } from './config.js';
 import { type createMarquee, marqueeText } from './marquee.js';
 import { refColor, refIcon } from './page/icons.js';
-import { cells, fitText } from './page/row.js';
+import { cells, fitText, stateBadges } from './page/row.js';
 import { type Ref, type RefState, refKey, refNumber } from './refs/ref.js';
 
 // Cells taken by a ref glyph and its trailing space (see `ICONS`).
@@ -45,13 +45,17 @@ export function reviewSummary(state: RefState | undefined): string | undefined {
   if (review.threads !== undefined && review.threads > 0) {
     parts.push(`${review.threads - (review.unresolved ?? 0)}/${review.threads} threads resolved`);
   }
-  if (review.checks !== undefined) parts.push(`checks ${review.checks}`);
+  if (review.checks !== undefined) {
+    const counts =
+      review.checksTotal === undefined ? '' : `${review.checksPassed ?? 0}/${review.checksTotal} `;
+    parts.push(`${counts}checks ${review.checks}`);
+  }
   return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
 /**
- * The muted status line under a Work row's pull request, starting in the number's column. Hidden
- * while {@link reviewSummary} has nothing to say.
+ * The muted status line under a preview Work row's pull request, indented by one icon slot.
+ * Hidden while {@link reviewSummary} has nothing to say.
  */
 export function workStatusLine(input: {
   theme(): ResolvedTheme;
@@ -79,10 +83,11 @@ export function workStatusLine(input: {
 }
 
 /**
- * One line of a Work section, shared by the session sidebar and the browser's preview: the state
- * icon in the column of the section's triangle, like the host's MCP dots, then the number in
- * `text.base` and the muted title. Hover brightens both and scrolls a cut title; a click opens
- * the ref's page. Built once per position, so updates change properties, never the tree.
+ * One line of a Work section, shared by the session sidebar and the browser's preview: an open
+ * pull request's review and CI icons (see {@link stateBadges}), then the state icon, starting in
+ * the column of the section's triangle like the host's MCP dots, then the number in `text.base`
+ * and the muted title. Hover brightens both and scrolls a cut title; a click opens the ref's
+ * page. Built once per position, so updates change properties, never the tree.
  */
 export function workRow(input: WorkRowInput): JSX.Element {
   const context = input.context;
@@ -96,11 +101,21 @@ export function workRow(input: WorkRowInput): JSX.Element {
   /** Selection foreground over every part, or undefined for the parts' own colors. */
   const selectedFg = () => (selected() ? theme().text.action.primary.focused : undefined);
   const marker = () => input.marker?.();
-  /** Cells left for the title after the icon, the number, the marker and the spaces between. */
+  const badges = () => stateBadges(input.state(), theme());
+  /**
+   * Cells left for the title after the badges, the icon, the number, the marker and the spaces
+   * between.
+   */
   const room = () => {
     const note = marker();
+    const before = badges().reduce((sum, segment) => sum + cells(segment.text), 0);
     return (
-      Math.floor(input.width()) - ICON - cells(number()) - 1 - (note ? cells(note) + MARKER_GAP : 0)
+      Math.floor(input.width()) -
+      before -
+      ICON -
+      cells(number()) -
+      1 -
+      (note ? cells(note) + MARKER_GAP : 0)
     );
   };
   return jsx('box', {
@@ -126,6 +141,24 @@ export function workRow(input: WorkRowInput): JSX.Element {
         context.ui.toast.show({ message: 'Could not open the browser.', variant: 'error' });
     },
     children: [
+      jsx('text', {
+        ...id('badges'),
+        flexShrink: 0,
+        wrapMode: 'none',
+        get visible() {
+          return badges().length > 0;
+        },
+        get children() {
+          return badges().map((segment) =>
+            jsx('span', {
+              get style() {
+                return { fg: selectedFg() ?? segment.fg };
+              },
+              children: segment.text
+            })
+          );
+        }
+      }),
       jsx('text', {
         ...id('icon'),
         flexShrink: 0,

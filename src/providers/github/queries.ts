@@ -18,14 +18,17 @@ export interface SnapshotDocument {
 
 // `rateLimit` is free to query and tells the provider when the quota runs out before a request fails.
 // GitHub has no count of unresolved threads, so threads are read as nodes; 100 is the page
-// maximum. At 25 refs the document measured 3,375 nodes (limit 500,000) and cost 1 point.
+// maximum. At 25 refs the document measured 3,375 nodes (limit 500,000) and cost 1 point. The
+// check counts come from `contexts(first: 0)`, which reads no context node.
 const SNAPSHOT_FRAGMENTS = `
 fragment PullRequestFields on PullRequest {
-  state isDraft title url mergedAt closedAt reviewDecision headRefOid
+  state isDraft title url mergedAt closedAt updatedAt reviewDecision headRefOid
   closingIssuesReferences(first: 10) { nodes { number repository { nameWithOwner } } }
   latestReviews(first: 20) { nodes { state } }
   reviewThreads(first: 100) { totalCount nodes { isResolved } }
-  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 0) {
+    checkRunCountsByState { state count } statusContextCountsByState { state count }
+  } } } } }
 }
 fragment IssueFields on Issue {
   state stateReason title url closedAt
@@ -155,13 +158,49 @@ function decisionOf(node: Record<string, unknown>): RefReview['decision'] {
   return summary;
 }
 
-/** Reads `commits(last: 1)`'s rollup state; null when the head commit has no checks or statuses. */
-function headRollup(commits: unknown): string | undefined {
+/** Reads `commits(last: 1)`'s rollup; null when the head commit has no checks or statuses. */
+function headRollup(commits: unknown): Record<string, unknown> | undefined {
   const nodes = isRecord(commits) ? commits.nodes : undefined;
   const last = Array.isArray(nodes) ? nodes[0] : undefined;
   const commit = isRecord(last) ? last.commit : undefined;
   const rollup = isRecord(commit) ? commit.statusCheckRollup : undefined;
-  return isRecord(rollup) && typeof rollup.state === 'string' ? rollup.state : undefined;
+  return isRecord(rollup) ? rollup : undefined;
+}
+
+// What github.com's pull request list counts as passed in its `92/95 checks passing` (compared
+// live on 2026-11-04): successful, neutral and skipped check runs, and successful statuses.
+const PASSED_RUNS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
+const PASSED_STATUSES = new Set(['SUCCESS']);
+
+/** Sums a `{ state count }` list: every entry, and the ones whose state is in `passed`. */
+function countStates(value: unknown, passed: ReadonlySet<string>): [number, number] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  let total = 0;
+  let ok = 0;
+  for (const entry of value) {
+    if (!isRecord(entry) || typeof entry.state !== 'string') continue;
+    const count = Number.isSafeInteger(entry.count) ? (entry.count as number) : 0;
+    total += count;
+    if (passed.has(entry.state)) ok += count;
+  }
+  return [ok, total];
+}
+
+/**
+ * Passed and total checks of the rollup. GitHub's own list leaves out runs a re-run of the same
+ * check replaced, which these counts include, so the numbers can be higher than github.com's.
+ */
+function checkCounts(
+  rollup: Record<string, unknown> | undefined
+): { checksPassed: number; checksTotal: number } | undefined {
+  const contexts = rollup?.contexts;
+  if (!isRecord(contexts)) return undefined;
+  const runs = countStates(contexts.checkRunCountsByState, PASSED_RUNS);
+  const statuses = countStates(contexts.statusContextCountsByState, PASSED_STATUSES);
+  if (runs === undefined && statuses === undefined) return undefined;
+  const total = (runs?.[1] ?? 0) + (statuses?.[1] ?? 0);
+  if (total === 0) return undefined;
+  return { checksPassed: (runs?.[0] ?? 0) + (statuses?.[0] ?? 0), checksTotal: total };
 }
 
 /**
@@ -181,8 +220,10 @@ function reviewOf(node: Record<string, unknown>, status: RefStatus): RefReview |
       (thread) => isRecord(thread) && thread.isResolved === false
     ).length;
   }
-  const checks = CHECKS[headRollup(node.commits) ?? ''];
+  const rollup = headRollup(node.commits);
+  const checks = typeof rollup?.state === 'string' ? CHECKS[rollup.state] : undefined;
   if (checks) review.checks = checks;
+  Object.assign(review, checkCounts(rollup));
   return Object.keys(review).length > 0 ? review : undefined;
 }
 
@@ -234,6 +275,7 @@ export function parseSnapshotResponse(
     };
     const mergedAt = epoch(node.mergedAt);
     const closedAt = epoch(node.closedAt);
+    const updatedAt = isPullRequest ? epoch(node.updatedAt) : undefined;
     const review = isPullRequest ? reviewOf(node, status) : undefined;
     const headSha = isPullRequest ? commitSha(node.headRefOid) : undefined;
     const state: RefState = {
@@ -242,6 +284,7 @@ export function parseSnapshotResponse(
       url: node.url,
       ...(mergedAt === undefined ? {} : { mergedAt }),
       ...(closedAt === undefined ? {} : { closedAt }),
+      ...(updatedAt === undefined ? {} : { updatedAt }),
       ...(isPullRequest
         ? { closes: linkedRefs(node.closingIssuesReferences, candidate.host, 'issue') }
         : { closedBy: linkedRefs(node.closedByPullRequestsReferences, candidate.host, 'pr') }),

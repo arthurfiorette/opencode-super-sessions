@@ -45,8 +45,10 @@ test('a batch resolves states, kinds and closed issues, and isolates missing ref
     candidate('gitlab-org/api/client-go', 1, 'pr'),
     candidate('arthurfiorette/does-not-exist-zz', 1, 'issue'),
     candidate('GitLab-Org/CLI', 4275, 'pr'),
-    // Open, changes requested, five unresolved discussions and a failed head pipeline.
-    candidate('gitlab-org/cli', 4268, 'pr')
+    // Open, five unresolved discussions and a failed head pipeline.
+    candidate('gitlab-org/cli', 4268, 'pr'),
+    // Open, changes requested, and a passing head pipeline with a manual job.
+    candidate('gitlab-org/cli', 4156, 'pr')
   ];
   // One capture per batch: a batch over the anonymous complexity limit could not be captured.
   const { batches: outputs } = fixture<{ batches: CapturedOutput[] }>('snapshot.json');
@@ -81,20 +83,34 @@ test('a batch resolves states, kinds and closed issues, and isolates missing ref
       'pr 1 merged',
       'not-found',
       'pr 4275 merged',
-      'pr 4268 open'
+      'pr 4268 open',
+      'pr 4156 open'
     ]
   );
 
   const [merged, issue] = entries;
+  const failing = entries.at(-2);
   const reviewed = entries.at(-1);
   assert.ok(merged && 'ref' in merged && issue && 'ref' in issue);
-  assert.ok(reviewed && 'ref' in reviewed);
-  assert.deepEqual(reviewed.state.review, {
-    decision: 'changes_requested',
+  assert.ok(failing && 'ref' in failing && reviewed && 'ref' in reviewed);
+  assert.deepEqual(failing.state.review, {
     threads: 5,
     unresolved: 5,
-    checks: 'failing'
+    checks: 'failing',
+    checksPassed: 14,
+    checksTotal: 15
   });
+  // The manual job waits for a person, so it counts neither way: 16 of 16, not 16 of 17.
+  assert.deepEqual(reviewed.state.review, {
+    decision: 'changes_requested',
+    threads: 2,
+    unresolved: 2,
+    checks: 'passing',
+    checksPassed: 16,
+    checksTotal: 16
+  });
+  // The Pull requests view groups by this.
+  assert.equal(reviewed.state.updatedAt, Date.UTC(2026, 10, 4, 13, 40, 17));
   // Merged snapshots are never refetched, so they must not carry a review that would go stale.
   assert.equal(merged.state.review, undefined);
   // Worktree cleanup compares local branches with this commit after squash merges.

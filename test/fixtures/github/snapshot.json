@@ -1,17 +1,18 @@
 {
-  "_comment": "Captured on 2026-11-04 from gh 2.103.3 against github.com (authenticated, read-only) with the document buildSnapshotQuery builds for the candidates in github.test.ts; `headRefOid` values come from a follow-up read the same day, when the field joined the document. Only rate limit headers kept.",
+  "_comment": "Captured on 2026-11-04 from gh 2.103.3 against github.com (authenticated, read-only) with the document buildSnapshotQuery builds for the candidates in github.test.ts. Only rate limit headers kept. github.com's pull request list showed mastra-ai/mastra#29382 as `92/95 checks passing` at the same time: it leaves out a re-run check that these counts include.",
   "code": 1,
   "status": "HTTP/2.0 200 OK",
   "headers": {
     "X-Ratelimit-Limit": "5000",
-    "X-Ratelimit-Remaining": "4884",
-    "X-Ratelimit-Reset": "1793765070",
+    "X-Ratelimit-Remaining": "4893",
+    "X-Ratelimit-Reset": "1793801788",
     "X-Ratelimit-Resource": "graphql",
-    "X-Ratelimit-Used": "116"
+    "X-Ratelimit-Used": "107"
   },
+  "stderr": "",
   "body": {
     "data": {
-      "rateLimit": { "remaining": 4884, "resetAt": "2026-11-04T04:04:30Z" },
+      "rateLimit": { "remaining": 4893, "resetAt": "2026-11-04T14:16:28Z" },
       "r0": {
         "i0": {
           "__typename": "PullRequest",
@@ -19,16 +20,52 @@
           "isDraft": false,
           "title": "fix(gh auth status): explain expired expiring tokens with `--no-refresh`",
           "url": "https://github.com/cli/cli/pull/14815",
-          "headRefOid": "ab3efc24f8e74f7588f06d0d368d31279166950d",
           "mergedAt": "2026-10-26T18:02:47Z",
           "closedAt": "2026-10-26T18:02:47Z",
+          "updatedAt": "2026-10-26T18:02:50Z",
           "reviewDecision": "APPROVED",
+          "headRefOid": "ab3efc24f8e74f7588f06d0d368d31279166950d",
           "closingIssuesReferences": {
             "nodes": [{ "number": 14814, "repository": { "nameWithOwner": "cli/cli" } }]
           },
           "latestReviews": { "nodes": [{ "state": "COMMENTED" }, { "state": "APPROVED" }] },
           "reviewThreads": { "totalCount": 1, "nodes": [{ "isResolved": true }] },
-          "commits": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "SUCCESS" } } }] }
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS",
+                    "contexts": {
+                      "checkRunCountsByState": [
+                        { "state": "ACTION_REQUIRED", "count": 0 },
+                        { "state": "CANCELLED", "count": 0 },
+                        { "state": "COMPLETED", "count": 0 },
+                        { "state": "FAILURE", "count": 0 },
+                        { "state": "IN_PROGRESS", "count": 0 },
+                        { "state": "NEUTRAL", "count": 0 },
+                        { "state": "PENDING", "count": 0 },
+                        { "state": "QUEUED", "count": 0 },
+                        { "state": "SKIPPED", "count": 7 },
+                        { "state": "STALE", "count": 0 },
+                        { "state": "STARTUP_FAILURE", "count": 0 },
+                        { "state": "SUCCESS", "count": 11 },
+                        { "state": "TIMED_OUT", "count": 0 },
+                        { "state": "WAITING", "count": 0 }
+                      ],
+                      "statusContextCountsByState": [
+                        { "state": "EXPECTED", "count": 0 },
+                        { "state": "ERROR", "count": 0 },
+                        { "state": "FAILURE", "count": 0 },
+                        { "state": "PENDING", "count": 0 },
+                        { "state": "SUCCESS", "count": 0 }
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
         },
         "i1": {
           "__typename": "Issue",
@@ -47,10 +84,11 @@
           "isDraft": true,
           "title": "Add guided multi-account setup and evaluation",
           "url": "https://github.com/cli/cli/pull/14927",
-          "headRefOid": "d43c4e3ad3c34332c803a568f85f116e3ee58f19",
           "mergedAt": null,
           "closedAt": null,
+          "updatedAt": "2026-11-03T21:29:03Z",
           "reviewDecision": "REVIEW_REQUIRED",
+          "headRefOid": "d43c4e3ad3c34332c803a568f85f116e3ee58f19",
           "closingIssuesReferences": { "nodes": [] },
           "latestReviews": { "nodes": [{ "state": "COMMENTED" }] },
           "reviewThreads": {
@@ -62,7 +100,42 @@
               { "isResolved": false }
             ]
           },
-          "commits": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "FAILURE" } } }] }
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE",
+                    "contexts": {
+                      "checkRunCountsByState": [
+                        { "state": "ACTION_REQUIRED", "count": 0 },
+                        { "state": "CANCELLED", "count": 0 },
+                        { "state": "COMPLETED", "count": 0 },
+                        { "state": "FAILURE", "count": 1 },
+                        { "state": "IN_PROGRESS", "count": 0 },
+                        { "state": "NEUTRAL", "count": 0 },
+                        { "state": "PENDING", "count": 0 },
+                        { "state": "QUEUED", "count": 0 },
+                        { "state": "SKIPPED", "count": 13 },
+                        { "state": "STALE", "count": 0 },
+                        { "state": "STARTUP_FAILURE", "count": 0 },
+                        { "state": "SUCCESS", "count": 11 },
+                        { "state": "TIMED_OUT", "count": 0 },
+                        { "state": "WAITING", "count": 0 }
+                      ],
+                      "statusContextCountsByState": [
+                        { "state": "EXPECTED", "count": 0 },
+                        { "state": "ERROR", "count": 0 },
+                        { "state": "FAILURE", "count": 0 },
+                        { "state": "PENDING", "count": 0 },
+                        { "state": "SUCCESS", "count": 0 }
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
         },
         "i3": {
           "__typename": "PullRequest",
@@ -70,10 +143,11 @@
           "isDraft": false,
           "title": "Fix: `gh issue develop --base` outside a git repository creates the branch,",
           "url": "https://github.com/cli/cli/pull/14914",
-          "headRefOid": "8aefc2564e7fa0d6aad62418fc491e266f193931",
           "mergedAt": null,
           "closedAt": null,
+          "updatedAt": "2026-11-03T10:40:39Z",
           "reviewDecision": "REVIEW_REQUIRED",
+          "headRefOid": "8aefc2564e7fa0d6aad62418fc491e266f193931",
           "closingIssuesReferences": {
             "nodes": [{ "number": 14856, "repository": { "nameWithOwner": "cli/cli" } }]
           },
@@ -87,16 +161,52 @@
           "isDraft": false,
           "title": "Fix per-page limit not shrinking on subsequent `gh issue list --search` pages",
           "url": "https://github.com/cli/cli/pull/14904",
-          "headRefOid": "85cd1cb6bf49f6c666c6b25d1fbf13d9234e5618",
           "mergedAt": null,
           "closedAt": "2026-11-02T05:24:58Z",
+          "updatedAt": "2026-11-02T05:24:58Z",
           "reviewDecision": "REVIEW_REQUIRED",
+          "headRefOid": "85cd1cb6bf49f6c666c6b25d1fbf13d9234e5618",
           "closingIssuesReferences": {
             "nodes": [{ "number": 13906, "repository": { "nameWithOwner": "cli/cli" } }]
           },
           "latestReviews": { "nodes": [{ "state": "COMMENTED" }] },
           "reviewThreads": { "totalCount": 0, "nodes": [] },
-          "commits": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "SUCCESS" } } }] }
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "SUCCESS",
+                    "contexts": {
+                      "checkRunCountsByState": [
+                        { "state": "ACTION_REQUIRED", "count": 0 },
+                        { "state": "CANCELLED", "count": 0 },
+                        { "state": "COMPLETED", "count": 0 },
+                        { "state": "FAILURE", "count": 0 },
+                        { "state": "IN_PROGRESS", "count": 0 },
+                        { "state": "NEUTRAL", "count": 0 },
+                        { "state": "PENDING", "count": 0 },
+                        { "state": "QUEUED", "count": 0 },
+                        { "state": "SKIPPED", "count": 5 },
+                        { "state": "STALE", "count": 0 },
+                        { "state": "STARTUP_FAILURE", "count": 0 },
+                        { "state": "SUCCESS", "count": 2 },
+                        { "state": "TIMED_OUT", "count": 0 },
+                        { "state": "WAITING", "count": 0 }
+                      ],
+                      "statusContextCountsByState": [
+                        { "state": "EXPECTED", "count": 0 },
+                        { "state": "ERROR", "count": 0 },
+                        { "state": "FAILURE", "count": 0 },
+                        { "state": "PENDING", "count": 0 },
+                        { "state": "SUCCESS", "count": 0 }
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
         },
         "i5": {
           "__typename": "Issue",
@@ -123,10 +233,11 @@
           "isDraft": true,
           "title": "Add repository and worktree identities",
           "url": "https://github.com/cli/cli/pull/14921",
-          "headRefOid": "a123f7736e7aaabe56b4662de888cc2bff1338a6",
           "mergedAt": null,
           "closedAt": null,
+          "updatedAt": "2026-11-03T21:29:16Z",
           "reviewDecision": "REVIEW_REQUIRED",
+          "headRefOid": "a123f7736e7aaabe56b4662de888cc2bff1338a6",
           "closingIssuesReferences": { "nodes": [] },
           "latestReviews": { "nodes": [{ "state": "COMMENTED" }] },
           "reviewThreads": {
@@ -143,25 +254,114 @@
               { "isResolved": false }
             ]
           },
-          "commits": { "nodes": [{ "commit": { "statusCheckRollup": { "state": "FAILURE" } } }] }
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE",
+                    "contexts": {
+                      "checkRunCountsByState": [
+                        { "state": "ACTION_REQUIRED", "count": 0 },
+                        { "state": "CANCELLED", "count": 0 },
+                        { "state": "COMPLETED", "count": 0 },
+                        { "state": "FAILURE", "count": 1 },
+                        { "state": "IN_PROGRESS", "count": 0 },
+                        { "state": "NEUTRAL", "count": 0 },
+                        { "state": "PENDING", "count": 0 },
+                        { "state": "QUEUED", "count": 0 },
+                        { "state": "SKIPPED", "count": 13 },
+                        { "state": "STALE", "count": 0 },
+                        { "state": "STARTUP_FAILURE", "count": 0 },
+                        { "state": "SUCCESS", "count": 11 },
+                        { "state": "TIMED_OUT", "count": 0 },
+                        { "state": "WAITING", "count": 0 }
+                      ],
+                      "statusContextCountsByState": [
+                        { "state": "EXPECTED", "count": 0 },
+                        { "state": "ERROR", "count": 0 },
+                        { "state": "FAILURE", "count": 0 },
+                        { "state": "PENDING", "count": 0 },
+                        { "state": "SUCCESS", "count": 0 }
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
         }
       },
-      "r1": null
+      "r1": null,
+      "r2": {
+        "i0": {
+          "__typename": "PullRequest",
+          "state": "OPEN",
+          "isDraft": false,
+          "title": "fix(core,mcp): keep MCP server text out of tracked exceptions",
+          "url": "https://github.com/mastra-ai/mastra/pull/29382",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-11-04T09:44:12Z",
+          "reviewDecision": "REVIEW_REQUIRED",
+          "headRefOid": "97c9ca2b006807810eb2b0a2e9cfc4e69a8a324c",
+          "closingIssuesReferences": {
+            "nodes": [{ "number": 29351, "repository": { "nameWithOwner": "mastra-ai/mastra" } }]
+          },
+          "latestReviews": { "nodes": [{ "state": "COMMENTED" }] },
+          "reviewThreads": { "totalCount": 1, "nodes": [{ "isResolved": true }] },
+          "commits": {
+            "nodes": [
+              {
+                "commit": {
+                  "statusCheckRollup": {
+                    "state": "FAILURE",
+                    "contexts": {
+                      "checkRunCountsByState": [
+                        { "state": "ACTION_REQUIRED", "count": 0 },
+                        { "state": "CANCELLED", "count": 0 },
+                        { "state": "COMPLETED", "count": 0 },
+                        { "state": "FAILURE", "count": 1 },
+                        { "state": "IN_PROGRESS", "count": 0 },
+                        { "state": "NEUTRAL", "count": 3 },
+                        { "state": "PENDING", "count": 0 },
+                        { "state": "QUEUED", "count": 0 },
+                        { "state": "SKIPPED", "count": 10 },
+                        { "state": "STALE", "count": 0 },
+                        { "state": "STARTUP_FAILURE", "count": 0 },
+                        { "state": "SUCCESS", "count": 79 },
+                        { "state": "TIMED_OUT", "count": 0 },
+                        { "state": "WAITING", "count": 0 }
+                      ],
+                      "statusContextCountsByState": [
+                        { "state": "EXPECTED", "count": 0 },
+                        { "state": "ERROR", "count": 0 },
+                        { "state": "FAILURE", "count": 2 },
+                        { "state": "PENDING", "count": 0 },
+                        { "state": "SUCCESS", "count": 1 }
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
     },
     "errors": [
       {
         "type": "NOT_FOUND",
         "path": ["r1"],
-        "locations": [{ "line": 1, "column": 941 }],
+        "locations": [{ "line": 1, "column": 969 }],
         "message": "Could not resolve to a Repository with the name 'arthurfiorette/does-not-exist-zz'."
       },
       {
         "type": "NOT_FOUND",
         "path": ["r0", "i7"],
-        "locations": [{ "line": 1, "column": 760 }],
+        "locations": [{ "line": 1, "column": 788 }],
         "message": "Could not resolve to an issue or pull request with the number of 999999."
       }
     ]
-  },
-  "stderr": "gh: Could not resolve to a Repository with the name 'arthurfiorette/does-not-exist-zz'.\nCould not resolve to an issue or pull request with the number of 999999.\n"
+  }
 }
