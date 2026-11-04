@@ -152,17 +152,22 @@ export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: 
     const activeGroups = createMemo(() => groupsFor('active'));
     const doneGroups = createMemo(() => groupsFor('done'));
     const archivedGroups = createMemo(() => groupsFor('archived'));
-    /** Groups of the list on screen: the search results, or the current view. */
-    const groups = createMemo((): Group[] => {
-      if (data.search)
-        return data.search.sessions.length > 0 ? [{ sessions: data.search.sessions }] : [];
+    /** Groups of the current view, whatever the search. */
+    const viewGroups = createMemo((): Group[] => {
       if (memory.view === 'done') return doneGroups();
       if (memory.view === 'archived') return archivedGroups();
       return activeGroups();
     });
+    /** Groups of the list on screen: the search results, or the current view. */
+    const groups = createMemo((): Group[] => {
+      if (data.search)
+        return data.search.sessions.length > 0 ? [{ sessions: data.search.sessions }] : [];
+      return viewGroups();
+    });
     return {
       dispose,
       doneGroups,
+      viewGroups,
       groups,
       rows: createMemo(() => rowsOf(groups())),
       counts: createMemo(() => ({
@@ -238,6 +243,7 @@ export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: 
     data,
     counts: lists.counts,
     doneGroups: lists.doneGroups,
+    viewGroups: lists.viewGroups,
     groups: lists.groups,
     rows: lists.rows,
     /** Merges a patch into the remembered browser state. */

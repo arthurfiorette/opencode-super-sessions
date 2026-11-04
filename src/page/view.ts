@@ -32,8 +32,8 @@ import { rowRefs } from '../refs/summary.js';
 import { ICONS } from './icons.js';
 import { type PageProps, type PeekBannerProps, routeKey } from './page.js';
 import { Preview } from './preview.js';
+import { workLines } from './preview-header.js';
 import {
-  branchLine,
   cells,
   findRef,
   formatAge,
@@ -42,6 +42,7 @@ import {
   refsLine,
   type Segment,
   sessionBackground,
+  titleChrome,
   titleLine,
   titleRoom
 } from './row.js';
@@ -63,7 +64,17 @@ const MODE = 'super-sessions';
 // The host dialog's backdrop color.
 const BACKDROP = RGBA.fromInts(0, 0, 0, 150);
 const PREVIEW_MIN_COLUMNS = 120;
+// Share of the panel the list column may take when sized from the titles. Renamed titles have
+// no length cap (generated ones stop at 100 characters), so neither column can crowd out the other.
+const LIST_MIN_SHARE = 0.4;
+const LIST_MAX_SHARE = 0.6;
+// The list box pads one cell on each side, and its scrollbar takes one more column.
+const LIST_PADDING = 1;
+const LIST_BAR_WIDTH = 1;
+// The widest age `formatAge` returns.
+const WIDEST_AGE = '12mo';
 const REFRESH_INTERVAL = 60_000;
+const UNTITLED = 'Untitled session';
 const VIEW_LABELS: Record<PageView, string> = {
   active: 'Active',
   done: 'Done',
@@ -128,10 +139,7 @@ export default function SessionBrowser(props: PageProps) {
       matched: reason(session)?.ref
     });
   const lines = createMemo(() =>
-    layoutLines(model.groups(), (session) => ({
-      branch: branchOf(session) !== undefined,
-      refs: refsOf(session).length > 0
-    }))
+    layoutLines(model.groups(), (session) => refsOf(session).length > 0)
   );
   const visible = createMemo(() => lines().slice(memory.scroll, memory.scroll + listHeight()));
 
@@ -166,16 +174,15 @@ export default function SessionBrowser(props: PageProps) {
     )
   );
 
-  // Branch lines need each directory's VCS info, which the host fetches only on request.
+  // The preview's branch needs the directory's VCS info, which the host fetches only on request.
   const synced = new Set<string>();
   createEffect(() => {
-    for (const line of visible()) {
-      if (line.kind !== 'title') continue;
-      const directory = line.session.location.directory;
-      if (synced.has(directory) || data.refs[line.session.id]?.branch !== undefined) continue;
-      synced.add(directory);
-      void context.data.location.vcs.sync({ directory }).catch(() => {});
-    }
+    const session = selected();
+    if (!session) return;
+    const directory = session.location.directory;
+    if (synced.has(directory) || data.refs[session.id]?.branch !== undefined) return;
+    synced.add(directory);
+    void context.data.location.vcs.sync({ directory }).catch(() => {});
   });
 
   const visibleIDs = () =>
@@ -363,17 +370,84 @@ export default function SessionBrowser(props: PageProps) {
       toast('Could not open the browser.', 'error');
   };
 
+  // The arrow keys drive the list, or the preview's Work rows after `right`. The search input
+  // keeps the terminal focus either way, so typing still searches.
+  const [focus, setFocus] = createSignal<'list' | 'work'>('list');
+  const [workIndex, setWorkIndex] = createSignal(0);
+  /** Gives the arrow keys back to the list. */
+  const focusList = () => {
+    setFocus('list');
+  };
+  const workRefs = createMemo(() => {
+    const session = selected();
+    const view = session ? data.refs[session.id] : undefined;
+    if (!view) return [];
+    return workLines(view).flatMap((line) => (line.kind === 'ref' ? [line.ref] : []));
+  });
+  /** The Work row the keyboard selected, while the Work rows have the keys. */
+  const workRef = () => (focus() === 'work' ? workRefs()[workIndex()] : undefined);
+  // The Work rows belong to the selected session; another session or search hands the keys back.
+  createEffect(on(() => [memory.selected, memory.query], focusList, { defer: true }));
+  // A refresh can drop rows under the cursor.
+  createEffect(() => {
+    const count = workRefs().length;
+    if (count === 0) focusList();
+    else if (untrack(workIndex) >= count) setWorkIndex(count - 1);
+  });
+  /** Moves the Work selection by `delta`, clamped to the rows. */
+  const moveWork = (delta: number) => {
+    setWorkIndex((index) => Math.min(workRefs().length - 1, Math.max(0, index + delta)));
+  };
+  /** `right`: into the Work rows, unless the search cursor still has text to move over. */
+  const focusWork = () => {
+    if (focus() === 'work') return;
+    if (input && input.cursorOffset < cells(input.value)) return false;
+    // The preview is hidden on narrow terminals, and a session without refs has no rows.
+    if (!wide() || workRefs().length === 0) return;
+    setWorkIndex(0);
+    setFocus('work');
+  };
+  /** `enter` in the Work rows: opens the selected ref's page, like a click on the row. */
+  const openWork = () => {
+    const ref = workRef();
+    const session = selected();
+    if (!ref || !session) return;
+    if (!openUrl(refUrl(ref, data.refs[session.id]?.states[refKey(ref)])))
+      toast('Could not open the browser.', 'error');
+  };
+
   // Host dialogs push the "modal" mode above this one, which turns this layer off while a rename
   // prompt or confirm is open and back on when it closes. Created inside the component, so the
   // layer goes away with the browser.
   const commands: KeymapCommand[] = [
-    { bind: 'up', title: 'Previous session', run: () => move(-1) },
-    { bind: 'down', title: 'Next session', run: () => move(1) },
+    {
+      bind: 'up',
+      title: 'Previous session',
+      run: () => (focus() === 'work' ? moveWork(-1) : move(-1))
+    },
+    {
+      bind: 'down',
+      title: 'Next session',
+      run: () => (focus() === 'work' ? moveWork(1) : move(1))
+    },
+    // `right` is also the search field's cursor key; `focusWork` hands it back while the cursor
+    // is not at the end. `left` stays the field's until the Work rows have the keys.
+    { bind: 'right', title: 'Focus the preview links', run: focusWork },
+    {
+      bind: 'left',
+      title: 'Back to the list',
+      enabled: () => focus() === 'work',
+      run: focusList
+    },
     { bind: 'pageup', title: 'Page up', run: () => move(-pageRows()) },
     { bind: 'pagedown', title: 'Page down', run: () => move(pageRows()) },
     { bind: 'home', title: 'First session', run: () => move(-rows().length) },
     { bind: 'end', title: 'Last session', run: () => move(rows().length) },
-    { bind: 'return', title: 'Open session', run: () => open() },
+    {
+      bind: 'return',
+      title: 'Open session',
+      run: () => (focus() === 'work' ? openWork() : open())
+    },
     // Space also types into the search box. Returning false lets the key fall through to the
     // focused input, so peeking only takes the key while the search is empty.
     {
@@ -384,7 +458,11 @@ export default function SessionBrowser(props: PageProps) {
         if (memory.selected !== undefined) props.peek(memory.selected);
       }
     },
-    { bind: 'escape', title: 'Close', run: props.close },
+    {
+      bind: 'escape',
+      title: 'Close',
+      run: () => (focus() === 'work' ? focusList() : props.close())
+    },
     {
       bind: 'tab',
       title: 'Next view',
@@ -547,16 +625,14 @@ export default function SessionBrowser(props: PageProps) {
       title:
         deleting() === session.id
           ? `Press ${shortcut('session.delete', 'ctrl+d')} again to delete`
-          : info.title || 'Untitled session',
+          : info.title || UNTITLED,
       label: matchLabel(reason(session), data.refs[session.id]),
-      right:
-        archivedAt === undefined
-          ? // Padded to the widest age (`11mo`), so labels before it line up down the list.
-            formatAge(now - info.time.updated).padStart(4)
-          : `archived ${formatAge(now - archivedAt)} · updated ${formatAge(now - info.time.updated)}`,
+      right: ageColumn(
+        formatAge(now - info.time.updated),
+        archivedAt === undefined ? undefined : formatAge(now - archivedAt)
+      ),
       // The row box pads one cell on each side.
       width: listWidth() - 2,
-      branch: branchOf(session),
       refs: refsOf(session),
       selected: memory.selected === session.id,
       deleting: deleting() === session.id,
@@ -609,7 +685,6 @@ export default function SessionBrowser(props: PageProps) {
           open: () => open(session().id)
         };
         if (value.kind === 'title') return titleLine(theme, row, events);
-        if (value.kind === 'branch') return branchLine(theme, row, events);
         return refsLine(theme, row, events);
       });
     });
@@ -775,15 +850,15 @@ export default function SessionBrowser(props: PageProps) {
     flexGrow: 1,
     flexShrink: 1,
     minWidth: 0,
-    paddingLeft: 1,
-    paddingRight: 1,
+    paddingLeft: LIST_PADDING,
+    paddingRight: LIST_PADDING,
     ref: (value: BoxRenderable) => {
       listBox = value;
     },
     onSizeChange: () => {
       setListHeight(listBox?.height ?? 0);
       // Without the list's own padding.
-      setListWidth(Math.max(0, (listBox?.width ?? 0) - 2));
+      setListWidth(Math.max(0, (listBox?.width ?? 0) - 2 * LIST_PADDING));
     },
     onMouseScroll: (event: MouseEvent) => {
       const direction = event.scroll?.direction;
@@ -822,7 +897,7 @@ export default function SessionBrowser(props: PageProps) {
   // (routes/session/index.tsx `verticalScrollbarOptions`), shown under the same setting.
   let slider: SliderRenderable | undefined;
   const listBar = jsx('box', {
-    width: 1,
+    width: LIST_BAR_WIDTH,
     flexShrink: 0,
     // Only while the list overflows: with nothing to scroll the slider is one solid column.
     get visible() {
@@ -848,12 +923,41 @@ export default function SessionBrowser(props: PageProps) {
     slider.value = memory.scroll;
   });
 
-  const previewWidth = () => Math.floor(panelWidth() * props.options.previewWidth);
+  // The view's sessions, not the search results, so typing never moves the columns. Loaded titles,
+  // not the host's live copies: a rename reloads the lists anyway, and streaming updates to the
+  // live copies would otherwise re-measure on every event.
+  const widestTitle = createMemo(() =>
+    rowsOf(model.viewGroups()).reduce(
+      (widest, session) => Math.max(widest, cells(session.title || UNTITLED)),
+      0
+    )
+  );
+  /**
+   * Cells of the list column besides the title. The scrollbar's column counts even while hidden:
+   * it comes and goes as a search changes the number of lines.
+   */
+  const rowChrome = () =>
+    2 * LIST_PADDING +
+    LIST_BAR_WIDTH +
+    titleChrome(ageColumn(WIDEST_AGE, memory.view === 'archived' ? WIDEST_AGE : undefined));
+  /**
+   * The preview's share of the panel, or 'auto' to size the list from its titles.
+   * `previewWidth` cannot be left unset yet: the schema fills in 0.4 when the user omits it, so a
+   * number cannot tell an explicit split from the default. Becomes `props.options.previewWidth`
+   * once the schema accepts 'auto' and defaults to it.
+   */
+  const split = (): number | 'auto' => 'auto';
+  const previewWidth = createMemo(() => {
+    const panel = panelWidth();
+    const share = split();
+    if (share !== 'auto') return Math.floor(panel * share);
+    return panel - listColumnWidth(panel, widestTitle() + rowChrome());
+  });
   const pane = createComponent(Preview, {
     context,
     options: props.options,
     selected: () => (wide() ? memory.selected : undefined),
-    // Left border plus one cell of padding on each side.
+    // The column's blank first cell plus the pane's padding on each side.
     width: () => previewWidth() - 3,
     session: (sessionID) => {
       const found = rows().find((session) => session.id === sessionID);
@@ -863,6 +967,10 @@ export default function SessionBrowser(props: PageProps) {
     branch: branchOf,
     project: () => (scope() === 'project' ? projectID() : undefined),
     running: model.running,
+    selectedRef: () => {
+      const ref = workRef();
+      return ref ? refKey(ref) : undefined;
+    },
     // The session view's surface, not the dialog's, so the transcript looks as it does there.
     theme: () => context.theme
   });
@@ -881,10 +989,8 @@ export default function SessionBrowser(props: PageProps) {
     get width() {
       return previewWidth();
     },
-    border: ['left'],
-    get borderColor() {
-      return theme().border.base;
-    },
+    // One blank cell where a divider would be: the column's background already sets it apart.
+    paddingLeft: 1,
     children: [
       jsx('box', {
         flexDirection: 'row',
@@ -906,7 +1012,12 @@ export default function SessionBrowser(props: PageProps) {
 
   // Same shape as the host's dialog footer: "title key" pairs, actions on the selected session
   // on the left and the list-wide scope toggle on the right.
-  const footerItems = createMemo(() => {
+  const footerItems = createMemo((): Array<[string, string]> => {
+    if (focus() === 'work')
+      return [
+        ['open', 'enter'],
+        ['back', 'left/esc']
+      ];
     const current = selected();
     const items: Array<[string, string]> = [
       ['peek', 'space'],
@@ -1107,6 +1218,24 @@ export function PeekBanner(props: PeekBannerProps) {
       ]
     })
   });
+}
+
+/** A title line's age column: the age, or the archive and update ages in the Archived view. */
+function ageColumn(updated: string, archived: string | undefined): string {
+  // Padded to the widest age, so labels before it line up down the list.
+  if (archived === undefined) return updated.padStart(cells(WIDEST_AGE));
+  return `archived ${archived} · updated ${updated}`;
+}
+
+/**
+ * Cells of the list column for the widest row it holds, kept between the column's minimum and
+ * maximum share of the panel. The preview takes the rest.
+ */
+function listColumnWidth(panel: number, widest: number): number {
+  return Math.min(
+    Math.floor(panel * LIST_MAX_SHARE),
+    Math.max(Math.ceil(panel * LIST_MIN_SHARE), widest)
+  );
 }
 
 /** Why a search listed the session, for the muted note on its title line. */

@@ -15,12 +15,11 @@ export const ICONS = {
   issueOpen: '\uf41b',
   issueCompleted: '\uf41d',
   issueNotPlanned: '\uf517',
-  branch: '\uf418',
   done: '\uf49e',
   archived: '\uf411'
 } as const;
 
-/** Words shown next to a ref's number in the preview. */
+/** A word per ref state, for the sidebar's summary counts. */
 export const STATE_WORDS: Record<RefStatus, string> = {
   open: 'open',
   draft: 'draft',

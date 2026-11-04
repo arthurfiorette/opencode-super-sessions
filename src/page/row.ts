@@ -7,7 +7,7 @@ import { marqueeText } from '../marquee.js';
 import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
-import { ICONS, refColor, refIcon } from './icons.js';
+import { refColor, refIcon } from './icons.js';
 
 /** A run of text in one color on a row line. */
 export interface Segment {
@@ -26,8 +26,6 @@ export interface RowModel {
   right: string;
   /** Cells inside the row's padding, measured from the list. */
   width: number;
-  /** Shown on its own line only when it is not the default branch. */
-  branch: string | undefined;
   /** The refs line. Empty when the session has no refs. */
   refs: Segment[];
   selected: boolean;
@@ -153,6 +151,9 @@ function rowColors(theme: ResolvedTheme, model: RowModel) {
   return { bg: model.stripe, fg: undefined };
 }
 
+// Cells each row line pads on either side, which the stripe and the selection fill.
+const ROW_PADDING = 1;
+
 /** A row line's outer box: height, padding, colors and pointer handlers. */
 function lineBox(
   theme: () => ResolvedTheme,
@@ -164,8 +165,8 @@ function lineBox(
     flexDirection: 'row',
     height: 1,
     flexShrink: 0,
-    paddingLeft: 1,
-    paddingRight: 1,
+    paddingLeft: ROW_PADDING,
+    paddingRight: ROW_PADDING,
     get backgroundColor() {
       return rowColors(theme(), model()).bg;
     },
@@ -188,6 +189,15 @@ const RIGHT_GAP = 2;
 export function titleRoom(model: Pick<RowModel, 'width' | 'label' | 'right'>): number {
   const label = model.label ? cells(model.label) + RIGHT_GAP : 0;
   return model.width - MARKER_WIDTH - RIGHT_GAP - label - cells(model.right);
+}
+
+/**
+ * Cells a title line takes besides its title, padding included, with `right` in the age column
+ * and no label. Labels only appear while searching, and the columns must not move as the user
+ * types.
+ */
+export function titleChrome(right: string): number {
+  return 2 * ROW_PADDING + MARKER_WIDTH + RIGHT_GAP + cells(right);
 }
 
 /** First row line: marker column, title at the full remaining width, then label and age. */
@@ -278,19 +288,7 @@ function detailLine(
   ]);
 }
 
-/** Second row line, when the session is on a branch other than the default one. */
-export function branchLine(
-  theme: () => ResolvedTheme,
-  model: () => RowModel,
-  events: RowEvents
-): JSX.Element {
-  return detailLine(theme, model, events, () => {
-    const branch = model().branch;
-    return branch ? [{ text: `${ICONS.branch} ${branch}`, fg: theme().text.muted }] : [];
-  });
-}
-
-/** Last row line, when the session has refs. */
+/** Second row line, when the session has refs. The branch shows in the preview instead. */
 export function refsLine(
   theme: () => ResolvedTheme,
   model: () => RowModel,

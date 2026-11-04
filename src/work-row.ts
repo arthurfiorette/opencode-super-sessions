@@ -23,8 +23,8 @@ export interface WorkRowInput {
   /** Cells of the whole row. */
   width(): number;
   marquee: ReturnType<typeof createMarquee>;
-  /** Muted text at the right edge, such as the state word. */
-  right?(): string;
+  /** Keyboard selection, drawn in the action selection colors like a selected list row. */
+  selected?(): boolean;
   /** Element id; the parts get `-icon`, `-number` and `-title` after it. */
   id?: string;
 }
@@ -43,15 +43,19 @@ export function workRow(input: WorkRowInput): JSX.Element {
   const key = () => refKey(input.ref());
   const number = () => refNumber(input.ref());
   const title = () => input.state()?.title ?? '';
-  const right = () => input.right?.() ?? '';
-  /** Cells left for the title after the icon, the number, the space before the title and the right text. */
-  const room = () =>
-    Math.floor(input.width()) - ICON - cells(number()) - 1 - (right() ? cells(right()) + 1 : 0);
+  const selected = () => input.selected?.() ?? false;
+  /** Selection foreground over every part, or undefined for the parts' own colors. */
+  const selectedFg = () => (selected() ? theme().text.action.primary.focused : undefined);
+  /** Cells left for the title after the icon, the number and the space before the title. */
+  const room = () => Math.floor(input.width()) - ICON - cells(number()) - 1;
   return jsx('box', {
     ...(input.id === undefined ? {} : { id: input.id }),
     flexDirection: 'row',
     height: 1,
     flexShrink: 0,
+    get backgroundColor() {
+      return selected() ? theme().background.action.primary.focused : undefined;
+    },
     onMouseOver: () => {
       setHovered(true);
       input.marquee.enter(key(), title(), room());
@@ -72,7 +76,10 @@ export function workRow(input: WorkRowInput): JSX.Element {
         flexShrink: 0,
         wrapMode: 'none',
         get fg() {
-          return refColor(input.options, input.state()?.status, theme(), context.themeMode);
+          return (
+            selectedFg() ??
+            refColor(input.options, input.state()?.status, theme(), context.themeMode)
+          );
         },
         get children() {
           return `${refIcon(input.ref().kind, input.state()?.status)} `;
@@ -83,11 +90,12 @@ export function workRow(input: WorkRowInput): JSX.Element {
         flexShrink: 0,
         wrapMode: 'none',
         get fg() {
-          return theme().text.base;
+          return selectedFg() ?? theme().text.base;
         },
         // The number is already `text.base`, so hover brightens it with weight, like host toasts.
+        // A selected list row is bold too.
         get attributes() {
-          return hovered() ? TextAttributes.BOLD : TextAttributes.NONE;
+          return hovered() || selected() ? TextAttributes.BOLD : TextAttributes.NONE;
         },
         get children() {
           return number();
@@ -100,26 +108,13 @@ export function workRow(input: WorkRowInput): JSX.Element {
         minWidth: 0,
         wrapMode: 'none',
         get fg() {
-          return hovered() ? theme().text.base : theme().text.muted;
+          return selectedFg() ?? (hovered() ? theme().text.base : theme().text.muted);
         },
         get children() {
           if (!title() || room() <= 0) return '';
           return input.marquee.active() === key() && input.marquee.offset() > 0
             ? ` ${marqueeText(title(), room(), input.marquee.offset())}`
             : ` ${fitText(title(), room())}`;
-        }
-      }),
-      jsx('text', {
-        flexShrink: 0,
-        wrapMode: 'none',
-        get visible() {
-          return right() !== '';
-        },
-        get fg() {
-          return theme().text.muted;
-        },
-        get children() {
-          return ` ${right()}`;
         }
       })
     ]

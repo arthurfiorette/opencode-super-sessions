@@ -36,6 +36,8 @@ export interface PreviewProps {
    */
   project?(): string | undefined;
   running(sessionID: string): boolean;
+  /** `refKey` of the Work row the keyboard selected, while the pane has the focus. */
+  selectedRef?(): string | undefined;
   /** Cells available for text inside the pane. */
   width(): number;
   /**
@@ -110,6 +112,7 @@ export function Preview(props: PreviewProps): JSX.Element {
     project: () => props.project?.(),
     running,
     spinner,
+    selectedRef: () => props.selectedRef?.(),
     width: () => props.width(),
     marquee,
     agentColor: (value: SessionInfo, agent: string) => agentColor(context, theme(), value, agent)
@@ -165,14 +168,7 @@ export function Preview(props: PreviewProps): JSX.Element {
     },
     children: [
       header,
-      jsx('box', {
-        height: 1,
-        flexShrink: 0,
-        border: ['bottom'],
-        get borderColor() {
-          return theme().border.base;
-        }
-      }),
+      jsx('box', { height: 1, flexShrink: 0 }),
       jsx('text', {
         flexShrink: 0,
         get visible() {

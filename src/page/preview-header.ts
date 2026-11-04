@@ -4,19 +4,21 @@ import type { Plugin } from '@opencode/plugin/tui';
 import type { ResolvedTheme } from '@opencode/theme/tui';
 import type { RGBA } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
-import { createComponent, createMemo, For, type JSX } from 'solid-js';
+import { createComponent, createMemo, For, type JSX, Show, untrack } from 'solid-js';
 import type { Options } from '../config.js';
 import type { createMarquee } from '../marquee.js';
 import { type Ref, refKey } from '../refs/ref.js';
 import { trackedRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { workRow } from '../work-row.js';
-import { STATE_WORDS } from './icons.js';
 
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 // The host sidebar's Context section formats cost this way (feature-plugins/sidebar/context.tsx).
 const MONEY = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+// Context and Session sit side by side, this far apart, while each column gets this many cells.
+const SECTION_GAP = 2;
+const MIN_SECTION_WIDTH = 24;
 
 /** Inputs of the header, a subset of the pane's own. */
 export interface HeaderProps {
@@ -33,6 +35,8 @@ export interface HeaderProps {
   running(): boolean;
   /** Current spinner glyph, ticking only while the session runs. */
   spinner(): string;
+  /** `refKey` of the Work row the keyboard selected, if any. */
+  selectedRef(): string | undefined;
   width(): number;
   marquee: ReturnType<typeof createMarquee>;
   agentColor(session: SessionInfo, agent: string): RGBA;
@@ -42,7 +46,8 @@ export interface HeaderProps {
  * Laid out like the host's session sidebar (routes/session/sidebar.tsx and the sections in
  * feature-plugins/sidebar, MIT): the bold title, wrapping, then sections one blank line apart,
  * each a bold heading over muted lines. Context holds usage, cost and run state; Session where
- * and with what the session runs; Work the refs, drawn by the sidebar's own Work row.
+ * and with what the session runs; Work the refs, drawn by the sidebar's own Work row. Context
+ * and Session share a row when the pane is wide enough, since both are short.
  */
 export function PreviewHeader(props: HeaderProps): JSX.Element {
   const context = props.context;
@@ -60,10 +65,19 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
         return text();
       }
     });
-  /** A bold `text.base` heading over `children`, hidden while `visible()` is false. */
-  const section = (title: string, visible: () => boolean, children: JSX.Element[]) =>
+  /**
+   * A bold `text.base` heading over `children`, hidden while `visible()` is false. A `column`
+   * section takes an even share of a row, so a long path wraps inside its half.
+   */
+  const section = (
+    title: string,
+    visible: () => boolean,
+    children: JSX.Element[],
+    column = false
+  ) =>
     jsx('box', {
-      flexShrink: 0,
+      flexShrink: column ? 1 : 0,
+      ...(column ? { flexGrow: 1, flexBasis: 0, minWidth: 0 } : {}),
       get visible() {
         return visible();
       },
@@ -102,32 +116,39 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
     if (outcome === 'failed') return { text: 'failed', fg: theme().text.feedback.error.base };
     return { text: outcome === 'interrupted' ? 'interrupted' : 'idle', fg: muted() };
   };
-  const contextSection = section('Context', () => true, [
-    jsx('box', {
-      get visible() {
-        return usage() !== undefined;
-      },
-      children: [
-        line(() => `${usage()?.tokens.toLocaleString() ?? ''} tokens`),
+  /** Usage, cost and run state. Built again when the layout switches between rows and a stack. */
+  const contextSection = (column: boolean) =>
+    section(
+      'Context',
+      () => true,
+      [
         jsx('box', {
           get visible() {
-            return usage()?.percent !== undefined;
+            return usage() !== undefined;
           },
-          children: line(() => `${usage()?.percent ?? ''}% used`)
-        })
-      ]
-    }),
-    jsx('box', {
-      get visible() {
-        return cost() > 0;
-      },
-      children: line(() => `${MONEY.format(cost())} spent`)
-    }),
-    line(
-      () => status().text,
-      () => status().fg
-    )
-  ]);
+          children: [
+            line(() => `${usage()?.tokens.toLocaleString() ?? ''} tokens`),
+            jsx('box', {
+              get visible() {
+                return usage()?.percent !== undefined;
+              },
+              children: line(() => `${usage()?.percent ?? ''}% used`)
+            })
+          ]
+        }),
+        jsx('box', {
+          get visible() {
+            return cost() > 0;
+          },
+          children: line(() => `${MONEY.format(cost())} spent`)
+        }),
+        line(
+          () => status().text,
+          () => status().fg
+        )
+      ],
+      column
+    );
 
   const place = createMemo(() => {
     const session = props.session();
@@ -155,53 +176,79 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
       },
       children: child
     });
-  const sessionSection = section(
-    'Session',
-    () =>
-      showProject() ||
-      place()?.directory !== undefined ||
-      branch() !== undefined ||
-      model() !== undefined ||
-      Boolean(props.session()?.agent),
-    [
-      optional(
-        showProject,
-        line(() => place()?.project ?? '')
-      ),
-      optional(
-        () => place()?.directory !== undefined,
-        line(() => place()?.directory ?? '')
-      ),
-      optional(
-        () => branch() !== undefined,
-        line(() => branch() ?? '')
-      ),
-      optional(
-        () => model() !== undefined || Boolean(props.session()?.agent),
-        jsx('text', {
-          get fg() {
-            return muted();
-          },
-          get children() {
-            const session = props.session();
-            const agent = session?.agent;
-            return [
-              jsx('span', { children: model() ?? '' }),
-              jsx('span', { children: model() && agent ? ' · ' : '' }),
-              jsx('span', {
-                get style() {
-                  return {
-                    fg: session && agent ? props.agentColor(session, agent) : muted()
-                  };
-                },
-                children: agent ? titlecase(agent) : ''
-              })
-            ];
-          }
+  /** Where and with what the session runs. Built again on a layout switch, like Context. */
+  const sessionSection = (column: boolean) =>
+    section(
+      'Session',
+      () =>
+        showProject() ||
+        place()?.directory !== undefined ||
+        branch() !== undefined ||
+        model() !== undefined ||
+        Boolean(props.session()?.agent),
+      [
+        optional(
+          showProject,
+          line(() => place()?.project ?? '')
+        ),
+        optional(
+          () => place()?.directory !== undefined,
+          line(() => place()?.directory ?? '')
+        ),
+        optional(
+          () => branch() !== undefined,
+          line(() => branch() ?? '')
+        ),
+        optional(
+          () => model() !== undefined || Boolean(props.session()?.agent),
+          jsx('text', {
+            get fg() {
+              return muted();
+            },
+            get children() {
+              const session = props.session();
+              const agent = session?.agent;
+              return [
+                jsx('span', { children: model() ?? '' }),
+                jsx('span', { children: model() && agent ? ' · ' : '' }),
+                jsx('span', {
+                  get style() {
+                    return {
+                      fg: session && agent ? props.agentColor(session, agent) : muted()
+                    };
+                  },
+                  children: agent ? titlecase(agent) : ''
+                })
+              ];
+            }
+          })
+        )
+      ],
+      column
+    );
+  /** Whether Context and Session fit side by side; narrower panes stack them as the sidebar does. */
+  const sideBySide = () => (props.width() - SECTION_GAP) / 2 >= MIN_SECTION_WIDTH;
+  // Show reads both branches inside its own memo; untracked, they rebuild only on a layout switch.
+  const sections = createComponent(Show, {
+    keyed: true,
+    get when() {
+      return sideBySide();
+    },
+    get fallback() {
+      return untrack(() => [contextSection(false), sessionSection(false)]);
+    },
+    children: (_wide: boolean) =>
+      untrack(() =>
+        jsx('box', {
+          flexDirection: 'row',
+          flexShrink: 0,
+          // Top-aligned halves, so Context does not stretch to the height of Session.
+          alignItems: 'flex-start',
+          gap: SECTION_GAP,
+          children: [contextSection(true), sessionSection(true)]
         })
       )
-    ]
-  );
+  });
 
   const work = createMemo(() => {
     const view = props.refs();
@@ -222,10 +269,7 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
           state: () => props.refs()?.states[refKey(item.ref)],
           width: () => props.width(),
           marquee: props.marquee,
-          right: () => {
-            const status = props.refs()?.states[refKey(item.ref)]?.status;
-            return status ? STATE_WORDS[status] : 'unknown';
-          }
+          selected: () => props.selectedRef() === refKey(item.ref)
         });
       }
     })
@@ -252,19 +296,20 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
       jsx('box', {
         flexShrink: 0,
         gap: 1,
-        children: [contextSection, sessionSection, workSection]
+        children: [sections, workSection]
       })
     ]
   });
 }
 
-type WorkLine = { kind: 'label'; text: string } | { kind: 'ref'; ref: Ref };
+/** One line of the preview's Work section: a ref row, or the label over mentioned refs. */
+export type WorkLine = { kind: 'label'; text: string } | { kind: 'ref'; ref: Ref };
 
 /**
  * Tracked refs with the issues each PR closes right under it, in the same columns, then
- * mentioned refs under a label.
+ * mentioned refs under a label. Each ref appears once, so its key names its row.
  */
-function workLines(view: SessionRefView): WorkLine[] {
+export function workLines(view: SessionRefView): WorkLine[] {
   const tracked = trackedRefs(view);
   const trackedKeys = new Set(tracked.map(refKey));
   const nestedKeys = new Set<string>();

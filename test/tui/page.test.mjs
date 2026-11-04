@@ -1,5 +1,6 @@
-import { afterEach, test } from 'bun:test';
+import { afterEach, mock, test } from 'bun:test';
 import assert from 'node:assert/strict';
+import * as childProcess from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -8,11 +9,21 @@ import { testRender } from '@opentui/solid';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import { createSignal, onCleanup } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import plugin from '../../dist/tui.js';
 import themeSource from '../fixtures/theme-opencode.json';
 
 // The host's defaults, whatever the developer's own cli.json says.
 process.env.OPENCODE_CONFIG_DIR = mkdtempSync(path.join(tmpdir(), 'super-sessions-cli-'));
+
+// The OS opener is the external boundary; record what it would open instead of launching a browser.
+const opened = [];
+mock.module('node:child_process', () => ({
+  ...childProcess,
+  spawn: (_command, args) => {
+    opened.push(args[0]);
+    return { on() {}, unref() {} };
+  }
+}));
+const { default: plugin } = await import('../../dist/tui.js');
 
 const NOW = Date.now();
 const MINUTE = 60_000;
@@ -33,6 +44,13 @@ const pr17 = {
   repo: 'mastra-ai/mastra',
   kind: 'pr',
   number: 17
+};
+const issue12 = {
+  provider: 'github',
+  host: 'github.com',
+  repo: 'mastra-ai/mastra',
+  kind: 'issue',
+  number: 12
 };
 const key = (ref) =>
   `${ref.provider}:${ref.host}/${ref.repo}/${ref.kind}/${ref.number}`.toLowerCase();
@@ -71,7 +89,10 @@ const fixtures = () => [
 
 const refViews = {
   running: {
-    links: [{ ref: pr4930, source: 'agent', linkedAt: 1 }],
+    links: [
+      { ref: pr4930, source: 'agent', linkedAt: 1 },
+      { ref: issue12, source: 'closes', linkedAt: 2, via: key(pr4930) }
+    ],
     branch: 'rspack-build',
     defaultBranch: 'main',
     branchRefs: [],
@@ -80,6 +101,11 @@ const refViews = {
         status: 'open',
         title: 'Migrate build to Rspack',
         url: 'https://github.com/mastra-ai/mastra/pull/4930'
+      },
+      [key(issue12)]: {
+        status: 'open',
+        title: 'Rspack build',
+        url: 'https://github.com/mastra-ai/mastra/issues/12'
       }
     }
   },
@@ -409,10 +435,10 @@ test('rows take a line per detail they have, with no gap between rows and one bl
   const { lines, row } = await mount(100);
   const frame = lines();
 
-  // Running has a branch and a PR, so it takes three lines.
+  // Running has refs, so it takes two lines. Its branch shows in the preview, never in the list.
   const running = row('Mastra build: Rollup to Rspack');
-  assert.match(frame[running + 1], /rspack-build\s*$/);
-  assert.match(frame[running + 2], /#4930 Migrate build to Rspack/);
+  assert.match(frame[running + 1], /#4930 Migrate build to Rspack/);
+  assert.ok(!frame.some((line) => line.includes('rspack-build')));
   // Both pins have neither: the second follows on the next line, then one blank line comes
   // before the Running header.
   const pinned = row('Homelab Mastra');
@@ -545,6 +571,22 @@ test('the preview pane shows only on wide terminals', async () => {
   const frame = wide.rendered.captureCharFrame();
   assert.match(frame, /\$ pnpm test --filter deployer/);
   assert.match(frame, /Rollup stays as a fallback\./, 'Markdown renders without its markup.');
+});
+
+test('right, down and enter open the second Work link of the selected session', async () => {
+  const { terminal, rendered } = await mount(140, 40);
+  rendered.mockInput.pressArrow('down');
+  rendered.mockInput.pressArrow('down');
+  await eventually(
+    rendered,
+    (frame) => frame.includes('Work') && frame.includes('#12 Rspack build')
+  );
+  rendered.mockInput.pressArrow('right');
+  rendered.mockInput.pressArrow('down');
+  rendered.mockInput.pressEnter();
+  await eventually(rendered, () => opened.length > 0);
+  assert.deepEqual(opened, ['https://github.com/mastra-ai/mastra/issues/12']);
+  assert.deepEqual(terminal.navigations, [], 'enter opened the link, not the session.');
 });
 
 test('space types into a non-empty search instead of peeking', async () => {

@@ -32,7 +32,7 @@ export interface Group {
 export type Line =
   | { kind: 'blank' }
   | { kind: 'header'; title: string }
-  | { kind: 'title' | 'branch' | 'refs'; session: SessionInfo };
+  | { kind: 'title' | 'refs'; session: SessionInfo };
 
 /** What the Done rule needs beyond refs. Fetched only for sessions that could be Done. */
 export interface DoneExtra {
@@ -154,32 +154,22 @@ export function rowsOf(groups: readonly Group[]): SessionInfo[] {
   return groups.flatMap((group) => group.sessions);
 }
 
-/** Which optional lines a session row has under its title. */
-export interface RowShape {
-  branch: boolean;
-  refs: boolean;
-}
-
 /**
- * Lays groups out as terminal lines. Each row is its title line plus a branch line and a refs
- * line when it has them. Rows follow each other with no gap, and one blank line comes before
- * every group after the first, like the host's session list.
+ * Lays groups out as terminal lines. Each row is its title line plus a refs line when
+ * `hasRefs` says so. Rows follow each other with no gap, and one blank line comes before every
+ * group after the first, like the host's session list.
  */
 export function layoutLines(
   groups: readonly Group[],
-  shape: (session: SessionInfo) => RowShape
+  hasRefs: (session: SessionInfo) => boolean
 ): Line[] {
   return groups.flatMap((group, index): Line[] => [
     ...(index > 0 ? [{ kind: 'blank' as const }] : []),
     ...(group.title === undefined ? [] : [{ kind: 'header' as const, title: group.title }]),
-    ...group.sessions.flatMap((session): Line[] => {
-      const { branch, refs } = shape(session);
-      return [
-        { kind: 'title', session },
-        ...(branch ? [{ kind: 'branch' as const, session }] : []),
-        ...(refs ? [{ kind: 'refs' as const, session }] : [])
-      ];
-    })
+    ...group.sessions.flatMap((session): Line[] => [
+      { kind: 'title', session },
+      ...(hasRefs(session) ? [{ kind: 'refs' as const, session }] : [])
+    ])
   ]);
 }
 
