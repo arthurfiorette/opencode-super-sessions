@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { existsSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import type { OpenCodeEvent, SessionInfo, SessionMessageInfo } from '@opencode/client';
 import { Plugin } from '@opencode/plugin';
+import { assistantText, shellRun, storedTexts, userPrompt } from '../../src/host/events.js';
+import {
+  listFilters,
+  projectScope,
+  regenerateTitle,
+  setArchived
+} from '../../src/host/session-api.js';
+import { shellCall } from '../../src/host/tool-hook.js';
+import { projectWorktrees, removeWorktree } from '../../src/host/worktree.js';
 import {
   ANSWER,
   createHost,
@@ -21,16 +31,10 @@ import {
 // that stops firing, or an API that changes meaning (merge instead of replace, a filter that no
 // longer matches), none of which a type or a user would notice until refs go missing.
 
-/** The `execute.after` payload, reduced to what src/server/detection.ts reads. */
-interface HookEvent {
-  tool: string;
-  sessionID: string;
-  input: unknown;
-  status: 'completed' | 'error';
-  result?: { output?: unknown };
-}
+// The tests read host payloads through the same src/host accessors the plugin uses, so a failure
+// here names the accessor to fix.
 
-const hooks: HookEvent[] = [];
+const hooks: Parameters<typeof shellCall>[0][] = [];
 const events = new Map<string, OpenCodeEvent>();
 let probe: Plugin.Context | undefined;
 
@@ -94,19 +98,15 @@ async function messages(sessionID: string): Promise<SessionMessageInfo[]> {
   return (await host.message.list({ sessionID, order: 'asc' })).data;
 }
 
-test('an agent shell call reaches execute.after as tool shell with the command and output detection reads', {
+test('an agent shell call reaches execute.after in the shape the shell hook reads', {
   timeout: 60_000
 }, async () => {
   const sessionID = await agentRun('hook', 'run the command');
-  const hook = hooks.find((item) => item.sessionID === sessionID);
-  assert.ok(hook, 'execute.after did not fire for the agent shell call');
-  assert.equal(hook.tool, 'shell');
-  assert.equal(hook.status, 'completed');
-  // src/server/detection.ts reads these four fields and drops the call when any is off.
-  assert.deepEqual(hook.input, { command: SHELL_COMMAND });
-  const output = (hook.result?.output ?? {}) as Record<string, unknown>;
-  assert.match(String(output.output), new RegExp(SHELL_OUTPUT));
-  assert.notEqual(output.status, 'running');
+  const calls = hooks.filter((item) => item.sessionID === sessionID).map(shellCall);
+  const call = calls.find((item) => item !== undefined);
+  assert.ok(call, 'no execute.after event read as a finished shell call');
+  assert.equal(call.command, SHELL_COMMAND);
+  assert.match(call.output, new RegExp(SHELL_OUTPUT));
 });
 
 test('the plugin tells every agent step, once, what it tracks without link_work', {
@@ -129,27 +129,22 @@ test('prompt and text events carry the text detection reads and the ids the back
   const prompt = 'Fix https://github.com/acme/widgets/issues/7 please';
   const sessionID = await agentRun('events', prompt);
 
-  const enqueued = await event(
-    'session.inbox.enqueued',
-    (item) => item.data.sessionID === sessionID
+  const prompted = userPrompt(
+    await event('session.inbox.enqueued', (item) => item.data.sessionID === sessionID)
   );
-  assert.equal(enqueued.data.item.type, 'user');
-  assert.equal(enqueued.data.item.type === 'user' && enqueued.data.item.payload.text, prompt);
-  const ended = await event('session.text.ended', (item) => item.data.sessionID === sessionID);
-  assert.equal(ended.data.text, ANSWER);
+  assert.equal(prompted?.text, prompt);
+  const answered = assistantText(
+    await event('session.text.ended', (item) => item.data.sessionID === sessionID)
+  );
+  assert.equal(answered.text, ANSWER);
 
-  // Live indexing keys a prompt by its inbox id and a text by `<assistant id>:<text ordinal>`;
-  // the backfill rebuilds those keys from `session.context`. A mismatch indexes everything twice.
-  const context: SessionMessageInfo[] = await host.sessions.context({ sessionID });
-  const user = context.find((message) => message.type === 'user');
-  assert.equal(user?.id, enqueued.data.inboxID);
-  assert.equal(user?.type === 'user' && user.text, prompt);
-  const answer = context.find((message) => message.id === ended.data.assistantMessageID);
-  assert.ok(answer?.type === 'assistant', 'session.context has no message with the text event id');
-  const texts = answer.content.filter((part) => part.type === 'text');
-  // The answer follows a reasoning part, so its content index is 1 and its text ordinal is 0.
-  assert.equal(answer.content.indexOf(texts[ended.data.ordinal] as never), 1);
-  assert.equal(texts[ended.data.ordinal]?.text, ANSWER);
+  // The backfill rebuilds the index from `session.context`; a key that differs from the live one
+  // indexes the same text twice. The answer follows a reasoning part, so a key counting every
+  // part instead of text parts only would differ here.
+  const stored = storedTexts(sessionID, await host.sessions.context({ sessionID }));
+  const byKey = new Map(stored.map((entry) => [entry.key, entry.text]));
+  assert.equal(byKey.get(prompted.key), prompt);
+  assert.equal(byKey.get(answered.key), ANSWER);
 });
 
 test('message.list returns the transcript shapes the preview draws, in pages that join up', {
@@ -207,9 +202,11 @@ test('a user ! command publishes session.shell.ended with its command and output
 }, async () => {
   const session = await host.sessions.create({ location: { directory: directory('bang') } });
   await host.sessions.shell({ sessionID: session.id, command: 'echo bang-output' });
-  const ended = await event('session.shell.ended', (item) => item.data.sessionID === session.id);
-  assert.equal(ended.data.shell.command, 'echo bang-output');
-  assert.match(ended.data.output.output, /bang-output/);
+  const run = shellRun(
+    await event('session.shell.ended', (item) => item.data.sessionID === session.id)
+  );
+  assert.equal(run.command, 'echo bang-output');
+  assert.match(run.output, /bang-output/);
   // The shell hook and this event both link `created` refs; firing both would handle a run twice.
   assert.equal(
     hooks.some((item) => item.sessionID === session.id),
@@ -248,11 +245,12 @@ test('the HTTP client archives and restores, and the archived filter follows', a
       (item: SessionInfo) => item.id
     );
 
-  await host.sessions.update({ sessionID: session.id, archived: true });
+  // The SDK host is the same HTTP client the TUI's `context.client` is.
+  await setArchived(host, session.id, true);
   assert.equal(typeof (await host.sessions.get({ sessionID: session.id })).time.archived, 'number');
   assert.deepEqual(await listed(true), [session.id]);
   assert.deepEqual(await listed(false), []);
-  await host.sessions.update({ sessionID: session.id, archived: false });
+  await setArchived(host, session.id, false);
   assert.deepEqual(await listed(false), [session.id]);
   assert.deepEqual(await listed(true), []);
 });
@@ -268,8 +266,7 @@ test('the HTTP client regenerates a title from an empty one and publishes rename
     'session.renamed',
     (item) => item.data.sessionID === sessionID && item.data.title === 'Manual title'
   );
-  // ctrl+t in the browser sends an empty title to ask the host's title agent for a new one.
-  await host.sessions.update({ sessionID, title: '' });
+  await regenerateTitle(host, sessionID);
   await until(
     async () => (await host.sessions.get({ sessionID })).title,
     (title) => title === GENERATED_TITLE
@@ -299,18 +296,9 @@ test('session.list scopes by project subpath, directory, title, root sessions an
       .map((item: SessionInfo) => item.id)
       .sort();
 
-  // "This project" in the browser: the host's `global` project filters by directory, any other
-  // by project id and the directory's subpath inside it (src/page/model.ts `searchScope`, after
-  // the built-in list in packages/tui/src/component/dialog-session-list.tsx). A loose directory
-  // gets a project of its own in 2.2.5, so the subpath there is empty.
-  const scope = async (target: string) => {
-    const info = await host.location.get({ location: { directory: target } });
-    if (info.project.id === 'global') return { directory: info.directory };
-    return {
-      project: info.project.id,
-      subpath: path.relative(info.project.directory, info.directory).replaceAll('\\', '/')
-    };
-  };
+  // "This project" in the browser lists exactly the sessions of that directory.
+  const scope = async (target: string) =>
+    listFilters(projectScope(await host.location.get({ location: { directory: target } })));
   assert.deepEqual(await ids(await scope(repo)), [top.id]);
   assert.deepEqual(await ids(await scope(app)), [nested.id]);
   assert.deepEqual(await ids(await scope(loose)), [other.id]);
@@ -338,6 +326,42 @@ test('session.list scopes by project subpath, directory, title, root sessions an
     [...first.data, ...second.data].map((item) => item.id).sort(),
     [top.id, nested.id].sort()
   );
+});
+
+test('worktree list marks the main checkout, and remove without force keeps a dirty worktree', async () => {
+  assert.ok(probe);
+  const repo = directory('cleanup-repo');
+  git(repo, 'init', '-q');
+  // The project id is the root commit, so the message keeps it apart from the other test repo.
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'cleanup init');
+  const { project } = await host.location.get({ location: { directory: repo } });
+  const created = await host.worktree.create({ projectID: project.id, name: 'contract' });
+  // Temp paths reach the host through symlinks on macOS (/var is /private/var).
+  const listed = async () =>
+    (await projectWorktrees(probe as Plugin.Context, project.id)).map((entry) => ({
+      directory: realpathSync(entry.directory),
+      main: entry.main
+    }));
+  const worktree = realpathSync(created.directory);
+  assert.deepEqual(
+    (await listed()).sort((a, b) => Number(b.main) - Number(a.main)),
+    [
+      { directory: realpathSync(repo), main: true },
+      { directory: worktree, main: false }
+    ]
+  );
+
+  // Cleanup removes without force and counts on git refusing a worktree with local files.
+  writeFileSync(path.join(worktree, 'notes.txt'), 'keep me');
+  await assert.rejects(removeWorktree(probe, project.id, created.directory));
+  assert.ok(existsSync(path.join(worktree, 'notes.txt')));
+  rmSync(path.join(worktree, 'notes.txt'));
+  await removeWorktree(probe, project.id, created.directory);
+  assert.deepEqual(
+    (await listed()).map((entry) => entry.directory),
+    [realpathSync(repo)]
+  );
+  assert.equal(existsSync(worktree), false);
 });
 
 /** Runs git without the developer's hooks, signing or identity. */

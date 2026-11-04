@@ -1,9 +1,9 @@
-import path from 'node:path';
 import type { LocationPublicInfo, LocationRef } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import type { Route } from '@opencode/plugin/tui/context';
 import { createEffect, createMemo, createRoot, createSignal, on } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
+import { listFilters, projectScope } from '../host/session-api.js';
 import type { Pins } from '../pins.js';
 import { type SearchScope, SuperSessions } from '../rpc.js';
 import { tuiSettingsFor } from '../settings/store.js';
@@ -67,24 +67,9 @@ export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: 
     }
     return info;
   };
-  // Same rule as the built-in list: the global project (no repository) filters by directory,
-  // a real project by project id and the subpath of the directory inside it.
-  const searchScope = async (target: PageScope): Promise<SearchScope> => {
-    if (target === 'all') return { type: 'all' };
-    const info = await resolveLocation();
-    if (info.project.id === 'global') return { type: 'directory', directory: info.directory };
-    return {
-      type: 'project',
-      project: info.project.id,
-      subpath: path.relative(info.project.directory, info.directory).replaceAll('\\', '/')
-    };
-  };
-  const listScope = async (target: PageScope) => {
-    const value = await searchScope(target);
-    if (value.type === 'project') return { project: value.project, subpath: value.subpath };
-    if (value.type === 'directory') return { directory: value.directory };
-    return {};
-  };
+  const searchScope = async (target: PageScope): Promise<SearchScope> =>
+    target === 'all' ? { type: 'all' } : projectScope(await resolveLocation());
+  const listScope = async (target: PageScope) => listFilters(await searchScope(target));
   const rpc = () => context.client.rpc(SuperSessions);
   const rpcOptions = () => ({ location: { directory: location().directory } });
   const running = (sessionID: string) =>

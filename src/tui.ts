@@ -3,6 +3,14 @@ import { Plugin } from '@opencode/plugin/tui';
 import type { KeymapCommand } from '@opencode/plugin/tui/context';
 import { z } from 'zod';
 import { type Options, parseOptions } from './config.js';
+import {
+  CLASSIC_LIST,
+  DIALOG_MODE,
+  OVER_HOST,
+  quickSwitchCommand,
+  SESSION_LIST
+} from './host/keymap.js';
+import { setArchived } from './host/session-api.js';
 import { installBrowser } from './page/page.js';
 import { createPins, type Pins } from './pins.js';
 import { type Availability, SuperSessions } from './rpc.js';
@@ -50,18 +58,18 @@ export default Plugin.define({
     const toggleBrowser = () => {
       // The palette and other host dialogs would otherwise stay open above the browser. Only
       // when one is open: clearing also refocuses whatever the last dialog took focus from.
-      if (context.keymap.mode.current() === 'modal') context.ui.dialog.clear();
+      if (context.keymap.mode.current() === DIALOG_MODE) context.ui.dialog.clear();
       browser.toggle();
     };
 
     const commands: KeymapCommand[] = [
       {
-        id: 'session.list',
+        id: SESSION_LIST,
         title: 'Switch session',
         group: 'Session',
         palette: true,
         slash: { name: 'sessions', aliases: ['resume', 'continue'] },
-        run: (input) => (input?.trim() === 'classic' ? false : toggleBrowser())
+        run: (input) => (input?.trim() === CLASSIC_LIST ? false : toggleBrowser())
       },
       ...quickSwitch(context, pins),
       {
@@ -70,7 +78,7 @@ export default Plugin.define({
         group: 'Session',
         palette: true,
         slash: { name: 'sessions-classic' },
-        run: () => context.keymap.dispatch('session.list', 'classic')
+        run: () => context.keymap.dispatch(SESSION_LIST, CLASSIC_LIST)
       },
       {
         id: 'super-sessions.archive.current',
@@ -116,7 +124,7 @@ export default Plugin.define({
       const suffix = settings.tui.archiveSuffix();
       return {
         mode: 'global',
-        priority: 1,
+        priority: OVER_HOST,
         commands: [
           ...commands,
           {
@@ -162,7 +170,7 @@ function describeOptionsError(error: unknown): string {
 /** Quick switch commands that follow the plugin's pins instead of the host's. */
 function quickSwitch(context: Plugin.Context, pins: Pins): KeymapCommand[] {
   return Array.from({ length: 9 }, (_, index) => ({
-    id: `session.quick_switch.${index + 1}`,
+    id: quickSwitchCommand(index + 1),
     title: `Switch to pinned session ${index + 1}`,
     group: 'Session',
     // The host disables quick switch while tabs are on; tabs own those keys then.
@@ -191,7 +199,7 @@ async function setCurrentArchived(
   // A subagent view belongs to its root session; archiving the child alone would hide nothing.
   const sessionID = context.data.session.root(route.sessionID);
   try {
-    await context.client.session.update({ sessionID, archived });
+    await setArchived(context.client, sessionID, archived);
   } catch {
     context.ui.toast.show({
       message: archived ? 'Could not archive the session.' : 'Could not restore the session.',
@@ -231,7 +239,7 @@ function stripSuffix(title: string, suffix: string): string {
 /** Archives a session and sets its title in one update, so the rename does not fire twice. */
 async function archiveWithTitle(context: Plugin.Context, sessionID: string, title: string) {
   try {
-    await context.client.session.update({ sessionID, title, archived: true });
+    await setArchived(context.client, sessionID, true, title);
     context.ui.toast.show({ message: `Archived "${title}"`, variant: 'success' });
   } catch {
     context.ui.toast.show({ message: 'Could not archive the session.', variant: 'error' });
@@ -262,11 +270,7 @@ async function archiveMarked(context: Plugin.Context, suffix: string) {
   // only makes partial failures harder to read.
   for (const session of marked) {
     try {
-      await context.client.session.update({
-        sessionID: session.id,
-        title: stripSuffix(session.title ?? '', suffix),
-        archived: true
-      });
+      await setArchived(context.client, session.id, true, stripSuffix(session.title ?? '', suffix));
     } catch {
       failed++;
     }

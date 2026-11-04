@@ -26,6 +26,9 @@ import {
 } from 'solid-js';
 import { openUrl, refUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
+import { HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
+import { regenerateTitle, setArchived } from '../host/session-api.js';
+import { dialogTheme, sessionBackground } from '../host/theme.js';
 import { createMarquee } from '../marquee.js';
 import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
@@ -43,7 +46,6 @@ import {
   refsLine,
   runningColor,
   type Segment,
-  sessionBackground,
   titleLine,
   titleRoom
 } from './row.js';
@@ -117,7 +119,7 @@ export default function SessionBrowser(props: PageProps) {
   const data = model.data;
   const memory = model.memory;
   // The host draws its dialogs on this surface; the plugin theme resolves the same tokens.
-  const theme = () => context.theme.surface('dialog');
+  const theme = () => dialogTheme(context);
   const client = context.client;
   const [panelWidth, setPanelWidth] = createSignal(0);
   const [leftWidth, setLeftWidth] = createSignal(0);
@@ -302,7 +304,7 @@ export default function SessionBrowser(props: PageProps) {
     // each update, while the host's synced copy may still be catching up.
     const archived = session.time.archived === undefined;
     try {
-      await client.session.update({ sessionID: session.id, archived });
+      await setArchived(client, session.id, archived);
     } catch {
       toast(
         archived ? 'Could not archive the session.' : 'Could not restore the session.',
@@ -346,8 +348,7 @@ export default function SessionBrowser(props: PageProps) {
     const session = selected();
     if (!session) return;
     try {
-      // An empty title asks the server to generate a new one.
-      await client.session.update({ sessionID: session.id, title: '' });
+      await regenerateTitle(client, session.id);
       toast('Regenerating title');
     } catch {
       toast('Could not regenerate the title.', 'error');
@@ -386,7 +387,7 @@ export default function SessionBrowser(props: PageProps) {
     let failed = 0;
     for (const session of done) {
       try {
-        await client.session.update({ sessionID: session.id, archived: true });
+        await setArchived(client, session.id, true);
         controller.archived(session.id, true, Date.now());
         if (settings.closeTabOnArchive()) context.ui.tabs.close(session.id);
       } catch {
@@ -529,10 +530,10 @@ export default function SessionBrowser(props: PageProps) {
       run: () => void model.toggleScope().catch(() => {})
     },
     { bind: 'ctrl+s', title: 'Archive or restore', run: () => void archive() },
-    { id: 'session.rename', title: 'Rename session', run: () => void rename() },
-    { id: 'session.delete', title: 'Delete session', run: () => void remove() },
+    { id: HOST_COMMANDS.rename, title: 'Rename session', run: () => void rename() },
+    { id: HOST_COMMANDS.delete, title: 'Delete session', run: () => void remove() },
     {
-      id: 'session.pin.toggle',
+      id: HOST_COMMANDS.pin,
       title: 'Pin or unpin session',
       run: () => {
         const session = selected();
@@ -569,7 +570,7 @@ export default function SessionBrowser(props: PageProps) {
     // Like the host's dialogs, the exit keys clear the search first and close on the next press;
     // quitting OpenCode from a list is never what the user meant.
     {
-      id: 'app.exit',
+      id: HOST_COMMANDS.exit,
       title: 'Close',
       run: () => {
         if (memory.query.length === 0) return props.close();
@@ -578,7 +579,7 @@ export default function SessionBrowser(props: PageProps) {
       }
     }
   ];
-  context.keymap.layer(() => ({ mode: MODE, priority: 1, commands }));
+  context.keymap.layer(() => ({ mode: MODE, priority: OVER_HOST, commands }));
 
   // The mode turns off the prompt and every other base-mode layer while the browser is open.
   onCleanup(context.keymap.mode.push(MODE));
@@ -666,7 +667,7 @@ export default function SessionBrowser(props: PageProps) {
       marker: markerOf(session),
       title:
         deleting() === session.id
-          ? `Press ${shortcut('session.delete', 'ctrl+d')} again to delete`
+          ? `Press ${shortcut(HOST_COMMANDS.delete, 'ctrl+d')} again to delete`
           : info.title || 'Untitled session',
       label: matchLabel(reason(session), data.refs[session.id]),
       right:
@@ -1080,13 +1081,13 @@ export default function SessionBrowser(props: PageProps) {
       ['peek', 'space'],
       [memory.view === 'archived' ? 'restore' : 'archive', 'ctrl+s'],
       ['view', 'tab/shift+tab'],
-      ['rename', shortcut('session.rename', 'ctrl+r')],
+      ['rename', shortcut(HOST_COMMANDS.rename, 'ctrl+r')],
       ['retitle', shortcut('super-sessions.retitle', 'ctrl+t')],
       [
         current && props.pins.has(current.id) ? 'unpin' : 'pin',
-        shortcut('session.pin.toggle', 'ctrl+f')
+        shortcut(HOST_COMMANDS.pin, 'ctrl+f')
       ],
-      ['delete', shortcut('session.delete', 'ctrl+d')]
+      ['delete', shortcut(HOST_COMMANDS.delete, 'ctrl+d')]
     ];
     if (memory.view === 'done' && !data.search)
       items.push(['archive all', shortcut('super-sessions.archive.done', 'ctrl+y')]);

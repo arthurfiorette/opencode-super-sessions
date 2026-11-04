@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
 import type { Plugin } from '@opencode/plugin/tui';
+import { hostSessionStatePath } from './host/files.js';
 
 /** Pinned sessions owned by this plugin, independent of the host's own pin list. */
 export interface Pins {
@@ -52,12 +51,6 @@ export function createPins(context: Plugin.Context): Pins {
       }),
     dispose: off
   };
-}
-
-/** Path of the host TUI's `session.json`, honoring `XDG_STATE_HOME` like the host does. */
-export function hostSessionStatePath(env: NodeJS.ProcessEnv = process.env): string {
-  const state = env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
-  return path.join(state, 'opencode', 'session.json');
 }
 
 /**

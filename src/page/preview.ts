@@ -1,6 +1,6 @@
 import type { SessionInfo, SessionMessageInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
-import { generateSyntax, type ResolvedTheme } from '@opencode/theme/tui';
+import type { ResolvedTheme } from '@opencode/theme/tui';
 import { type MouseEvent, RGBA, type ScrollBoxRenderable, SyntaxStyle } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import {
@@ -15,6 +15,7 @@ import {
 import { createStore } from 'solid-js/store';
 import { useCliSettings } from '../cli-settings.js';
 import type { Options } from '../config.js';
+import { markdownStyles } from '../host/theme.js';
 import { createMarquee } from '../marquee.js';
 import type { SessionRefView } from '../rpc.js';
 import { tuiSettingsFor } from '../settings/store.js';
@@ -360,7 +361,7 @@ function createSyntax(context: Plugin.Context, theme: () => ResolvedTheme) {
   return createMemo(() => {
     const previous = current;
     const owner = context.renderer.nativeScene;
-    const markdown = generateSyntax(theme(), owner);
+    const markdown = markdownStyles(context, theme());
     const muted = theme().text.muted;
     const thinking = SyntaxStyle.fromStyles(
       Object.fromEntries(

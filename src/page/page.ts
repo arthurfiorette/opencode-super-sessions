@@ -10,6 +10,7 @@ import {
   on
 } from 'solid-js';
 import type { Options } from '../config.js';
+import { BASE_MODE, DIALOG_MODE, OVER_PROMPT } from '../host/keymap.js';
 import type { Pins } from '../pins.js';
 import { type BrowserModel, createBrowserModel } from './model.js';
 import { moveSelection } from './state.js';
@@ -43,10 +44,6 @@ export interface Browser {
   dispose(): void;
 }
 
-/** Host keymap mode of its dialogs. */
-const DIALOG_MODE = 'modal';
-/** Keymap mode with no dialog, popup or form claiming the keys. */
-const BASE_MODE = 'base';
 // Holding an arrow while peeking moves the cursor at key-repeat speed; only the last stop shows.
 const PEEK_DELAY = 150;
 
@@ -165,17 +162,14 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
   });
 
   // Wins over the host's `session.interrupt` and `prompt.autocomplete.hide` on esc, and over
-  // prompt history and `session.parent` on the arrows, while peeking. The keymap tries layers by
-  // priority, then the most recently registered first, and the prompt's history layers sit at
-  // priority 1 and register again on every cursor move, so a priority-1 layer here always lost
-  // `up` to `prompt.history.previous`. Priority 2 puts this layer first; with text in the prompt
-  // the arrows return false and fall through to the prompt. Tradeoff: esc in a running peeked
-  // session returns to the list instead of interrupting it; sending a message or opening the
-  // session with enter ends the peek and gives esc back to the host. Every run stays
+  // prompt history and `session.parent` on the arrows, while peeking (see OVER_PROMPT). With text
+  // in the prompt the arrows return false and fall through to the prompt. Tradeoff: esc in a
+  // running peeked session returns to the list instead of interrupting it; sending a message or
+  // opening the session with enter ends the peek and gives esc back to the host. Every run stays
   // synchronous, because the keymap treats a returned Promise as handled.
   context.keymap.layer(() => ({
     mode: 'global',
-    priority: 2,
+    priority: OVER_PROMPT,
     commands: [
       {
         id: 'super-sessions.peek.return',

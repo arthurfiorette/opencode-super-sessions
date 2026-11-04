@@ -1,9 +1,9 @@
 import { type FSWatcher, readFileSync, watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { onCleanup } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
+import { cliConfigPath } from './host/files.js';
 
 // The host's TUI settings, which the plugin API does not expose. Read-only: the file belongs to
 // the host, which writes it from its own commands ("Toggle session scrollbar" and the like).
@@ -49,18 +49,6 @@ const CHOICES = {
 
 // The host saves through a temp file and a rename, which fires several events per save.
 const RELOAD_DELAY = 50;
-
-/**
- * `cli.json` in the host's config directory: `OPENCODE_CONFIG_DIR`, else
- * `$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode` (packages/util/src/global-roots.ts and
- * the `Global.layerWith` override in packages/cli/src/index.ts). The host reads no `cli.jsonc`.
- */
-export function cliConfigPath(env: NodeJS.ProcessEnv = process.env): string {
-  const directory =
-    env.OPENCODE_CONFIG_DIR ||
-    path.join(env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'opencode');
-  return path.join(directory, 'cli.json');
-}
 
 /**
  * Settings from the file's text (undefined when there is no file) with the

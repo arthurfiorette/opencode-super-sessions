@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Plugin } from '@opencode/plugin/tui';
 import { createEffect, createRoot, createSignal, on } from 'solid-js';
+import { setArchived } from '../host/session-api.js';
 import type { Pins } from '../pins.js';
 import { SuperSessions, type WorktreeDecision } from '../rpc.js';
 import type { ServerSettingsClient, TuiSettings } from './store.js';
@@ -108,7 +109,7 @@ export function installMaintenance(
         try {
           // The archive path that works: the TUI's HTTP client. The server plugin's
           // `session.update` ignores `archived`.
-          await context.client.session.update({ sessionID: session.sessionID, archived: true });
+          await setArchived(context.client, session.sessionID, true);
           archived.push(session.sessionID);
           if (tui.closeTabOnArchive()) context.ui.tabs.close(session.sessionID);
         } catch {
@@ -216,7 +217,7 @@ export function installMaintenance(
       let failed = 0;
       for (const sessionID of ids) {
         try {
-          await context.client.session.update({ sessionID, archived: false });
+          await setArchived(context.client, sessionID, false);
         } catch {
           failed++;
         }

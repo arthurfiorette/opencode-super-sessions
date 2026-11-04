@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { SessionInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin';
 import type { RpcHandlers, RpcRegistration } from '@opencode/plugin/promise/rpc';
+import { isBusy } from '../host/session-api.js';
+import { projectWorktrees, removeWorktree } from '../host/worktree.js';
 import { refKey } from '../refs/ref.js';
 import { doneAt, isDone, trackedRefs } from '../refs/summary.js';
 import type { SessionRefView, SuperSessions, WorktreeDecision } from '../rpc.js';
@@ -397,13 +399,7 @@ function createSweeper(runtime: Runtime): Sweeper {
         continue;
       }
       try {
-        // Never forced: git itself refuses a worktree with modified or untracked files, which
-        // backs up the status check above if a file appears in between.
-        await context.worktree.remove({
-          projectID: entry.projectID,
-          directory: decision.directory,
-          force: false
-        });
+        await removeWorktree(context, entry.projectID, decision.directory);
         removed.push(decision.directory);
         log(`Removed worktree ${decision.directory} (${decision.reason})`);
       } catch (error) {
@@ -570,15 +566,6 @@ function readCleanupState(value: unknown): CleanupState {
   };
 }
 
-/**
- * Whether a session is running: its last execution started after the last one ended. While it
- * runs, `time.idle` still holds the previous end (packages/schema/src/session.ts).
- */
-function isBusy(info: SessionInfo): boolean {
-  const busy = info.time.busy;
-  return busy !== undefined && (info.time.idle === undefined || busy > info.time.idle);
-}
-
 /** Every session, archived and children included, newest first, following list cursors. */
 async function listSessions(context: Plugin.Context): Promise<SessionInfo[]> {
   const sessions: SessionInfo[] = [];
@@ -612,11 +599,11 @@ async function listWorktrees(
 ): Promise<KnownWorktree[]> {
   const result: KnownWorktree[] = [];
   for (const projectID of projects) {
-    const entries = await context.worktree.list({ projectID }).catch((error: unknown) => {
+    const entries = await projectWorktrees(context, projectID).catch((error: unknown) => {
       warn(`Listing worktrees of ${projectID} failed`, error);
       return [];
     });
-    const root = entries.find((entry) => entry.strategy === undefined)?.directory;
+    const root = entries.find((entry) => entry.main)?.directory;
     const base =
       root === undefined
         ? undefined
@@ -625,7 +612,7 @@ async function listWorktrees(
       result.push({
         projectID,
         directory: entry.directory,
-        root: entry.strategy === undefined,
+        root: entry.main,
         ...(base === undefined ? {} : { base })
       });
     }

@@ -1,3 +1,4 @@
+import { gitIn } from '../host/git.js';
 import { type Runner, run } from '../process.js';
 import type { CleanupRule, ServerSettings, WorktreeDecision } from '../rpc.js';
 
@@ -6,9 +7,6 @@ import type { CleanupRule, ServerSettings, WorktreeDecision } from '../rpc.js';
 
 const DAY = 24 * 60 * 60_000;
 const GIT_TIMEOUT_MS = 10_000;
-// No credential prompts, and no index refresh that could fight the agent's git commands for
-// `index.lock` (same as src/repo.ts).
-const GIT_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
 
 /** What a session using a worktree contributes to the decision. */
 export interface WorktreeSession {
@@ -199,8 +197,7 @@ export async function readWorktreeGit(
   base: string | undefined,
   runner: Runner = run
 ): Promise<WorktreeGit> {
-  const git = (...args: string[]) =>
-    runner('git', ['-C', directory, ...args], { timeoutMs: GIT_TIMEOUT_MS, env: GIT_ENV });
+  const git = gitIn(runner, directory, GIT_TIMEOUT_MS);
   // `--untracked-files=all` so a new directory of files is not reported as one line that a
   // reader might take for a file; no `--ignored`, since ignored files never keep a worktree.
   const status = await git('status', '--porcelain=v1', '--untracked-files=all');
@@ -227,8 +224,7 @@ export async function defaultBranchRef(
   remote: { remote?: string | undefined; defaultBranch?: string | undefined },
   runner: Runner = run
 ): Promise<string | undefined> {
-  const git = (...args: string[]) =>
-    runner('git', ['-C', root, ...args], { timeoutMs: GIT_TIMEOUT_MS, env: GIT_ENV });
+  const git = gitIn(runner, root, GIT_TIMEOUT_MS);
   if (remote.remote !== undefined && remote.defaultBranch !== undefined) {
     const ref = `refs/remotes/${remote.remote}/${remote.defaultBranch}`;
     if ((await git('rev-parse', '--verify', '--quiet', ref)).code === 0) return ref;
