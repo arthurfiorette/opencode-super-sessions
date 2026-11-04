@@ -11,6 +11,8 @@ import {
   onMount,
   untrack
 } from 'solid-js';
+import { DIALOG_MODE } from '../host/keymap.js';
+import { dialogTheme } from '../host/theme.js';
 import { displayValue, filterRows, SETTINGS, type SettingRow, stepValue } from './definitions.js';
 import type { SettingsDialogProps } from './install.js';
 
@@ -48,7 +50,7 @@ function layout(rows: readonly SettingRow[]): Line[] {
 /** The Super Sessions settings dialog, rendered inside the host's dialog panel. */
 export default function SettingsDialog(props: SettingsDialogProps) {
   const context = props.context;
-  const theme = () => context.theme.surface('dialog');
+  const theme = () => dialogTheme(context);
   const [terminalHeight, setTerminalHeight] = createSignal(context.renderer.height);
   const onResize = () => setTerminalHeight(context.renderer.height);
   context.renderer.on('resize', onResize);
@@ -158,7 +160,7 @@ export default function SettingsDialog(props: SettingsDialogProps) {
     { bind: 'right', title: 'Next value', group: 'Settings', run: () => void change(1) }
   ];
   // The host's dialog pushes the "modal" mode; created in the component, so it closes with it.
-  context.keymap.layer(() => ({ mode: 'modal', commands }));
+  context.keymap.layer(() => ({ mode: DIALOG_MODE, commands }));
 
   onMount(() => {
     // The host focuses its search field one tick after mount; doing it now loses to the

@@ -10,7 +10,6 @@ export const PREVIEW_WIDTHS = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6] as const;
 
 export const tuiValuesSchema = z.strictObject({
   scope: z.enum(['project', 'all']),
-  branchLine: z.boolean(),
   refLine: z.boolean(),
   /** `auto` follows the host's `animations` setting. */
   titleScroll: z.enum(['auto', 'on', 'off']),
@@ -19,7 +18,9 @@ export const tuiValuesSchema = z.strictObject({
   previewWidth: z.number().min(0.2).max(0.7),
   closeTabOnArchive: z.boolean(),
   /** Null turns suffix archiving off. */
-  archiveSuffix: z.string().min(1).max(10).nullable()
+  archiveSuffix: z.string().min(1).max(10).nullable(),
+  /** Take over the session list and the peek keys even on a host newer than TESTED_UP_TO. */
+  untestedHosts: z.boolean()
 });
 
 export type TuiValues = z.output<typeof tuiValuesSchema>;
@@ -28,13 +29,13 @@ export type TuiValues = z.output<typeof tuiValuesSchema>;
 export function tuiDefaults(options: Options): TuiValues {
   return {
     scope: options.scope,
-    branchLine: options.rows.branch,
     refLine: options.rows.refs,
     titleScroll: options.titleScroll,
     previewPane: options.preview,
     previewWidth: options.previewWidth,
     closeTabOnArchive: options.closeTabOnArchive,
-    archiveSuffix: options.archiveSuffix ?? null
+    archiveSuffix: options.archiveSuffix ?? null,
+    untestedHosts: options.untestedHosts
   };
 }
 
@@ -101,15 +102,6 @@ export const SETTINGS: readonly SettingRow[] = [
     values: ['project', 'all'],
     labels: ['this project', 'all projects'],
     keywords: ['projects', 'filter']
-  },
-  {
-    side: 'tui',
-    key: 'branchLine',
-    group: 'List',
-    title: 'Branch line',
-    description: 'Whether rows show the branch when it is not the default branch',
-    ...onOff,
-    keywords: ['git']
   },
   {
     side: 'tui',
@@ -282,6 +274,16 @@ export const SETTINGS: readonly SettingRow[] = [
     title: 'Run cleanup now',
     description: 'Lists what the rules above would remove and asks before removing anything',
     keywords: ['worktree', 'dry run', 'clean']
+  },
+  {
+    side: 'tui',
+    key: 'untestedHosts',
+    group: 'Compatibility',
+    title: 'Use on untested OpenCode versions',
+    description:
+      'Whether the browser replaces the session list and takes the peek keys on an OpenCode release newer than the one this plugin was tested with',
+    ...onOff,
+    keywords: ['version', 'upgrade', 'takeover']
   }
 ];
 

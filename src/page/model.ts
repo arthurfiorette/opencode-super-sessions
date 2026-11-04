@@ -1,11 +1,12 @@
-import path from 'node:path';
 import type { LocationPublicInfo, LocationRef } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import type { Route } from '@opencode/plugin/tui/context';
-import { createMemo, createRoot, createSignal } from 'solid-js';
+import { createEffect, createMemo, createRoot, createSignal, on } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
+import { listFilters, projectScope } from '../host/session-api.js';
 import type { Pins } from '../pins.js';
 import { type SearchScope, SuperSessions } from '../rpc.js';
+import { tuiSettingsFor } from '../settings/store.js';
 import {
   createPageController,
   type Group,
@@ -25,17 +26,31 @@ const FRESH_FOR = 30_000;
 /**
  * Sessions, refs and browser state shared by the overlay and the peek keys. It lives as long as
  * the plugin, so reopening the browser draws the cached lists at once and refreshes them in the
- * background.
+ * background. `onError` gets errors from the shared list memos, which live in a root of their own
+ * and so outside the view's error boundary.
  */
-export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: () => boolean) {
+export function createBrowserModel(
+  context: Plugin.Context,
+  pins: Pins,
+  isOpen: () => boolean,
+  onError: (error: unknown) => void
+) {
   const client = context.client;
   const [memory, setMemory] = context.storage.memory<PageMemory>('page', {
     initial: { query: '', view: 'active', selected: undefined, scroll: 0 }
   });
-  const [prefs, setPrefs] = context.storage.store('page-prefs', {
-    initial: { allProjects: false }
+  const settings = tuiSettingsFor(context);
+  // ctrl+a stores an override here; without one the "Default scope" setting decides.
+  const [prefs, setPrefs] = context.storage.store<{ allProjects?: boolean }>('page-prefs', {
+    initial: {}
   });
-  const scope = (): PageScope => (prefs.allProjects ? 'all' : 'project');
+  const allProjects = () => prefs.allProjects ?? settings.scope() === 'all';
+  const scope = (): PageScope => (allProjects() ? 'all' : 'project');
+  /** Flips the scope for this and later opens, until the default scope setting changes. */
+  const toggleScope = () =>
+    setPrefs((draft) => {
+      draft.allProjects = !allProjects();
+    });
   const [origin, setOrigin] = createSignal<Route>({ type: 'home' });
   const [now, setNow] = createSignal(Date.now());
 
@@ -58,24 +73,9 @@ export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: 
     }
     return info;
   };
-  // Same rule as the built-in list: the global project (no repository) filters by directory,
-  // a real project by project id and the subpath of the directory inside it.
-  const searchScope = async (target: PageScope): Promise<SearchScope> => {
-    if (target === 'all') return { type: 'all' };
-    const info = await resolveLocation();
-    if (info.project.id === 'global') return { type: 'directory', directory: info.directory };
-    return {
-      type: 'project',
-      project: info.project.id,
-      subpath: path.relative(info.project.directory, info.directory).replaceAll('\\', '/')
-    };
-  };
-  const listScope = async (target: PageScope) => {
-    const value = await searchScope(target);
-    if (value.type === 'project') return { project: value.project, subpath: value.subpath };
-    if (value.type === 'directory') return { directory: value.directory };
-    return {};
-  };
+  const searchScope = async (target: PageScope): Promise<SearchScope> =>
+    target === 'all' ? { type: 'all' } : projectScope(await resolveLocation());
+  const listScope = async (target: PageScope) => listFilters(await searchScope(target));
   const rpc = () => context.client.rpc(SuperSessions);
   const rpcOptions = () => ({ location: { directory: location().directory } });
   const running = (sessionID: string) =>
@@ -136,19 +136,37 @@ export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: 
   );
   const [data, setData] = createStore<PageData>(structuredClone(controller.snapshot()));
 
-  const groupsFor = (view: PageView) =>
-    groupSessions({
-      view,
-      sessions: view === 'archived' ? data.archived : data.active,
-      refs: data.refs,
-      extra: data.extra,
-      running,
-      pins: pins.ids(),
-      now: now()
-    });
+  /** Groups of one view. Reads the host's run state, so a host change can throw here. */
+  const groupsFor = (view: PageView): Group[] => {
+    try {
+      return groupSessions({
+        view,
+        sessions: view === 'archived' ? data.archived : data.active,
+        refs: data.refs,
+        extra: data.extra,
+        running,
+        pins: pins.ids(),
+        now: now()
+      });
+    } catch (error) {
+      onError(error);
+      return [];
+    }
+  };
   // The memos get a root of their own. Only they live in it: the host resolves keymap, slot and
   // storage providers from the owner the plugin's setup runs under, which a root would hide.
   const lists = createRoot((dispose) => {
+    // Changing the default in the settings dialog applies at once, over an older ctrl+a choice.
+    createEffect(
+      on(
+        () => settings.scope(),
+        () =>
+          void setPrefs((draft) => {
+            delete draft.allProjects;
+          }).catch(() => {}),
+        { defer: true }
+      )
+    );
     const activeGroups = createMemo(() => groupsFor('active'));
     const doneGroups = createMemo(() => groupsFor('done'));
     const archivedGroups = createMemo(() => groupsFor('archived'));
@@ -222,9 +240,8 @@ export function createBrowserModel(context: Plugin.Context, pins: Pins, isOpen: 
   return {
     memory,
     setMemory,
-    prefs,
-    setPrefs,
     scope,
+    toggleScope,
     origin,
     setOrigin,
     now,

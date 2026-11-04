@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { gitIn } from './host/git.js';
 import { createLimiter, type Runner, run } from './process.js';
 import type { ForgeDefinition, RepoRef } from './providers/provider.js';
 
@@ -39,9 +40,6 @@ const TIMEOUT_MS = 5000;
 // and each spawn blocks the daemon's event loop for a moment. Unbounded, they pile into stalls
 // of a few hundred milliseconds that lag every client of the daemon.
 const MAX_CONCURRENT = 8;
-// No credential prompts, and no index refresh that could fight the agent's own git commands for
-// `index.lock`.
-const GIT_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
 // Paths and file URLs: clones of local repositories never map to a forge.
 const LOCAL_REMOTE = /^(?:file:|\/|~|\.{1,2}[\\/]|[A-Za-z]:[\\/]|\\\\)/;
 
@@ -83,9 +81,7 @@ export function createRepoResolver(options: {
 
   /** Runs git against `directory`; returns trimmed stdout on success. */
   const git = async (directory: string, args: string[]) => {
-    const result = await limit(() =>
-      runner('git', ['-C', directory, ...args], { timeoutMs: TIMEOUT_MS, env: GIT_ENV })
-    );
+    const result = await limit(() => gitIn(runner, directory, TIMEOUT_MS)(...args));
     return result.code === 0 ? result.stdout.trim() : undefined;
   };
 

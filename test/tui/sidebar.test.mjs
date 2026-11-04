@@ -25,6 +25,8 @@ mock.module('node:child_process', () => ({
   }
 }));
 const { installSidebar } = await import('../../dist/sidebar.js');
+const { createTuiSettings } = await import('../../dist/settings/store.js');
+const { parseOptions } = await import('../../dist/config.js');
 
 /** A mastra-ai/mastra pull request or issue. */
 const ref = (kind, number) => ({
@@ -98,11 +100,10 @@ test('the Work section lists tracked refs, collapses, opens refs and hides witho
     }
   };
   const openColor = '#00ff00';
-  const unregister = installSidebar(context, {
-    colors: { open: openColor },
-    previewWidth: 0.4,
-    closeTabOnArchive: true
-  });
+  const options = parseOptions({ colors: { open: openColor } });
+  // The plugin entry creates these before the sidebar; the view reads them for title scrolling.
+  createTuiSettings(context, options);
+  const unregister = installSidebar(context, options);
   assert.equal(claim.append, 'sidebar.content');
   const [sessionID, setSessionID] = createSignal('work');
   const rendered = await testRender(

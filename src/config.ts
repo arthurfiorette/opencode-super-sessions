@@ -69,14 +69,14 @@ export const optionsSchema = z
     // Defaults for the settings dialog. A value changed in the dialog overrides these.
     /** Which sessions the browser lists when it opens. */
     scope: z.enum(['project', 'all']).default('project'),
-    /** Show the branch line and the PR and issue line on browser rows. */
-    rows: z
-      .strictObject({ branch: z.boolean().default(true), refs: z.boolean().default(true) })
-      .default({ branch: true, refs: true }),
+    /** Show the PR and issue line on browser rows. */
+    rows: z.strictObject({ refs: z.boolean().default(true) }).default({ refs: true }),
     /** Scroll a hovered title that does not fit. `auto` follows the host's `animations`. */
     titleScroll: z.enum(['auto', 'on', 'off']).default('auto'),
     /** Show the preview pane on wide terminals. */
     preview: z.boolean().default(true),
+    /** Take over the session list on OpenCode releases newer than the tested one. */
+    untestedHosts: z.boolean().default(false),
     /** Archive Done sessions this many days after they become Done. Unset keeps them. */
     autoArchiveDays: days.optional(),
     cleanup: z
@@ -110,9 +110,10 @@ export const optionsSchema = z
     closeTabOnArchive: true,
     previewWidth: 0.4,
     scope: 'project',
-    rows: { branch: true, refs: true },
+    rows: { refs: true },
     titleScroll: 'auto',
     preview: true,
+    untestedHosts: false,
     cleanup: { deletedSessions: false, merged: false, unchanged: false, keep: 'any' },
     colors: {}
   });

@@ -1,16 +1,19 @@
 import type { Plugin } from '@opencode/plugin/tui';
-import type { Route } from '@opencode/plugin/tui/context';
+import type { KeymapCommand, Route } from '@opencode/plugin/tui/context';
 import {
   createComponent,
   createEffect,
   createMemo,
   createSignal,
+  ErrorBoundary,
   type JSX,
   lazy,
   on
 } from 'solid-js';
 import type { Options } from '../config.js';
+import { BASE_MODE, CLASSIC_LIST, DIALOG_MODE, OVER_PROMPT, SESSION_LIST } from '../host/keymap.js';
 import type { Pins } from '../pins.js';
+import { tuiSettingsFor } from '../settings/store.js';
 import { type BrowserModel, createBrowserModel } from './model.js';
 import { moveSelection } from './state.js';
 
@@ -24,6 +27,8 @@ export interface PageProps {
   close(): void;
   /** Closes the browser and shows the session, with `esc` coming back to the browser. */
   peek(sessionID: string): void;
+  /** Closes the browser after a crash and opens the built-in list instead. */
+  fail(error: unknown): void;
 }
 
 /** What the peek banner shows. */
@@ -43,10 +48,6 @@ export interface Browser {
   dispose(): void;
 }
 
-/** Host keymap mode of its dialogs. */
-const DIALOG_MODE = 'modal';
-/** Keymap mode with no dialog, popup or form claiming the keys. */
-const BASE_MODE = 'base';
 // Holding an arrow while peeking moves the cursor at key-repeat speed; only the last stop shows.
 const PEEK_DELAY = 150;
 
@@ -64,7 +65,13 @@ const Banner = lazy(() => import('./view.js').then((module) => ({ default: modul
 export function installBrowser(context: Plugin.Context, options: Options, pins: Pins): Browser {
   const router = context.ui.router;
   const [origin, setOrigin] = createSignal<Route>();
-  const model = createBrowserModel(context, pins, () => origin() !== undefined);
+  // `fail` is defined below; the model only calls it later, from a memo.
+  const model = createBrowserModel(
+    context,
+    pins,
+    () => origin() !== undefined,
+    (error) => queueMicrotask(() => fail(error))
+  );
 
   // A peek shows `peeked` and moves `cursor` with the arrows; the route follows the cursor
   // after PEEK_DELAY. The browser's own state stays in `storage.memory` for the way back.
@@ -78,7 +85,10 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
   };
 
   const close = () => setOrigin(undefined);
+  // Set by `fail` until the next open, so one crash reports once.
+  let failing = false;
   const open = () => {
+    failing = false;
     const target = cursor();
     endPeek();
     if (target !== undefined) model.remember({ selected: target });
@@ -109,16 +119,44 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
     clearTimeout(follow);
     follow = setTimeout(() => show(next), PEEK_DELAY);
   };
-  /** Whether the peek keys apply: the peeked session is on screen and nothing else has keys. */
+  /**
+   * Whether the peek keys apply: the peeked session is on screen and nothing else has keys. Off
+   * on a host newer than the tested one, where beating the prompt's layers is unverified.
+   */
   const peekActive = (modes: (mode: string) => boolean) => {
     const id = peeked();
     const route = router.current();
     return (
+      !tuiSettingsFor(context).hostGuarded(context.app.version) &&
       id !== undefined &&
       route.type === 'session' &&
       route.sessionID === id &&
       modes(context.keymap.mode.current())
     );
+  };
+  /**
+   * Hands the user the built-in list after the browser crashed in a render or a key action,
+   * which on an untested host is the likely way a host change shows. Without its own boundary
+   * the browser would hit the host's boundary around the `app` slot, which only toasts and
+   * then draws nothing for that claim until a restart
+   * (packages/tui/src/plugin/render.tsx:27 in OpenCode v2.2.5), while `<leader>l` kept toggling
+   * an invisible browser.
+   */
+  const fail = (error: unknown) => {
+    // The list memos recompute on session events even while the browser is closed; one report
+    // per failure is enough, and nothing opens unless the user was in the browser or a peek.
+    if (failing) return;
+    failing = true;
+    console.error('[opencode-super-sessions] The session browser failed', error);
+    const shown = origin() !== undefined || peeked() !== undefined;
+    endPeek();
+    close();
+    if (!shown) return;
+    context.ui.toast.show({
+      message: 'Super Sessions failed; showing the built-in list',
+      variant: 'error'
+    });
+    context.keymap.dispatch(SESSION_LIST, CLASSIC_LIST);
   };
   /** Whether the focused prompt holds text, so the arrows belong to it. */
   const typing = () => (context.renderer.currentFocusedEditor?.plainText.length ?? 0) > 0;
@@ -137,9 +175,19 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
           { defer: true }
         )
       );
+      // A new boundary on every open, so one crash does not keep the browser away for good.
       return createMemo(() => {
         if (origin() === undefined) return undefined;
-        return lazyNode(View, { context, options, pins, model, close, peek });
+        return createComponent(ErrorBoundary, {
+          fallback: (error: unknown) => {
+            // Not during the render that failed: closing writes the signal this memo reads.
+            queueMicrotask(() => fail(error));
+            return undefined;
+          },
+          get children() {
+            return lazyNode(View, { context, options, pins, model, close, peek, fail });
+          }
+        });
       });
     }
   });
@@ -165,18 +213,15 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
   });
 
   // Wins over the host's `session.interrupt` and `prompt.autocomplete.hide` on esc, and over
-  // prompt history and `session.parent` on the arrows, while peeking. The keymap tries layers by
-  // priority, then the most recently registered first, and the prompt's history layers sit at
-  // priority 1 and register again on every cursor move, so a priority-1 layer here always lost
-  // `up` to `prompt.history.previous`. Priority 2 puts this layer first; with text in the prompt
-  // the arrows return false and fall through to the prompt. Tradeoff: esc in a running peeked
-  // session returns to the list instead of interrupting it; sending a message or opening the
-  // session with enter ends the peek and gives esc back to the host. Every run stays
+  // prompt history and `session.parent` on the arrows, while peeking (see OVER_PROMPT). With text
+  // in the prompt the arrows return false and fall through to the prompt. Tradeoff: esc in a
+  // running peeked session returns to the list instead of interrupting it; sending a message or
+  // opening the session with enter ends the peek and gives esc back to the host. Every run stays
   // synchronous, because the keymap treats a returned Promise as handled.
   context.keymap.layer(() => ({
     mode: 'global',
-    priority: 2,
-    commands: [
+    priority: OVER_PROMPT,
+    commands: guardActions(fail, [
       {
         id: 'super-sessions.peek.return',
         title: 'Back to sessions',
@@ -201,7 +246,7 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
         enabled: () => peekActive((mode) => mode === BASE_MODE),
         run: () => (typing() ? false : step(1))
       }
-    ]
+    ])
   }));
 
   return {
@@ -217,6 +262,31 @@ export function installBrowser(context: Plugin.Context, options: Options, pins: 
       model.dispose();
     }
   };
+}
+
+/**
+ * Wraps each command's `run` so a synchronous throw goes to `fail` instead of the host's keymap.
+ * The result passes through untouched, so a literal `false` still falls through.
+ */
+export function guardActions(
+  fail: (error: unknown) => void,
+  commands: KeymapCommand[]
+): KeymapCommand[] {
+  return commands.map((command) => {
+    const run = command.run;
+    if (run === undefined) return command;
+    return {
+      ...command,
+      run: (...args: Parameters<typeof run>) => {
+        try {
+          return run(...args);
+        } catch (error) {
+          fail(error);
+          return undefined;
+        }
+      }
+    };
+  });
 }
 
 /** Renders a lazily loaded component, hiding Solid's empty-string placeholder while it loads. */

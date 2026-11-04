@@ -1,5 +1,5 @@
 import type { ResolvedTheme } from '@opencode/theme/tui';
-import { MouseButton, type MouseEvent, RGBA } from '@opentui/core';
+import { MouseButton, type MouseEvent, type RGBA } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import type { JSX } from 'solid-js';
 import type { Options } from '../config.js';
@@ -29,23 +29,14 @@ export interface RowModel {
   /** The refs line. Empty when the session has no refs. */
   refs: Segment[];
   selected: boolean;
+  /** The session runs: the title takes the spinner's color, unless the row is selected. */
+  running: boolean;
   /** The first delete press turned this row into a confirmation. */
   deleting: boolean;
   /** Marquee offset while the pointer hovers a title that does not fit. */
   scroll: number | undefined;
   /** Background of every line of the row when not selected; undefined keeps the panel's. */
   stripe: RGBA | undefined;
-}
-
-/**
- * The background the host's session view shows: the theme's `background.base`, or the terminal's
- * own background when that token is not opaque (themes such as `gruvbox-transparent` leave it
- * `transparent`). Painting a see-through color over the browser's backdrop would show the dimmed
- * route instead.
- */
-export function sessionBackground(theme: ResolvedTheme): RGBA {
-  const base = theme.background.base;
-  return base.a >= 1 ? base : RGBA.defaultBackground();
 }
 
 /** Input of {@link refSegments}. */
@@ -135,6 +126,14 @@ export interface RowEvents {
   /** The pointer left one of the row's lines. */
   leave(): void;
   open(): void;
+}
+
+/**
+ * Color of a running session's spinner and title. The warning feedback token, which reads as
+ * yellow in gruvbox, because the muted text the spinner used before did not stand out.
+ */
+export function runningColor(theme: ResolvedTheme): RGBA {
+  return theme.text.feedback.warning.base;
 }
 
 /** Background and foreground of a row for its selection and delete state. */
@@ -227,8 +226,9 @@ export function titleLine(
       get children() {
         const current = model();
         const room = titleRoom(current);
+        const color = current.running ? runningColor(theme()) : theme().text.base;
         return jsx('span', {
-          style: { fg: fg(theme().text.base), bold: current.selected },
+          style: { fg: fg(color), bold: current.selected },
           children:
             current.scroll !== undefined && current.scroll > 0
               ? marqueeText(current.title, room, current.scroll)

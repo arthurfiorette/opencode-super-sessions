@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 import type { Plugin } from '@opencode/plugin';
 
 /**
@@ -46,7 +47,13 @@ export const ANSWER = 'Contract answer with https://github.com/acme/widgets/pull
 /** A chat completions request body, reduced to the fields the script branches on. */
 interface ChatRequest {
   tools?: { function?: { name?: string } }[];
-  messages?: { role?: string }[];
+  messages?: { role?: string; content?: unknown }[];
+}
+
+/** What one agent-loop request sent to the scripted model. */
+export interface AgentRequest {
+  /** Text of every system message, in order. */
+  system: string[];
 }
 
 /**
@@ -55,15 +62,22 @@ interface ChatRequest {
  * - a request without tools is the title agent and gets `GENERATED_TITLE`;
  * - the first step of a prompt gets reasoning and a `shell` tool call;
  * - the step after the tool result gets reasoning and the final text.
+ * `requests` collects every agent-loop request (the ones that offer tools) as it arrives.
  */
-export async function startScriptedModel(): Promise<{ baseURL: string; close(): Promise<void> }> {
+export async function startScriptedModel(): Promise<{
+  baseURL: string;
+  requests: AgentRequest[];
+  close(): Promise<void>;
+}> {
+  const requests: AgentRequest[] = [];
   const server = createServer((request, response) => {
-    void respond(request, response);
+    void respond(request, response, requests);
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
   return {
     baseURL: `http://127.0.0.1:${port}/v1`,
+    requests,
     close: () =>
       new Promise((resolve) => {
         server.closeAllConnections();
@@ -73,10 +87,27 @@ export async function startScriptedModel(): Promise<{ baseURL: string; close(): 
 }
 
 /** Streams one scripted completion as server-sent events. */
-async function respond(request: IncomingMessage, response: ServerResponse): Promise<void> {
+async function respond(
+  request: IncomingMessage,
+  response: ServerResponse,
+  requests: AgentRequest[]
+): Promise<void> {
   let raw = '';
   for await (const chunk of request) raw += chunk;
   const body = JSON.parse(raw) as ChatRequest;
+  if (body.tools?.length) {
+    const system = (body.messages ?? []).filter((message) => message.role === 'system');
+    // Chat messages carry a string or an array of text parts.
+    requests.push({
+      system: system.map((message) =>
+        typeof message.content === 'string'
+          ? message.content
+          : Array.isArray(message.content)
+            ? message.content.map((part: { text?: string }) => part.text ?? '').join('')
+            : ''
+      )
+    });
+  }
   response.writeHead(200, { 'content-type': 'text/event-stream' });
   const send = (delta: object, finish: string | null = null) =>
     response.write(
@@ -139,16 +170,27 @@ export function modelConfig(baseURL: string) {
 }
 
 /**
- * Creates an in-process host with the scripted model as its default and `plugins` loaded in every
- * Location. The SDK is imported here, after the environment above is in place.
+ * Creates an in-process host with the scripted model as its default, `plugins` loaded in every
+ * Location, and the built opencode-super-sessions server plugin from `dist/`. Its `gh` is a name
+ * on no PATH, so detection never reaches GitHub with whatever login the machine has. The SDK is
+ * imported here, after the environment above is in place.
  */
 export async function createHost(baseURL: string, plugins: Plugin.Plugin[]) {
   const { OpenCode } = await import('@opencode/sdk');
   const config = path.join(root, 'opencode-config');
   mkdirSync(config, { recursive: true });
+  const content = {
+    ...modelConfig(baseURL),
+    plugins: [
+      {
+        package: fileURLToPath(new URL('../../', import.meta.url)),
+        options: { ghPath: 'gh-contract-missing', glabPath: 'glab-contract-missing' }
+      }
+    ]
+  };
   return OpenCode.create({
     database: { path: ':memory:' },
-    config: { directory: config, project: false, content: JSON.stringify(modelConfig(baseURL)) },
+    config: { directory: config, project: false, content: JSON.stringify(content) },
     models: { fetch: false },
     fs: { filewatcher: false, fff: false },
     plugins

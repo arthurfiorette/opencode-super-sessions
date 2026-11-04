@@ -6,7 +6,7 @@ import { rpcHandlers } from './server/handlers.js';
 import { getRuntime, warn } from './server/runtime.js';
 import { serverDefaults } from './server/settings.js';
 import { getSweeper } from './server/sweep.js';
-import { registerTools } from './server/tools.js';
+import { registerInstructions, registerTools } from './server/tools.js';
 
 /**
  * Server plugin loaded by the OpenCode daemon once per Location. Each Location registers its own
@@ -25,6 +25,7 @@ export default Plugin.define({
     // Before tools and hooks: detection reads the dialog's tracking settings.
     await runtime.settings.load(context.storage);
     await registerTools(runtime, context);
+    await registerInstructions(runtime, context);
     await registerShellHook(runtime, context);
     const registration = await context.rpc.register(SuperSessions, rpcHandlers(runtime, context));
     // Attached last so a failed registration above never leaves a subscriber behind.

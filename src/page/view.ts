@@ -26,12 +26,15 @@ import {
 } from 'solid-js';
 import { openUrl, refUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
+import { HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
+import { regenerateTitle, setArchived } from '../host/session-api.js';
+import { dialogTheme, sessionBackground } from '../host/theme.js';
 import { createMarquee } from '../marquee.js';
 import { type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import { tuiSettingsFor } from '../settings/store.js';
-import { ICONS } from './icons.js';
-import { type PageProps, type PeekBannerProps, routeKey } from './page.js';
+import { ICONS, titleGradient } from './icons.js';
+import { guardActions, type PageProps, type PeekBannerProps, routeKey } from './page.js';
 import { Preview } from './preview.js';
 import { workLines } from './preview-header.js';
 import {
@@ -41,8 +44,8 @@ import {
   type RowModel,
   refSegments,
   refsLine,
+  runningColor,
   type Segment,
-  sessionBackground,
   titleLine,
   titleRoom
 } from './row.js';
@@ -76,12 +79,17 @@ const EMPTY: Record<PageView, string> = {
   done: 'No done sessions',
   archived: 'No archived sessions'
 };
-// Header row layout, shared by the boxes and the measure that decides which pieces fit.
+// Header row layout, shared by the boxes and the measure that decides which pieces fit. The title
+// never drops; the pieces after it do.
+const TITLE = 'Super Sessions';
 const HEADER_PADDING = 2;
 const TABS_INDENT = 4;
 const TAB_GAP = 3;
 // Blank cells kept between the last tab and the `esc` hint.
 const ESC_GAP = 2;
+// Footer layout: side padding and the blank cells between two hints.
+const FOOTER_PADDING = 2;
+const HINT_GAP = 2;
 
 /** Which optional pieces the header row shows. */
 interface HeaderFit {
@@ -111,7 +119,7 @@ export default function SessionBrowser(props: PageProps) {
   const data = model.data;
   const memory = model.memory;
   // The host draws its dialogs on this surface; the plugin theme resolves the same tokens.
-  const theme = () => context.theme.surface('dialog');
+  const theme = () => dialogTheme(context);
   const client = context.client;
   const [panelWidth, setPanelWidth] = createSignal(0);
   const [leftWidth, setLeftWidth] = createSignal(0);
@@ -121,8 +129,9 @@ export default function SessionBrowser(props: PageProps) {
   const [deleting, setDeleting] = createSignal<string>();
   const [projectLabel, setProjectLabel] = createSignal('');
   const [projectID, setProjectID] = createSignal<string>();
-  const settings = useCliSettings();
-  const marquee = createMarquee({ animated: () => settings.animations });
+  const cli = useCliSettings();
+  const settings = tuiSettingsFor(context);
+  const marquee = createMarquee({ animated: () => settings.titleScroll(cli.animations) });
   let input: InputRenderable | undefined;
   let listBox: BoxRenderable | undefined;
   let panelBox: BoxRenderable | undefined;
@@ -144,14 +153,17 @@ export default function SessionBrowser(props: PageProps) {
     const fallback = view?.defaultBranch ?? vcs?.default;
     return current && current !== fallback ? current : undefined;
   };
+  // Empty with the "PR and issue line" setting off, which also drops the row's second line.
   const refsOf = (session: SessionInfo): Segment[] =>
-    refSegments({
-      options: props.options,
-      theme: theme(),
-      mode: context.themeMode,
-      refs: data.refs[session.id],
-      matched: reason(session)?.ref
-    });
+    settings.refLine()
+      ? refSegments({
+          options: props.options,
+          theme: theme(),
+          mode: context.themeMode,
+          refs: data.refs[session.id],
+          matched: reason(session)?.ref
+        })
+      : [];
   const lines = createMemo(() =>
     layoutLines(model.groups(), (session) => refsOf(session).length > 0)
   );
@@ -249,7 +261,7 @@ export default function SessionBrowser(props: PageProps) {
       refreshVisible();
     }, REFRESH_INTERVAL),
     setInterval(() => {
-      if (!untrack(() => settings.animations)) return;
+      if (!untrack(() => cli.animations)) return;
       if (untrack(() => rows().some((session) => model.running(session.id))))
         setFrame((value) => value + 1);
     }, 80)
@@ -292,7 +304,7 @@ export default function SessionBrowser(props: PageProps) {
     // each update, while the host's synced copy may still be catching up.
     const archived = session.time.archived === undefined;
     try {
-      await client.session.update({ sessionID: session.id, archived });
+      await setArchived(client, session.id, archived);
     } catch {
       toast(
         archived ? 'Could not archive the session.' : 'Could not restore the session.',
@@ -301,7 +313,7 @@ export default function SessionBrowser(props: PageProps) {
       return;
     }
     controller.archived(session.id, archived, Date.now());
-    if (archived && props.options.closeTabOnArchive) context.ui.tabs.close(session.id);
+    if (archived && settings.closeTabOnArchive()) context.ui.tabs.close(session.id);
   };
   const rename = async () => {
     const session = selected();
@@ -336,8 +348,7 @@ export default function SessionBrowser(props: PageProps) {
     const session = selected();
     if (!session) return;
     try {
-      // An empty title asks the server to generate a new one.
-      await client.session.update({ sessionID: session.id, title: '' });
+      await regenerateTitle(client, session.id);
       toast('Regenerating title');
     } catch {
       toast('Could not regenerate the title.', 'error');
@@ -376,9 +387,9 @@ export default function SessionBrowser(props: PageProps) {
     let failed = 0;
     for (const session of done) {
       try {
-        await client.session.update({ sessionID: session.id, archived: true });
+        await setArchived(client, session.id, true);
         controller.archived(session.id, true, Date.now());
-        if (props.options.closeTabOnArchive) context.ui.tabs.close(session.id);
+        if (settings.closeTabOnArchive()) context.ui.tabs.close(session.id);
       } catch {
         failed++;
       }
@@ -490,6 +501,16 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Close',
       run: () => (focus() === 'work' ? focusList() : props.close())
     },
+    // The dialog opens above the overlay, and closing it gives the keys back to the browser.
+    // Not ctrl+,: the host splits binding strings on commas (registerCommaBindings in
+    // @opentui/keymap), so `ctrl+,` throws and `ctrl+comma` never matches the key event, and
+    // legacy terminals cannot send it anyway. The host's ctrl+o (`open.menu`) belongs to the
+    // session view, which is not active under the browser.
+    {
+      bind: 'ctrl+o',
+      title: 'Super Sessions settings',
+      run: () => context.keymap.dispatch('super-sessions.settings')
+    },
     {
       bind: 'tab',
       title: 'Next view',
@@ -506,18 +527,13 @@ export default function SessionBrowser(props: PageProps) {
     {
       bind: 'ctrl+a',
       title: 'Toggle all projects',
-      run: () =>
-        void model
-          .setPrefs((draft) => {
-            draft.allProjects = !draft.allProjects;
-          })
-          .catch(() => {})
+      run: () => void model.toggleScope().catch(() => {})
     },
     { bind: 'ctrl+s', title: 'Archive or restore', run: () => void archive() },
-    { id: 'session.rename', title: 'Rename session', run: () => void rename() },
-    { id: 'session.delete', title: 'Delete session', run: () => void remove() },
+    { id: HOST_COMMANDS.rename, title: 'Rename session', run: () => void rename() },
+    { id: HOST_COMMANDS.delete, title: 'Delete session', run: () => void remove() },
     {
-      id: 'session.pin.toggle',
+      id: HOST_COMMANDS.pin,
       title: 'Pin or unpin session',
       run: () => {
         const session = selected();
@@ -554,7 +570,7 @@ export default function SessionBrowser(props: PageProps) {
     // Like the host's dialogs, the exit keys clear the search first and close on the next press;
     // quitting OpenCode from a list is never what the user meant.
     {
-      id: 'app.exit',
+      id: HOST_COMMANDS.exit,
       title: 'Close',
       run: () => {
         if (memory.query.length === 0) return props.close();
@@ -563,7 +579,11 @@ export default function SessionBrowser(props: PageProps) {
       }
     }
   ];
-  context.keymap.layer(() => ({ mode: MODE, priority: 1, commands }));
+  context.keymap.layer(() => ({
+    mode: MODE,
+    priority: OVER_HOST,
+    commands: guardActions(props.fail, commands)
+  }));
 
   // The mode turns off the prompt and every other base-mode layer while the browser is open.
   onCleanup(context.keymap.mode.push(MODE));
@@ -612,8 +632,8 @@ export default function SessionBrowser(props: PageProps) {
     }
     if (model.running(session.id)) {
       // The host's spinner stands still as `⋯` while animations are off.
-      const text = settings.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯';
-      return { text, fg: theme().text.muted };
+      const text = cli.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯';
+      return { text, fg: runningColor(theme()) };
     }
     const info = live(session);
     const unread =
@@ -651,7 +671,7 @@ export default function SessionBrowser(props: PageProps) {
       marker: markerOf(session),
       title:
         deleting() === session.id
-          ? `Press ${shortcut('session.delete', 'ctrl+d')} again to delete`
+          ? `Press ${shortcut(HOST_COMMANDS.delete, 'ctrl+d')} again to delete`
           : info.title || 'Untitled session',
       label: matchLabel(reason(session), data.refs[session.id]),
       right:
@@ -663,6 +683,8 @@ export default function SessionBrowser(props: PageProps) {
       width: listWidth() - 2,
       refs: refsOf(session),
       selected: memory.selected === session.id,
+      // Pinned rows show their slot instead of the spinner, but their title still says it runs.
+      running: model.running(session.id),
       deleting: deleting() === session.id,
       scroll: marquee.active() === session.id ? marquee.offset() : undefined,
       stripe: (stripes().get(session.id) ?? 0) % 2 === 1 ? stripe() : undefined
@@ -733,7 +755,7 @@ export default function SessionBrowser(props: PageProps) {
     return rows().length === 0 ? { text: EMPTY[memory.view], error: false } : undefined;
   });
 
-  const wide = () => panelWidth() >= PREVIEW_MIN_COLUMNS;
+  const wide = () => panelWidth() >= PREVIEW_MIN_COLUMNS && settings.previewPane();
   const span = (text: string | (() => string), fg: () => unknown, bold = false) =>
     jsx('span', {
       // Text nodes take colors and attributes only through `style`.
@@ -772,7 +794,7 @@ export default function SessionBrowser(props: PageProps) {
     const counts = model.counts();
     // Whole cells the header row has for its text, besides the `esc` hint when it sits here.
     const room = leftWidth() - 2 * HEADER_PADDING - (wide() ? 0 : cells('esc') + ESC_GAP);
-    const fixed = cells('Sessions') + TABS_INDENT + TAB_GAP * (VIEWS.length - 1);
+    const fixed = cells(TITLE) + TABS_INDENT + TAB_GAP * (VIEWS.length - 1);
     /** Cells the header text takes with `fit`'s pieces shown. */
     const size = (fit: HeaderFit) =>
       fixed +
@@ -785,6 +807,7 @@ export default function SessionBrowser(props: PageProps) {
     return HEADER_FITS.find((fit) => size(fit) <= room) ?? LABELS_ONLY;
   });
 
+  const titleColors = createMemo(() => titleGradient(TITLE, theme(), context.themeMode));
   const header = jsx('box', {
     flexDirection: 'row',
     height: 1,
@@ -796,7 +819,10 @@ export default function SessionBrowser(props: PageProps) {
         flexShrink: 0,
         wrapMode: 'none',
         children: [
-          span('Sessions', () => theme().text.base, true),
+          // One span per character, each with its own step of the fade.
+          ...Array.from(TITLE).map((character, index) =>
+            span(character, () => titleColors()[index] ?? theme().text.base, true)
+          ),
           span(
             () => (headerFit().project ? projectSuffix() : ''),
             () => theme().text.muted
@@ -960,7 +986,7 @@ export default function SessionBrowser(props: PageProps) {
     flexShrink: 0,
     // Only while the list overflows: with nothing to scroll the slider is one solid column.
     get visible() {
-      return settings.session.scrollbar && lines().length > listHeight();
+      return cli.session.scrollbar && lines().length > listHeight();
     },
     ref: (value: BoxRenderable) => {
       slider = new SliderRenderable(context.renderer, {
@@ -986,7 +1012,7 @@ export default function SessionBrowser(props: PageProps) {
    * The preview's share of the panel; the list column takes the rest. A fixed split, so the
    * columns stay put whatever sessions the list holds.
    */
-  const split = (): number => tuiSettingsFor(context)?.previewWidth() ?? props.options.previewWidth;
+  const split = (): number => settings.previewWidth();
   /** Cells of the preview column, its blank first cell included. */
   const previewWidth = () => Math.floor(panelWidth() * split());
   const pane = createComponent(Preview, {
@@ -1058,22 +1084,21 @@ export default function SessionBrowser(props: PageProps) {
     const items: Array<[string, string]> = [
       ['peek', 'space'],
       [memory.view === 'archived' ? 'restore' : 'archive', 'ctrl+s'],
-      // Before the session actions: on narrow terminals the hints that do not fit are dropped,
-      // and switching views is how the Done and Archived views are found at all.
       ['view', 'tab/shift+tab'],
-      ['rename', shortcut('session.rename', 'ctrl+r')],
+      ['rename', shortcut(HOST_COMMANDS.rename, 'ctrl+r')],
       ['retitle', shortcut('super-sessions.retitle', 'ctrl+t')],
       [
         current && props.pins.has(current.id) ? 'unpin' : 'pin',
-        shortcut('session.pin.toggle', 'ctrl+f')
+        shortcut(HOST_COMMANDS.pin, 'ctrl+f')
       ],
-      ['delete', shortcut('session.delete', 'ctrl+d')]
+      ['delete', shortcut(HOST_COMMANDS.delete, 'ctrl+d')]
     ];
     if (memory.view === 'done' && !data.search)
       items.push(['archive all', shortcut('super-sessions.archive.done', 'ctrl+y')]);
     items.push(
       ['link', shortcut('super-sessions.link', 'ctrl+l')],
-      ['open PR', shortcut('super-sessions.open.ref', 'ctrl+g')]
+      ['open PR', shortcut('super-sessions.open.ref', 'ctrl+g')],
+      ['settings', 'ctrl+o']
     );
     return items;
   });
@@ -1082,60 +1107,87 @@ export default function SessionBrowser(props: PageProps) {
     'ctrl+a'
   ];
   const hint = ([title, key]: [string, string], index: number) => [
-    ...(index > 0 ? [span('  ', () => theme().text.muted)] : []),
+    ...(index > 0 ? [span(' '.repeat(HINT_GAP), () => theme().text.muted)] : []),
     span(title, () => theme().text.base),
     span(` ${key}`, () => theme().text.muted)
   ];
+  /**
+   * The hints in rows across the whole panel, in order. A hint that does not fit starts the next
+   * row instead of being dropped, and is never cut in half, which would read as a different key.
+   * The first row keeps room for the scope hint at its right end.
+   */
+  const footerRows = createMemo(() => {
+    const width = Math.max(0, panelWidth() - 2 * FOOTER_PADDING);
+    const size = ([title, key]: [string, string]) => cells(`${title} ${key}`);
+    let room = width - size(scopeHint()) - HINT_GAP;
+    const rows: Array<Array<[string, string]>> = [[]];
+    for (const item of footerItems()) {
+      const row = rows[rows.length - 1] ?? [];
+      const needed = size(item) + (row.length > 0 ? HINT_GAP : 0);
+      if (row.length > 0 && needed > room) {
+        rows.push([item]);
+        room = width - size(item);
+        continue;
+      }
+      row.push(item);
+      room -= needed;
+    }
+    return rows;
+  });
+  // Under both columns, so the preview's height never costs a hint.
   const footer = jsx('box', {
-    flexDirection: 'row',
-    height: 1,
+    flexDirection: 'column',
     flexShrink: 0,
-    paddingLeft: 2,
-    paddingRight: 2,
-    children: [
-      jsx('text', {
-        flexGrow: 1,
-        flexShrink: 1,
-        minWidth: 0,
-        wrapMode: 'none',
-        get children() {
-          // Whole hints only: a hint cut in half reads as a different key.
-          const [title, key] = scopeHint();
-          let room = leftWidth() - 4 - cells(`${title} ${key}`) - 2;
-          const shown = footerItems().filter(([itemTitle, itemKey], index) => {
-            const size = cells(`${index > 0 ? '  ' : ''}${itemTitle} ${itemKey}`);
-            if (size > room) {
-              room = -1;
-              return false;
-            }
-            room -= size;
-            return true;
-          });
-          return shown.flatMap(hint);
-        }
-      }),
-      jsx('text', {
-        flexShrink: 0,
-        wrapMode: 'none',
-        get children() {
-          return hint(scopeHint(), 0);
-        }
-      })
-    ]
+    paddingTop: 1,
+    paddingBottom: 1,
+    paddingLeft: FOOTER_PADDING,
+    paddingRight: FOOTER_PADDING,
+    children: createComponent(Index, {
+      get each() {
+        return footerRows();
+      },
+      children: (row: () => Array<[string, string]>, index: number) =>
+        jsx('box', {
+          flexDirection: 'row',
+          height: 1,
+          flexShrink: 0,
+          children: [
+            jsx('text', {
+              flexGrow: 1,
+              flexShrink: 1,
+              minWidth: 0,
+              wrapMode: 'none',
+              get children() {
+                return row().flatMap(hint);
+              }
+            }),
+            ...(index === 0
+              ? [
+                  jsx('text', {
+                    flexShrink: 0,
+                    wrapMode: 'none',
+                    get children() {
+                      return hint(scopeHint(), 0);
+                    }
+                  })
+                ]
+              : [])
+          ]
+        })
+    })
   });
 
   // Same dismissal rule as the host's dialog backdrop: a click outside the panel closes it, but
   // releasing a text selection there does not.
   let dismiss = false;
-  // The left column: header, search, list and hints. The preview column beside it runs the
-  // panel's full height.
+  // The left column: header, search and list. The preview column beside it runs down to the
+  // hints, which span both.
   const left = jsx('box', {
     flexDirection: 'column',
     flexGrow: 1,
     flexShrink: 1,
     minWidth: 0,
     paddingTop: 1,
-    paddingBottom: 1,
     ref: (value: BoxRenderable) => {
       leftBox = value;
     },
@@ -1150,14 +1202,12 @@ export default function SessionBrowser(props: PageProps) {
         flexShrink: 1,
         minHeight: 0,
         children: [list, listBar]
-      }),
-      jsx('box', { height: 1, flexShrink: 0 }),
-      footer
+      })
     ]
   });
   const panel = jsx('box', {
     flexGrow: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     get backgroundColor() {
       return theme().background.base;
     },
@@ -1170,7 +1220,16 @@ export default function SessionBrowser(props: PageProps) {
       dismiss = false;
       event.stopPropagation();
     },
-    children: [left, preview]
+    children: [
+      jsx('box', {
+        flexDirection: 'row',
+        flexGrow: 1,
+        flexShrink: 1,
+        minHeight: 0,
+        children: [left, preview]
+      }),
+      footer
+    ]
   });
 
   // Absolute inside the host's main column, so it covers the route and the horizontal tabs but
@@ -1221,8 +1280,10 @@ export function PeekBanner(props: PeekBannerProps) {
     flexShrink: 0,
     paddingLeft: 2,
     paddingRight: 2,
+    // The warning pair keeps the label readable in dark and light themes (5.8:1 and 5.4:1 in
+    // gruvbox, against 3.5:1 on the raised background), so the banner reads as a state.
     get backgroundColor() {
-      return theme().background.raised.high;
+      return theme().background.feedback.warning.base;
     },
     children: jsx('text', {
       wrapMode: 'none',
@@ -1232,7 +1293,7 @@ export function PeekBanner(props: PeekBannerProps) {
             const position = props.position();
             return position ? `Peeking ${position.index} of ${position.total}` : 'Peeking';
           },
-          (value) => value.text.base,
+          (value) => value.text.feedback.warning.base,
           true
         ),
         span(

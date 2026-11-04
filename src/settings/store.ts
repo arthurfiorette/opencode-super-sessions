@@ -1,6 +1,7 @@
 import type { Plugin } from '@opencode/plugin/tui';
 import { createSignal } from 'solid-js';
 import type { Options } from '../config.js';
+import { isUntested } from '../host/compat.js';
 import { type ServerSettings, type ServerSettingsView, SuperSessions } from '../rpc.js';
 import { readTuiOverrides, type TuiValues, tuiDefaults } from './definitions.js';
 
@@ -16,7 +17,6 @@ export interface TuiSettings {
   set<Key extends keyof TuiValues>(key: Key, value: TuiValues[Key]): Promise<void>;
   /** Default browser scope. */
   scope(): TuiValues['scope'];
-  branchLine(): boolean;
   refLine(): boolean;
   /** Whether hovered titles scroll, given the host's `animations` value for `auto`. */
   titleScroll(animations: boolean): boolean;
@@ -26,6 +26,11 @@ export interface TuiSettings {
   closeTabOnArchive(): boolean;
   /** Title suffix that archives a session, or undefined when off. */
   archiveSuffix(): string | undefined;
+  /**
+   * Whether the takeover and the peek keys stay off on this host: it is newer than the tested
+   * version by minor or major, and the user has not chosen to use the plugin there anyway.
+   */
+  hostGuarded(version: string): boolean;
 }
 
 interface Stored {
@@ -36,9 +41,14 @@ interface Stored {
 // read the settings with an import instead of a new prop.
 const byContext = new WeakMap<Plugin.Context, TuiSettings>();
 
-/** The settings created for this plugin context, or undefined before setup created them. */
-export function tuiSettingsFor(context: Plugin.Context): TuiSettings | undefined {
-  return byContext.get(context);
+/**
+ * The settings created for this plugin context. `src/tui.ts` creates them before installing the
+ * browser and the sidebar, so a miss is a setup-order bug and throws.
+ */
+export function tuiSettingsFor(context: Plugin.Context): TuiSettings {
+  const settings = byContext.get(context);
+  if (settings === undefined) throw new Error('Super Sessions settings read before setup');
+  return settings;
 }
 
 /** Creates the TUI settings store on the plugin's durable storage. */
@@ -63,7 +73,6 @@ function buildTuiSettings(context: Plugin.Context, options: Options): TuiSetting
         else draft.values[key] = value;
       }),
     scope: () => values().scope,
-    branchLine: () => values().branchLine,
     refLine: () => values().refLine,
     titleScroll(animations) {
       const mode = values().titleScroll;
@@ -72,7 +81,8 @@ function buildTuiSettings(context: Plugin.Context, options: Options): TuiSetting
     previewPane: () => values().previewPane,
     previewWidth: () => values().previewWidth,
     closeTabOnArchive: () => values().closeTabOnArchive,
-    archiveSuffix: () => values().archiveSuffix ?? undefined
+    archiveSuffix: () => values().archiveSuffix ?? undefined,
+    hostGuarded: (version) => isUntested(version) && !values().untestedHosts
   };
 }
 

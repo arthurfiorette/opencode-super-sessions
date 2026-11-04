@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
+import { storedTexts } from '../host/events.js';
 import type { BodyIndex } from './body-index.js';
 import type { EventContext } from './events.js';
 
@@ -92,35 +93,15 @@ export function createBackfill(options: BackfillOptions): Backfill {
   };
 }
 
-/**
- * Indexes the user and assistant text of one session with the keys live indexing uses: the user
- * message id (its inbox id) and `<assistant message id>:<text ordinal>`, where the ordinal counts
- * only text parts, as `session.text.ended` does.
- */
+/** Indexes the user and assistant text of one session with the keys live indexing uses. */
 async function indexSession(
   context: EventContext,
   index: BodyIndex,
   sessionID: string
 ): Promise<void> {
-  const messages = await context.session.context({ sessionID });
-  let written = 0;
-  for (const message of messages) {
-    if (message.type === 'user') {
-      index.add(sessionID, message.id, message.text, message.time.created);
-      written++;
-    }
-    if (message.type === 'assistant') {
-      let ordinal = 0;
-      for (const part of message.content) {
-        if (part.type !== 'text') continue;
-        index.add(sessionID, `${message.id}:${ordinal}`, part.text, message.time.created);
-        ordinal++;
-        written++;
-      }
-    }
-    if (written >= BATCH_SIZE) {
-      written = 0;
-      await sleep(BATCH_PAUSE_MS, undefined, { ref: false });
-    }
+  const texts = storedTexts(sessionID, await context.session.context({ sessionID }));
+  for (const [position, entry] of texts.entries()) {
+    index.add(entry.sessionID, entry.key, entry.text, entry.created);
+    if ((position + 1) % BATCH_SIZE === 0) await sleep(BATCH_PAUSE_MS, undefined, { ref: false });
   }
 }

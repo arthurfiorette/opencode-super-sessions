@@ -18,6 +18,7 @@ import { STATE_WORDS } from './page/icons.js';
 import { type Ref, type RefStatus, refKey } from './refs/ref.js';
 import { sidebarRefs } from './refs/summary.js';
 import { type SessionRefView, SuperSessions } from './rpc.js';
+import { tuiSettingsFor } from './settings/store.js';
 import type { SidebarProps } from './sidebar.js';
 import { createSidebarState } from './sidebar-state.js';
 import { workRow } from './work-row.js';
@@ -31,9 +32,10 @@ export default function Sidebar(props: SidebarProps) {
   const [prefs, setPrefs] = context.storage.store('sidebar', { initial: { expanded: true } });
   const [data, setData] = createStore<{ view: SessionRefView | undefined }>({ view: undefined });
   const [width, setWidth] = createSignal(0);
-  const settings = useCliSettings();
+  const cli = useCliSettings();
+  const settings = tuiSettingsFor(context);
   // One timer for every row: only the hovered title scrolls, and unmounting clears it.
-  const marquee = createMarquee({ animated: () => settings.animations });
+  const marquee = createMarquee({ animated: () => settings.titleScroll(cli.animations) });
   let box: BoxRenderable | undefined;
 
   const rpc = context.client.rpc(SuperSessions);

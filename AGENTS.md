@@ -9,6 +9,7 @@ Standalone OpenCode V2 plugin. User docs live in `README.md`. The implementation
 - Never commit credentials or local OpenCode state.
 - Keep all `@opencode/*` dependencies pinned to the same exact version.
 - `./rpc` must stay importable by clients without loading OpenTUI.
+- New host assumptions (command ids, priorities, event fields, payload shapes, API semantics, host file paths) go in `src/host/*` with a link to the host source line, and get a contract test in `test/contract` that reads the host through that accessor. See the Compatibility section of `docs/README.md`.
 
 ## Verification
 

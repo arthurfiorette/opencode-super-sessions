@@ -6,11 +6,12 @@ import type { RGBA } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import { createComponent, createMemo, For, type JSX, Show, untrack } from 'solid-js';
 import type { Options } from '../config.js';
-import type { createMarquee } from '../marquee.js';
+import { type createMarquee, marqueeText } from '../marquee.js';
 import { type Ref, refKey } from '../refs/ref.js';
 import { trackedRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { workRow } from '../work-row.js';
+import { fitText } from './row.js';
 
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -39,14 +40,13 @@ export interface HeaderProps {
   selectedRef(): string | undefined;
   width(): number;
   marquee: ReturnType<typeof createMarquee>;
-  agentColor(session: SessionInfo, agent: string): RGBA;
 }
 
 /**
  * Laid out like the host's session sidebar (routes/session/sidebar.tsx and the sections in
  * feature-plugins/sidebar, MIT): the bold title, wrapping, then sections one blank line apart,
  * each a bold heading over muted lines. Context holds usage, cost and run state; Session where
- * and with what the session runs; Work the refs, drawn by the sidebar's own Work row. Context
+ * the session runs; Work the refs, drawn by the sidebar's own Work row. Context
  * and Session share a row when the pane is wide enough, since both are short.
  */
 export function PreviewHeader(props: HeaderProps): JSX.Element {
@@ -67,7 +67,7 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
     });
   /**
    * A bold `text.base` heading over `children`, hidden while `visible()` is false. A `column`
-   * section takes an even share of a row, so a long path wraps inside its half.
+   * section takes an even share of a row.
    */
   const section = (
     title: string,
@@ -165,69 +165,52 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
     const session = props.session();
     return session ? props.branch(session) : undefined;
   };
-  const model = () => {
-    const session = props.session();
-    return session ? modelName(context, session) : undefined;
-  };
-  const optional = (visible: () => boolean, child: JSX.Element) =>
+  /** Whether Context and Session fit side by side; narrower panes stack them as the sidebar does. */
+  const sideBySide = () => (props.width() - SECTION_GAP) / 2 >= MIN_SECTION_WIDTH;
+  /** Cells a Session line has: half the header beside Context, else all of it. */
+  const sessionWidth = () =>
+    sideBySide() ? Math.floor((props.width() - SECTION_GAP) / 2) : props.width();
+  /**
+   * One muted line cut with `…` at the column width, scrolling with the marquee while hovered,
+   * hidden while `text()` is undefined. A path never wraps mid-word this way.
+   */
+  const fitted = (key: string, text: () => string | undefined) =>
     jsx('box', {
+      flexShrink: 0,
       get visible() {
-        return visible();
+        return text() !== undefined;
       },
-      children: child
+      onMouseOver: () => props.marquee.enter(key, text() ?? '', sessionWidth()),
+      onMouseOut: () => props.marquee.leave(key),
+      children: jsx('text', {
+        wrapMode: 'none',
+        get fg() {
+          return muted();
+        },
+        get children() {
+          const value = text() ?? '';
+          return props.marquee.active() === key && props.marquee.offset() > 0
+            ? marqueeText(value, sessionWidth(), props.marquee.offset())
+            : fitText(value, sessionWidth());
+        }
+      })
     });
-  /** Where and with what the session runs. Built again on a layout switch, like Context. */
+  /**
+   * Where the session runs, each line only when it differs from the defaults. The model and agent
+   * are left to the transcript, whose turn footers name them. Built again on a layout switch,
+   * like Context.
+   */
   const sessionSection = (column: boolean) =>
     section(
       'Session',
-      () =>
-        showProject() ||
-        place()?.directory !== undefined ||
-        branch() !== undefined ||
-        model() !== undefined ||
-        Boolean(props.session()?.agent),
+      () => showProject() || place()?.directory !== undefined || branch() !== undefined,
       [
-        optional(
-          showProject,
-          line(() => place()?.project ?? '')
-        ),
-        optional(
-          () => place()?.directory !== undefined,
-          line(() => place()?.directory ?? '')
-        ),
-        optional(
-          () => branch() !== undefined,
-          line(() => branch() ?? '')
-        ),
-        optional(
-          () => model() !== undefined || Boolean(props.session()?.agent),
-          jsx('text', {
-            get fg() {
-              return muted();
-            },
-            get children() {
-              const session = props.session();
-              const agent = session?.agent;
-              return [
-                jsx('span', { children: model() ?? '' }),
-                jsx('span', { children: model() && agent ? ' · ' : '' }),
-                jsx('span', {
-                  get style() {
-                    return {
-                      fg: session && agent ? props.agentColor(session, agent) : muted()
-                    };
-                  },
-                  children: agent ? titlecase(agent) : ''
-                })
-              ];
-            }
-          })
-        )
+        fitted('session:project', () => (showProject() ? place()?.project : undefined)),
+        fitted('session:directory', () => place()?.directory),
+        fitted('session:branch', branch)
       ],
       column
     );
-  /** Whether Context and Session fit side by side; narrower panes stack them as the sidebar does. */
-  const sideBySide = () => (props.width() - SECTION_GAP) / 2 >= MIN_SECTION_WIDTH;
   // Show reads both branches inside its own memo; untracked, they rebuild only on a layout switch.
   const sections = createComponent(Show, {
     keyed: true,
@@ -408,14 +391,4 @@ function placeOf(
 /** Capitalizes each word, as the host does for agent names (packages/tui/src/util/locale.ts, MIT). */
 export function titlecase(text: string): string {
   return text.replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-/** Display name of the session's model, falling back to its id. */
-function modelName(context: Plugin.Context, session: SessionInfo): string | undefined {
-  const model = session.model;
-  if (!model) return undefined;
-  const known = context.data.location.model
-    .list(session.location)
-    ?.find((item) => item.id === model.id && item.providerID === model.providerID);
-  return known?.name ?? model.id;
 }

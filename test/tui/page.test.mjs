@@ -167,8 +167,11 @@ const BINDINGS = {
  * A host stand-in: the real plugin entry against fake client, data, keymap, storage and router.
  * `search` answers the server plugin's search RPC; by default the plugin is missing.
  */
-async function host(search) {
+async function host(search, version = '2.2.5') {
   let renderer;
+  const toasts = [];
+  // Commands the plugin hands to the host keymap, as `[id, input]`.
+  const dispatched = [];
   const sessions = fixtures();
   const layers = [];
   const slots = [];
@@ -179,6 +182,7 @@ async function host(search) {
   const updates = [];
   const memories = new Map();
   const context = {
+    app: { name: 'opencode', version, channel: 'latest' },
     options: {},
     location: { directory: '/repo' },
     theme,
@@ -269,7 +273,9 @@ async function host(search) {
           onCleanup(() => layers.splice(layers.indexOf(layer), 1));
         } catch {}
       },
-      dispatch() {},
+      dispatch(id, input) {
+        dispatched.push([id, input]);
+      },
       shortcuts: (id) => (BINDINGS[id] ? [BINDINGS[id]] : []),
       mode: {
         push(mode) {
@@ -309,7 +315,11 @@ async function host(search) {
         },
         current: route
       },
-      toast: { show() {} },
+      toast: {
+        show(toast) {
+          toasts.push(toast);
+        }
+      },
       dialog: { clear() {} },
       tabs: { enabled: () => false, close: () => true, list: () => [] },
       format: { path: (value) => value }
@@ -327,6 +337,8 @@ async function host(search) {
     modes,
     navigations,
     updates,
+    toasts,
+    dispatched,
     route,
     /** Runs a command registered by any layer, like `keymap.dispatch`. */
     dispatch(id) {
@@ -591,6 +603,53 @@ test('right, down and enter open the second Work link of the selected session', 
   assert.deepEqual(opened, ['https://github.com/mastra-ai/mastra/issues/12']);
   assert.deepEqual(terminal.navigations, [], 'enter opened the link, not the session.');
 });
+
+// On a release CI never ran, the host's own list must answer its keys, and the user must learn
+// why the browser is gone and how to reach it.
+test('an untested OpenCode keeps its session list and quick switch, and says how to open the browser', async () => {
+  const terminal = await host(undefined, '99.0.0');
+  const ids = terminal.layers.flatMap((layer) => layer.commands ?? []).map((item) => item.id);
+  assert.ok(ids.includes('super-sessions.open'));
+  assert.ok(!ids.includes('session.list'));
+  assert.ok(!ids.includes('session.quick_switch.1'));
+  assert.deepEqual(
+    terminal.toasts.map((toast) => toast.message),
+    ['Super Sessions has not been tested with OpenCode 99.0.0. Open it with /super-sessions.']
+  );
+});
+
+// The host's own boundary would latch the overlay blank for good, leaving the user with no list.
+// Run state feeds the shared list memos; permissions only the rows the view draws.
+for (const [where, breakHost] of [
+  ['the list memos', (data) => Object.assign(data.session, { status: crash })],
+  ['the view', (data) => Object.assign(data.session.permission, { list: crash })]
+]) {
+  test(`a crash in ${where} closes the browser and opens the built-in list`, async () => {
+    const terminal = await host();
+    breakHost(terminal.context.data);
+    const rendered = await testRender(() => terminal.overlay.render({}), {
+      width: 100,
+      height: 30
+    });
+    active = rendered;
+    terminal.attach(rendered.renderer);
+    terminal.dispatch('session.list');
+    await import('../../dist/page/view.js');
+    await eventually(rendered, () => terminal.dispatched.length > 0);
+    assert.deepEqual(terminal.dispatched, [['session.list', 'classic']]);
+    assert.deepEqual(
+      terminal.toasts.map((toast) => toast.message),
+      ['Super Sessions failed; showing the built-in list']
+    );
+    await rendered.renderOnce();
+    assert.doesNotMatch(rendered.captureCharFrame(), /Search sessions/);
+  });
+}
+
+/** A host API that changed under the plugin. */
+function crash() {
+  throw new Error('the host changed');
+}
 
 test('space types into a non-empty search instead of peeking', async () => {
   const { terminal, rendered } = await mount(100);

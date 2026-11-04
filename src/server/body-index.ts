@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
+import { pluginDataPath } from '../host/files.js';
 
 /** One session matching a body search, with the creation time of its newest matching entry. */
 export interface BodySearchHit {
@@ -50,13 +50,9 @@ const IDS_PER_MS = 1000;
 
 const SCHEMA_VERSION = 1;
 
-/**
- * Where the index lives: the plugin's own directory under the XDG data home, next to OpenCode's
- * data but never inside its database. OpenCode gives server plugins no data directory of their own.
- */
+/** Where the index lives, in the plugin's data directory. */
 export function bodyIndexPath(env: NodeJS.ProcessEnv = process.env): string {
-  const data = env.XDG_DATA_HOME || path.join(homedir(), '.local', 'share');
-  return path.join(data, 'opencode', 'plugins', 'opencode-super-sessions', 'search.db');
+  return path.join(pluginDataPath(env), 'search.db');
 }
 
 /**

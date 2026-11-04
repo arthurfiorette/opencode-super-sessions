@@ -7,6 +7,7 @@ import plugin from '../../src/tui.js';
 test('session.list toggles the browser synchronously and falls through for the classic list', async () => {
   const layers: KeymapLayer[] = [];
   const context = {
+    app: { name: 'opencode', version: '2.2.5', channel: 'latest' },
     options: {},
     storage: {
       store: () => [{ imported: true, ids: [] }, async () => {}] as const,

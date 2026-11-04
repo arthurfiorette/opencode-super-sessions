@@ -2,6 +2,7 @@ import type { Plugin } from '@opencode/plugin/tui';
 import type { KeymapCommand } from '@opencode/plugin/tui/context';
 import { createComponent, createMemo, type JSX, lazy } from 'solid-js';
 import type { Options } from '../config.js';
+import { BASE_MODE, DIALOG_MODE } from '../host/keymap.js';
 import type { Pins } from '../pins.js';
 import type { SettingRow } from './definitions.js';
 import { installMaintenance, type Maintenance } from './maintenance.js';
@@ -51,7 +52,7 @@ export function installSettings(
   const server = createServerSettings(context);
   // A confirmation would replace whatever dialog is open, and the browser overlay is not a host
   // dialog but pushes its own keymap mode; either way the base mode is gone.
-  const busy = () => context.keymap.mode.current() !== 'base';
+  const busy = () => context.keymap.mode.current() !== BASE_MODE;
   const maintenance = installMaintenance(context, tui, pins, server, busy);
 
   const open = (focus?: SettingRow['key']) => {
@@ -94,7 +95,7 @@ export function installSettings(
       group: 'System',
       palette: true,
       run: () => {
-        if (context.keymap.mode.current() === 'modal') context.ui.dialog.clear();
+        if (context.keymap.mode.current() === DIALOG_MODE) context.ui.dialog.clear();
         open();
       }
     },

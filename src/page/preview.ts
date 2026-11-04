@@ -1,6 +1,6 @@
 import type { SessionInfo, SessionMessageInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
-import { generateSyntax, type ResolvedTheme } from '@opencode/theme/tui';
+import type { ResolvedTheme } from '@opencode/theme/tui';
 import { type MouseEvent, RGBA, type ScrollBoxRenderable, SyntaxStyle } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import {
@@ -15,8 +15,10 @@ import {
 import { createStore } from 'solid-js/store';
 import { useCliSettings } from '../cli-settings.js';
 import type { Options } from '../config.js';
+import { markdownStyles } from '../host/theme.js';
 import { createMarquee } from '../marquee.js';
 import type { SessionRefView } from '../rpc.js';
+import { tuiSettingsFor } from '../settings/store.js';
 import { PreviewHeader, SPINNER } from './preview-header.js';
 import { Transcript } from './transcript.js';
 import { transcriptRows } from './transcript-model.js';
@@ -89,7 +91,8 @@ export function Preview(props: PreviewProps): JSX.Element {
     onCleanup(() => clearInterval(timer));
   });
   const spinner = () => (settings.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯');
-  const marquee = createMarquee({ animated: () => settings.animations });
+  const tui = tuiSettingsFor(context);
+  const marquee = createMarquee({ animated: () => tui.titleScroll(settings.animations) });
   // The hovered line may be replaced without a mouse-out when the pane follows another row, so
   // a scroll in progress stops here instead of carrying over to the next session's title.
   createEffect(on(shown, () => marquee.leave(marquee.active() ?? '')));
@@ -114,8 +117,7 @@ export function Preview(props: PreviewProps): JSX.Element {
     spinner,
     selectedRef: () => props.selectedRef?.(),
     width: () => props.width(),
-    marquee,
-    agentColor: (value: SessionInfo, agent: string) => agentColor(context, theme(), value, agent)
+    marquee
   });
 
   let scroll: ScrollBoxRenderable | undefined;
@@ -358,7 +360,7 @@ function createSyntax(context: Plugin.Context, theme: () => ResolvedTheme) {
   return createMemo(() => {
     const previous = current;
     const owner = context.renderer.nativeScene;
-    const markdown = generateSyntax(theme(), owner);
+    const markdown = markdownStyles(context, theme());
     const muted = theme().text.muted;
     const thinking = SyntaxStyle.fromStyles(
       Object.fromEntries(
