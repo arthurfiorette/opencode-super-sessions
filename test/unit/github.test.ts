@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RunResult } from '../../src/process.js';
+import { parseDetailsResponse } from '../../src/providers/github/details.js';
 import { parseGraphQLOutput } from '../../src/providers/github/output.js';
 import {
   buildSnapshotQuery,
@@ -162,4 +163,25 @@ test('whole-document gh failures map to the forge error the status page and back
   for (const [name, result, expected] of cases) {
     assert.deepEqual(parseGraphQLOutput(result, NOW), expected, name);
   }
+});
+
+test('details link a check run to its details page and a status to its target', () => {
+  const response = parseGraphQLOutput(asRun(fixture('details.json')), NOW);
+  assert.ok('data' in response);
+  const details = parseDetailsResponse(response);
+  assert.ok('checks' in details);
+  assert.deepEqual(
+    details.checks.map((check) => [check.name, check.url]),
+    [
+      [
+        'Check Sizes',
+        'https://github.com/prettier/prettier/actions/runs/41842336048/job/126616881046'
+      ],
+      [
+        'Header rules',
+        'https://app.netlify.com/projects/prettier/deploys/6aeb38fdfdef176ec421c296'
+      ],
+      ['deploy/netlify', 'https://deploy-preview-20438--prettier.netlify.app']
+    ]
+  );
 });

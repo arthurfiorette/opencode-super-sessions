@@ -10,6 +10,11 @@ export interface SnapshotCache {
   /** Keys whose value is missing or expired and that are not backing off after an error. */
   stale(keys: string[]): string[];
   /**
+   * Why the last fetch of `key` failed, when it did. `not-found` is an answer, not a failure.
+   * The last known state stays in {@link get} meanwhile.
+   */
+  failure(key: string): ForgeError | undefined;
+  /**
    * Fetches missing and expired candidates (all of them with `force`) and returns every
    * candidate's value by {@link candidateKey}. Concurrent calls share in-flight fetches, and an
    * error's `retryAt` holds even under `force`.
@@ -26,6 +31,8 @@ interface Entry {
   expiresAt: number;
   /** Set after a rate limit; no fetch happens before it, forced or not. */
   retryAt?: number;
+  /** The last fetch's error, other than `not-found`. */
+  failure?: ForgeError;
 }
 
 const MINUTE = 60_000;
@@ -48,18 +55,28 @@ export function detailsTtl(status: RefStatus | undefined): number {
 /** Last details answer per pull request key; see {@link createDetailsCache}. */
 export interface DetailsCache {
   /**
-   * The cached details of `key`, or `load()`'s answer when they expired. Concurrent calls share
-   * one load. `status` is the pull request's state, which sets the lifetime like a snapshot's.
+   * The cached details of `key`, or `load()`'s answer when they expired, or always with `force`
+   * unless a rate limit's `retryAt` has not passed. Concurrent calls share one load. `status` is
+   * the pull request's state, which sets the lifetime like a snapshot's.
    */
   get(
     key: string,
     status: RefStatus | undefined,
-    load: () => Promise<PullDetails | ForgeError>
+    load: () => Promise<PullDetails | ForgeError>,
+    options?: { force?: boolean }
   ): Promise<PullDetails | ForgeError>;
 }
 
 // The preview asks for one pull request at a time; this bounds what a long session keeps.
 const DETAILS_LIMIT = 100;
+
+interface DetailsEntry {
+  value: Promise<PullDetails | ForgeError>;
+  expiresAt: number;
+  settled: boolean;
+  /** A rate limit's end; no load happens before it, forced or not. */
+  retryAt?: number;
+}
 
 /**
  * Creates the cache of the Pull requests view's details. Errors are kept for 30 seconds, or until
@@ -67,23 +84,32 @@ const DETAILS_LIMIT = 100;
  */
 export function createDetailsCache(options: { now?: () => number } = {}): DetailsCache {
   const now = options.now ?? Date.now;
-  const entries = new Map<
-    string,
-    { value: Promise<PullDetails | ForgeError>; expiresAt: number }
-  >();
+  const entries = new Map<string, DetailsEntry>();
+  /** Whether a cached entry answers: fresh, or with `force` still loading or backing off. */
+  const usable = (cached: DetailsEntry, force: boolean) => {
+    const at = now();
+    if (!force) return cached.expiresAt > at;
+    return !cached.settled || (cached.retryAt !== undefined && cached.retryAt > at);
+  };
   return {
-    get(key, status, load) {
+    get(key, status, load, getOptions = {}) {
       const cached = entries.get(key);
-      if (cached && cached.expiresAt > now()) return cached.value;
-      const entry = { value: load(), expiresAt: Number.POSITIVE_INFINITY };
+      if (cached && usable(cached, getOptions.force === true)) return cached.value;
+      const entry: DetailsEntry = {
+        value: load(),
+        expiresAt: Number.POSITIVE_INFINITY,
+        settled: false
+      };
       entries.delete(key);
       entries.set(key, entry);
       // Map order is insertion order, so the first key is the least recently fetched.
       if (entries.size > DETAILS_LIMIT) entries.delete(entries.keys().next().value ?? '');
       entry.value.then(
         (value) => {
+          entry.settled = true;
           entry.expiresAt =
             'reason' in value ? (value.retryAt ?? now() + ERROR_TTL) : now() + detailsTtl(status);
+          if ('reason' in value && value.retryAt !== undefined) entry.retryAt = value.retryAt;
         },
         () => entries.delete(key)
       );
@@ -142,7 +168,8 @@ export function createSnapshotCache(options: { now?: () => number } = {}): Snaps
     entries.set(resolved, {
       value: kept,
       expiresAt,
-      ...(value.retryAt === undefined ? {} : { retryAt: value.retryAt })
+      ...(value.retryAt === undefined ? {} : { retryAt: value.retryAt }),
+      ...(value.reason === 'not-found' ? {} : { failure: value })
     });
   };
 
@@ -179,6 +206,8 @@ export function createSnapshotCache(options: { now?: () => number } = {}): Snaps
       const at = now();
       return keys.filter((key) => due(lookup(key), false, at));
     },
+
+    failure: (key) => lookup(key)?.failure,
 
     async ensure(provider, candidates, ensureOptions = {}) {
       const at = now();

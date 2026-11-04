@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RunResult } from '../../src/process.js';
+import { parseDetailsResponse } from '../../src/providers/gitlab/details.js';
 import { parseGraphQLOutput } from '../../src/providers/gitlab/output.js';
 import {
   buildSnapshotQuery,
@@ -27,6 +28,21 @@ const NOW = Date.UTC(2026, 10, 4);
 function candidate(repo: string, number: number, kind?: 'pr' | 'issue'): RefCandidate {
   return { provider: 'gitlab', host: 'gitlab.com', repo, number, ...(kind ? { kind } : {}) };
 }
+
+test('details link each job to its page on the host', () => {
+  const response = parseGraphQLOutput(asRun(fixture('details.json')), NOW);
+  assert.ok('data' in response);
+  const details = parseDetailsResponse(response, 'gitlab.com');
+  assert.ok('checks' in details);
+  assert.deepEqual(
+    details.checks.map((check) => [check.name, check.url]),
+    [
+      ['lint_commit', 'https://gitlab.com/gitlab-org/cli/-/jobs/17737982341'],
+      ['tests:unit', 'https://gitlab.com/gitlab-org/cli/-/jobs/17737982349'],
+      ['govulncheck', 'https://gitlab.com/gitlab-org/cli/-/jobs/17737982338']
+    ]
+  );
+});
 
 test('a batch resolves states, kinds and closed issues, and isolates missing refs', () => {
   // Same candidates, in the same order, as the live capture in snapshot.json.

@@ -36,9 +36,16 @@ export type Resolution =
   /** The forge was unreachable and the candidate is a bare number of unknown kind. */
   | { status: 'unknown'; candidate: RefCandidate; reason: UnverifiedReason };
 
-/** Reads a directory's repository and branch. Git failures resolve to an empty object. */
-export async function resolveRepo(runtime: Runtime, directory: string): Promise<RepoInfo> {
-  return runtime.repos.resolve(directory).catch((error: unknown) => {
+/**
+ * Reads a directory's repository and branch, running git again with `force`. Git failures
+ * resolve to an empty object.
+ */
+export async function resolveRepo(
+  runtime: Runtime,
+  directory: string,
+  options: { force?: boolean } = {}
+): Promise<RepoInfo> {
+  return runtime.repos.resolve(directory, options).catch((error: unknown) => {
     warn(`Reading the git checkout of ${directory} failed`, error);
     return {};
   });

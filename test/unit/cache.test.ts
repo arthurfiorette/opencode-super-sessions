@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { candidateKey, createSnapshotCache, type Snapshot } from '../../src/cache.js';
-import type { ForgeProvider, RefCandidate } from '../../src/providers/provider.js';
-import type { RefStatus } from '../../src/refs/ref.js';
+import {
+  candidateKey,
+  createDetailsCache,
+  createSnapshotCache,
+  type Snapshot
+} from '../../src/cache.js';
+import type { ForgeError, ForgeProvider, RefCandidate } from '../../src/providers/provider.js';
+import type { PullDetails, RefStatus } from '../../src/refs/ref.js';
 
 const MINUTE = 60_000;
 
@@ -106,4 +111,29 @@ test('a rate limit keeps the last state and blocks even forced refetches until r
   clock = 10 * MINUTE;
   await cache.ensure(provider, [item], { force: true });
   assert.equal(calls.length, 3);
+});
+
+test('forced details loads skip fresh entries but wait out a rate limit', async () => {
+  let clock = 0;
+  const cache = createDetailsCache({ now: () => clock });
+  let loads = 0;
+  let answer: PullDetails | ForgeError = { body: '', checks: [] };
+  const load = async () => {
+    loads++;
+    return answer;
+  };
+
+  await cache.get('k', 'open', load);
+  await cache.get('k', 'open', load);
+  await cache.get('k', 'open', load, { force: true });
+  assert.equal(loads, 2);
+
+  answer = { reason: 'rate-limited', retryAt: 10 * MINUTE };
+  await cache.get('k', 'open', load, { force: true });
+  clock = 5 * MINUTE;
+  await cache.get('k', 'open', load, { force: true });
+  assert.equal(loads, 3);
+  clock = 10 * MINUTE;
+  await cache.get('k', 'open', load, { force: true });
+  assert.equal(loads, 4);
 });

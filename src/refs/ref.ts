@@ -86,7 +86,8 @@ export const refStatusSchema = z.enum([
  * - `decision`: the forge's review verdict; absent when nobody reviewed and none is required.
  * - `unresolved` / `threads`: resolvable review threads still open, and all of them.
  * - `checks`: the head commit's combined CI result; absent when nothing ran.
- * - `checksPassed` / `checksTotal`: how many checks passed out of all of them, drawn as `91/93`.
+ * - `checksPassed` / `checksTotal`: how many checks passed out of all of them, drawn as `91/93`
+ *   unless every check passed.
  *   GitHub counts successful, neutral and skipped check runs and successful statuses as passed;
  *   GitLab counts successful and skipped jobs of the head pipeline, without retried or manual ones.
  */

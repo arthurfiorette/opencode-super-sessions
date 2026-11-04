@@ -22,7 +22,8 @@ export interface RepoInfo {
 }
 
 export interface RepoResolver {
-  resolve(directory: string): Promise<RepoInfo>;
+  /** Reads `directory`, from the cache unless `force`, which runs git again. */
+  resolve(directory: string, options?: { force?: boolean }): Promise<RepoInfo>;
 }
 
 type RemoteInfo = Pick<RepoInfo, 'repo' | 'remote' | 'defaultBranch'> & {
@@ -55,12 +56,18 @@ function chooseRemote(remotes: Map<string, RepoRef>): [string, RepoRef] | undefi
   return [...remotes].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))[0];
 }
 
-/** Caches one async value per key until it expires; concurrent callers share the pending value. */
-function memo<T>(ttl: number, load: (key: string) => Promise<T>): (key: string) => Promise<T> {
+/**
+ * Caches one async value per key until it expires; concurrent callers share the pending value.
+ * `force` loads again and replaces the cached value.
+ */
+function memo<T>(
+  ttl: number,
+  load: (key: string) => Promise<T>
+): (key: string, force?: boolean) => Promise<T> {
   const cache = new Map<string, { value: Promise<T>; expiresAt: number }>();
-  return (key) => {
+  return (key, force = false) => {
     const cached = cache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    if (!force && cached && cached.expiresAt > Date.now()) return cached.value;
     const value = load(key);
     cache.set(key, { value, expiresAt: Date.now() + ttl });
     return value;
@@ -132,11 +139,12 @@ export function createRepoResolver(options: {
 
   return {
     /** Resolves a directory; a non-git directory resolves to an empty object. */
-    async resolve(directory) {
+    async resolve(directory, options = {}) {
       const key = path.resolve(directory);
+      const force = options.force === true;
       const [{ remotes, ...remote }, { upstreamRef, ...branch }] = await Promise.all([
-        remoteInfo(key),
-        branchInfo(key)
+        remoteInfo(key, force),
+        branchInfo(key, force)
       ]);
       if (branch.branch === undefined) return remote;
       const headRepo = upstreamRef && remotes ? upstreamRepo(remotes, upstreamRef) : undefined;

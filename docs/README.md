@@ -1,6 +1,6 @@
 # Developer guide
 
-User documentation is in the [root README](../README.md). Releases are described in [releasing.md](releasing.md), and contribution rules in [AGENTS.md](../AGENTS.md).
+User documentation is in the [root README](../README.md), and contribution rules in [AGENTS.md](../AGENTS.md). A GitHub release tagged `v<package.json version>` publishes to npm through `publish.yml`.
 
 ## Development
 
@@ -106,7 +106,7 @@ Opened and peeked sessions go first, then the previewed one, then "Scan all". A 
 | Current branch             | `src/repo.ts`                 | 10 s per directory                                                                          |
 | Forge availability         | `src/providers/*/provider.ts` | 5 min, 10 s while the CLI is missing                                                        |
 
-Concurrent requests for one key share a fetch. A rate limit sets `retryAt`, which holds even for forced refreshes, and a transient error keeps the last known state; only `not-found` replaces it. Snapshot refreshes never write metadata. The `refs` RPC returns cached data at once and refreshes stale sessions in the background (`runtime.refreshing` keeps those from stacking); `refresh` waits for the forge.
+Concurrent requests for one key share a fetch. A rate limit sets `retryAt`, which holds even for forced refreshes, and a transient error keeps the last known state; only `not-found` replaces it. Snapshot refreshes never write metadata. The `refs` RPC returns cached data at once and refreshes stale sessions in the background (`runtime.refreshing` keeps those from stacking); `refresh` waits for the forge. A forced `refresh` also skips the repository caches in `src/repo.ts` and sets `failed` on a view to the forges whose last answer for it was an error (`failure` on the snapshot and branch caches), so `f5` can say which forge did not answer.
 
 ### Child processes
 
@@ -150,6 +150,10 @@ The browser (`src/page/page.ts`) claims the host's `app` slot, which renders aft
 
 The Pull requests view builds its rows in the TUI from the lists and refs the model already loaded (`pullRows` in `src/page/state.ts`), so it costs no extra call. Its selection is a pull request key (`memory.pull`), and `memory.selected` follows it as that pull request's newest session; `model.rows()` is then the list of those sessions, so `enter`, `space`, the peek keys and the way back from a peek work unchanged. Only the preview (`src/page/pull-preview.ts`) asks the server, with `pull.details`, 150 ms after the selection settles.
 
+The session preview's Work section and the sidebar ask `pull.details` too, through `createFailedChecks` in `src/work-row.ts`, but only for open pull requests whose snapshot says the checks fail, and again when their check counts change. The server's details cache absorbs the repeats, so the list never triggers a details request. `workStatus` draws the review, thread and failed check lines from that answer.
+
+List rows react to the pointer in `src/page/view.ts`: `hoveredRow` holds the row under it and only tints the row (`hoverBackground` in `src/page/row.ts`), which loses to the selection and the delete confirmation. OpenTUI reports no double clicks, so `clickRow` treats two left mouse-ups on the same row id within 400 ms as one. Every link the plugin draws goes through `clickLink` in `src/link.ts`, which opens it with `openUrl` or, with ctrl held, copies it with the renderer's OSC 52 support.
+
 ### Takeover and classic fallthrough
 
 A global layer at priority 1 (`OVER_HOST`) registers commands with the host's own ids: `session.list` (slash `sessions`, aliases `resume` and `continue`) and `session.quick_switch.1` to `9`. Reusing the ids makes the user's keybinds, the slash names and the palette entries reach the plugin first. A keymap `run` falls through to the next layer only when it returns a literal `false`, and a returned Promise counts as handled, so these runs stay synchronous. `/sessions-classic` dispatches `session.list` with the argument `classic`, for which the takeover returns `false` and the built-in list opens.
@@ -170,7 +174,9 @@ The dialog rows are in `src/settings/definitions.ts`. TUI settings live in `cont
 | ---------------------------------------------------- | --------------------------------------------------------- |
 | `status`                                             | CLI availability of each enabled forge on its public host |
 | `refs`, `refresh`                                    | Links, branch refs and states per session                 |
+| `refresh` with `force`                               | `f5`: refetch everything and rerun git, report `failed`   |
 | `pull.details`                                       | Author, branches, description and checks of one PR        |
+| `pull.details` with `force`                          | `f5` in the Pull requests view: details and snapshot      |
 | `search`                                             | Ranked hits for a query, scope and archived flag          |
 | `link`, `unlink`                                     | Manual link and dismissal                                 |
 | `done.set`                                           | The user's Done mark, or `null` to follow the refs again  |
