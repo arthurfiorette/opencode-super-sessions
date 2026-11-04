@@ -785,7 +785,8 @@ export default function SessionBrowser(props: PageProps) {
       },
       refs: (sessionID) => data.refs[sessionID],
       branch: branchOf,
-      running: model.running
+      running: model.running,
+      theme
     })
   });
 
