@@ -65,6 +65,7 @@ const MODE = 'super-sessions';
 const BACKDROP = RGBA.fromInts(0, 0, 0, 150);
 const PREVIEW_MIN_COLUMNS = 120;
 const REFRESH_INTERVAL = 60_000;
+const SCOPE_DELAY = 200;
 const VIEW_LABELS: Record<PageView, string> = {
   active: 'Active',
   done: 'Done',
@@ -208,7 +209,20 @@ export default function SessionBrowser(props: PageProps) {
     else void pending.then(refreshVisible);
   };
   sync();
-  createEffect(on(scope, sync, { defer: true }));
+  // Pressing ctrl+a several times in a row loads only the scope it stops on, instead of one
+  // reload, refs call and refresh per press.
+  let scopeTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(
+    on(
+      scope,
+      () => {
+        clearTimeout(scopeTimer);
+        scopeTimer = setTimeout(sync, SCOPE_DELAY);
+      },
+      { defer: true }
+    )
+  );
+  onCleanup(() => clearTimeout(scopeTimer));
   createEffect(() => controller.search(memory.query, memory.view === 'archived', scope()));
   onMount(() => {
     input?.focus();

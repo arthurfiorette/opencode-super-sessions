@@ -346,13 +346,18 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
     changed(data);
   };
 
-  /** Fetches cached refs for every loaded session, then the Done lookups for candidates. */
-  const loadRefs = async (ids: string[]) => {
+  /**
+   * Fetches cached refs for every loaded session, then the Done lookups for candidates. A load
+   * superseded while its refs were in flight drops them: they may be older than the newer
+   * load's answer, and a reset in between means they belong to another scope.
+   */
+  const loadRefs = async (ids: string[], token: number) => {
     const batches = [];
     for (let start = 0; start < ids.length; start += RPC_BATCH) {
       batches.push(ids.slice(start, start + RPC_BATCH));
     }
     const results = await Promise.allSettled(batches.map((batch) => deps.refs(batch)));
+    if (token !== loadToken) return;
     const refs = { ...data.refs };
     for (const result of results)
       if (result.status === 'fulfilled') Object.assign(refs, result.value);
@@ -445,7 +450,10 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
         ]);
         if (token !== loadToken) return;
         publish({ status: 'ready', active, archived });
-        await loadRefs([...active, ...archived].map((session) => session.id));
+        await loadRefs(
+          [...active, ...archived].map((session) => session.id),
+          token
+        );
       } catch {
         if (token === loadToken) publish({ status: 'error' });
       }
