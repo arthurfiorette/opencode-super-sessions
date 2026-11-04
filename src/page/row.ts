@@ -81,8 +81,9 @@ export function findRef(view: SessionRefView | undefined, key: string): Ref | un
 
 /**
  * The refs line: the primary ref with its title, the issue beside it, the ref a search matched
- * when it is neither, and a count of the rest. Icons take the state color, numbers the base
- * text color and titles the muted one, except the matched ref's title.
+ * when it is neither, and a count of the rest. Icon and number take the state color, since a
+ * colored icon beside a plain number read as two things; titles are muted, except the matched
+ * ref's title.
  */
 export function refSegments(input: RefsInput): Segment[] {
   const view = input.refs;
@@ -100,12 +101,10 @@ export function refSegments(input: RefsInput): Segment[] {
     const key = refKey(ref);
     const state = view.states[key];
     const hit = key === input.matched;
+    const color = refColor(input.options, state?.status, input.theme, input.mode);
     const piece: Segment[] = [
-      {
-        text: `${refIcon(ref.kind, state?.status)} `,
-        fg: refColor(input.options, state?.status, input.theme, input.mode)
-      },
-      { text: refNumber(ref), fg: base }
+      { text: `${refIcon(ref.kind, state?.status)} `, fg: color },
+      { text: refNumber(ref), fg: color }
     ];
     if ((ref === summary.primary || hit) && state?.title) {
       piece.push({ text: ` ${state.title}`, fg: hit ? base : muted });
