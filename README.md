@@ -110,7 +110,7 @@ On GitHub, successful, neutral and skipped check runs and successful statuses co
 
 Each row is a pull request: a muted `-` in the marker column, its icon and number in the state color, its [review and CI icons](#review-and-ci-icons), its title, and how many sessions track it. The search filters these rows by number (`12`, `#12` or `!12`) and title.
 
-`enter` or a double click opens the newest session that tracks the selected pull request, `space` peeks it, `ctrl+g` opens the pull request in your web browser, and `f5` reloads it with its checks. The keys that change one session (archive, Done, rename, pin, delete, link) are off in this view. The footer reads `enter open  space peek  ctrl+g open PR  ctrl+/ keys`.
+`enter` or a double click opens the newest session that tracks the selected pull request, `space` peeks it, `ctrl+g` opens the pull request in your web browser, and `f5` reloads it with its checks. The keys that change one session (archive, Done, rename, pin, delete, fork, link) are off in this view. The footer reads `enter open  space peek  ctrl+g open PR  ctrl+/ keys`.
 
 The preview shows the title and state, `head -> base`, the author, the review verdict, merge conflicts and unresolved threads, the checks, the issues the pull request closes and the ones its sessions track, the description, and the sessions that worked on it. The checks take one summary line of icons and counts, leaving out zeros: passed (green check), skipped (muted skip), cancelled (muted stop), pending (yellow dot) and failed (red x); when every check passed, only the green check and the count. Under it each check that failed or waits for an action is listed by name, failures first, at most ten and then `+N more`, which opens the pull request's checks page. Cancelled checks are counted, never listed. A listed check is a link to its page, such as the job's log: hovering makes its name bold, a click opens it and a ctrl+click copies it. `right` moves the arrow keys to the sessions, `enter` opens one, and `left` or `esc` goes back. Author, branches, checks and description are fetched for the selected pull request only, and cached as long as its state.
 
@@ -200,6 +200,7 @@ Keys are written the way OpenCode writes them. Keys marked "yours" belong to an 
 | `ctrl+t`                      | Ask OpenCode's title agent for a new title                                                                                     |
 | `ctrl+f` (yours)              | Pin or unpin (`session.pin.toggle`)                                                                                            |
 | `ctrl+d` (yours)              | Delete; press twice (`session.delete`)                                                                                         |
+| `ctrl+b`                      | Fork the session, whole or before one of your prompts, and open the fork (see below)                                           |
 | `ctrl+y`                      | Archive every Done session after confirmation. Done view, not while searching                                                  |
 | `ctrl+l`                      | Link a pull request or issue: a URL, `owner/repo#N` or `#N`                                                                    |
 | `ctrl+g`                      | Open the main pull request, or else the first issue, in your web browser. In the Pull requests view, the selected pull request |
@@ -213,6 +214,8 @@ Most terminals send `ctrl+/` as `ctrl+_`; the browser takes both.
 The quit keys never exit OpenCode from the browser. With the default keys `ctrl+d` deletes there, because `session.delete` wins over `app.exit` inside the browser.
 
 `f5` asks GitHub or GitLab again for the selected row, past the caches: the session's pull requests and issues, its branch's pull request and its git checkout, or in the Pull requests view the pull request and its checks. A toast says `Reloading…` when the answer takes longer than 300 ms, and names the forge when it fails. While the forge's rate limit is spent, the plugin still waits for the reset.
+
+`ctrl+b` forks the selected session like OpenCode's `/fork`. A dialog lists "Full session", then your prompts in the session, newest first, with the time each was sent. Picking a prompt copies the conversation up to just before it, and the browser opens the new session. Unlike `/fork`, the prompt you picked is not put back in the composer, because plugins cannot fill it. In the browser `ctrl+b` no longer moves the search cursor left; `left` still does.
 
 ### Mouse
 

@@ -252,6 +252,8 @@ export function createBrowserModel(
     ...(
       [
         'session.created',
+        // A fork publishes only this, not `session.created` (packages/core/src/session.ts:375).
+        'session.forked',
         'session.archived',
         'session.unarchived',
         'session.moved',

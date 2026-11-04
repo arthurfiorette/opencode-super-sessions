@@ -13,9 +13,11 @@ import {
   userPrompt
 } from '../../src/host/events.js';
 import {
+  forkSession,
   listFilters,
   projectScope,
   regenerateTitle,
+  sessionPrompts,
   setArchived
 } from '../../src/host/session-api.js';
 import { shellCall } from '../../src/host/tool-hook.js';
@@ -289,6 +291,47 @@ test('the HTTP client regenerates a title from an empty one and publishes rename
   await until(
     async () => (await host.sessions.get({ sessionID })).title,
     (title) => title === GENERATED_TITLE
+  );
+});
+
+test('a fork before a prompt leaves it and later messages out, and a full fork copies them all', {
+  timeout: 60_000
+}, async () => {
+  const sessionID = await agentRun('fork', 'first prompt');
+  await host.sessions.prompt({ sessionID, text: 'second\nprompt' });
+  await until(
+    () => messages(sessionID),
+    (all) => all.filter((message) => message.type === 'idle').length === 2
+  );
+  const prompts = await sessionPrompts(host, sessionID);
+  assert.deepEqual(
+    prompts.map((prompt) => prompt.text),
+    ['second\nprompt', 'first prompt']
+  );
+  const userTexts = async (id: string) =>
+    (await messages(id)).flatMap((message) => (message.type === 'user' ? [message.text] : []));
+
+  const before = await forkSession(host, sessionID, prompts[0]?.id);
+  assert.notEqual(before.id, sessionID);
+  // The browser reloads its lists on this event; a fork publishes no `session.created`.
+  await event('session.forked', (item) => item.data.sessionID === before.id);
+  assert.deepEqual(await userTexts(before.id), ['first prompt']);
+  assert.ok(
+    (await messages(before.id)).some((message) => message.type === 'assistant'),
+    'the answer to the first prompt was not copied'
+  );
+  const full = await forkSession(host, sessionID);
+  assert.deepEqual(await userTexts(full.id), ['first prompt', 'second\nprompt']);
+
+  // sessionPrompts asks for `type` again on every page, since the cursor does not carry it.
+  const page = { sessionID, type: 'user', limit: 1 } as const;
+  const first = await host.message.list({ ...page, order: 'desc' });
+  const cursor = first.cursor.next;
+  assert.ok(cursor);
+  const second = await host.message.list({ ...page, cursor });
+  assert.deepEqual(
+    [...first.data, ...second.data].map((message: SessionMessageInfo) => message.id),
+    prompts.map((prompt) => prompt.id)
   );
 });
 

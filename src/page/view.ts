@@ -27,7 +27,14 @@ import { openUrl, refUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
 import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
 import { rpcError } from '../host/rpc.js';
-import { isUnread, regenerateTitle, setArchived } from '../host/session-api.js';
+import {
+  forkSession,
+  isUnread,
+  type Prompt,
+  regenerateTitle,
+  sessionPrompts,
+  setArchived
+} from '../host/session-api.js';
 import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.js';
 import { copyLink } from '../link.js';
 import { type ProviderId, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
@@ -107,6 +114,12 @@ const HINT_GAP = 2;
 // Free in the host's default keymap and in the search input's own bindings: ctrl+e and ctrl+k
 // edit the line there, ctrl+n moves through host dialogs, ctrl+x is the host's leader.
 const DONE_KEY = 'ctrl+q';
+// Letters type into the search and ctrl+f is the host's pin. ctrl+b is only the search input's
+// cursor-left here (OpenTUI's input bindings), which `left` also does; the host's ctrl+b,
+// `session.background` (packages/tui/src/config/keybind.ts:129), sits in the session view's
+// base-mode layer (packages/tui/src/routes/session/index.tsx:1457), which the browser's mode
+// turns off.
+const FORK_KEY = 'ctrl+b';
 // ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e and ctrl+k edit the search, ctrl+h is backspace in
 // many terminals; the host binds nothing to f5.
 const RELOAD_KEY = 'f5';
@@ -504,6 +517,46 @@ export default function SessionBrowser(props: PageProps) {
       toast(linkError(error), 'error');
     }
   };
+  /**
+   * Forks the selected session like the host's /fork: the user picks the whole session or a
+   * prompt to fork before, newest first, and the browser opens the new session. Failures leave
+   * the browser open.
+   */
+  const fork = async () => {
+    const session = selected();
+    if (!session) return;
+    let prompts: Prompt[];
+    try {
+      prompts = await sessionPrompts(client, session.id);
+    } catch {
+      toast("Could not read the session's messages.", 'error');
+      return;
+    }
+    // `null` stands for the whole session: the dialog resolves `undefined` when dismissed.
+    const picked = context.ui.dialog.select<string | null>({
+      title: 'Fork session',
+      options: [
+        { title: 'Full session', value: null },
+        ...prompts.map((prompt) => ({
+          title: prompt.text.replace(/\n/g, ' '),
+          value: prompt.id,
+          // The host's Locale.time (packages/tui/src/util/locale.ts:7).
+          footer: new Date(prompt.created).toLocaleTimeString(undefined, { timeStyle: 'short' })
+        }))
+      ]
+    });
+    // The host's fork dialog is large; the select above is already the active dialog.
+    context.ui.dialog.set({ size: 'large' });
+    const before = await picked;
+    if (before === undefined) return;
+    try {
+      const forked = await forkSession(client, session.id, before ?? undefined);
+      open(forked.id);
+      toast('Forked session', 'success');
+    } catch {
+      toast('Could not fork the session.', 'error');
+    }
+  };
   /** Archives every Done session after the user confirms. */
   const archiveDone = async () => {
     const done = rowsOf(model.doneGroups());
@@ -755,6 +808,11 @@ export default function SessionBrowser(props: PageProps) {
         key: shortcut(HOST_COMMANDS.delete, 'ctrl+d'),
         run: remove
       },
+      {
+        title: 'Fork session',
+        key: shortcut('super-sessions.fork', FORK_KEY),
+        run: fork
+      },
       ...(memory.view === 'done' && !data.search
         ? [
             {
@@ -990,6 +1048,13 @@ export default function SessionBrowser(props: PageProps) {
       bind: 'ctrl+l',
       enabled: sessionRows,
       run: () => void link()
+    },
+    {
+      id: 'super-sessions.fork',
+      title: 'Fork session',
+      bind: FORK_KEY,
+      enabled: sessionRows,
+      run: () => void fork()
     },
     {
       id: 'super-sessions.archive.done',

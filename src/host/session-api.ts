@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { LocationPublicInfo, SessionInfo } from '@opencode/client';
+import type { LocationPublicInfo, OpenCodeClient, SessionInfo } from '@opencode/client';
 import type { SearchScope } from '../rpc.js';
 
 // Session API calls whose meaning the types do not carry: which route archives, what an empty
@@ -34,6 +34,62 @@ export function setArchived(
  */
 export function regenerateTitle(client: SessionUpdater, sessionID: string): Promise<void> {
   return client.session.update({ sessionID, title: '' });
+}
+
+/** User messages per `message.list` page when the fork dialog reads a session's prompts. */
+const PROMPT_PAGE = 100;
+
+/** A prompt the fork dialog offers to fork before. */
+export interface Prompt {
+  id: string;
+  text: string;
+  created: number;
+}
+
+/**
+ * Every user message of a session, newest first, the list the host's /fork dialog offers
+ * (packages/tui/src/routes/session/dialog-fork.tsx:57). The host reads its synced transcript,
+ * which starts with the newest 20 messages (packages/client/src/solid/data.ts:1826), so this
+ * pages `message.list` instead. The cursor
+ * carries the order but not the `type` filter (packages/server/src/handlers/message.ts:24), so
+ * every page asks for `type` again, and a cursor comes back even on the last page, so a short
+ * page ends the read.
+ */
+export async function sessionPrompts(
+  client: Pick<OpenCodeClient, 'message'>,
+  sessionID: string
+): Promise<Prompt[]> {
+  const prompts: Prompt[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await client.message.list(
+      cursor === undefined
+        ? { sessionID, type: 'user', order: 'desc', limit: PROMPT_PAGE }
+        : { sessionID, type: 'user', cursor, limit: PROMPT_PAGE }
+    );
+    for (const message of page.data) {
+      if (message.type === 'user')
+        prompts.push({ id: message.id, text: message.text, created: message.time.created });
+    }
+    cursor = page.cursor.next ?? undefined;
+    if (page.data.length < PROMPT_PAGE || cursor === undefined) return prompts;
+  }
+}
+
+/**
+ * Forks a session into a new one. With `before`, the copy holds the messages older than that
+ * message and leaves it and everything after out; without it, the copy runs through the newest
+ * message (packages/core/src/session.ts:339). The host's /fork then carries the left-out prompt
+ * into the new session's composer through a `prompt` field on its session route
+ * (packages/tui/src/routes/session/dialog-fork.tsx:43); the plugin route type has no such field
+ * (`Route` in @opencode/plugin/tui), so a fork from the browser opens with an empty composer.
+ */
+export function forkSession(
+  client: Pick<OpenCodeClient, 'session'>,
+  sessionID: string,
+  before?: string
+): Promise<SessionInfo> {
+  return client.session.fork(before === undefined ? { sessionID } : { sessionID, before });
 }
 
 /**

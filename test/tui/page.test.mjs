@@ -51,6 +51,12 @@ const fixtures = () => [
   })
 ];
 
+// Every session's prompts, newest first, as `message.list` with `type: 'user'` returns them.
+const PROMPTS = [
+  { type: 'user', id: 'u2', text: 'Now port the\nconfig too', time: { created: NOW - DAY } },
+  { type: 'user', id: 'u1', text: 'Move the build to Rspack', time: { created: NOW - 2 * DAY } }
+];
+
 const issues = [1, 2, 3, 4, 5, 6].map((number) => ({ ...pr4930, kind: 'issue', number }));
 const refViews = {
   unread: {
@@ -119,6 +125,9 @@ async function host(
   // Sessions whose transcript pages were read, and the `history.scan` calls.
   const pages = [];
   const scans = [];
+  // `session.fork` calls, and the select dialogs the plugin opened, each with its `resolve`.
+  const forks = [];
+  const selects = [];
   const views = async ({ sessionIDs }) =>
     Object.fromEntries(sessionIDs.filter((id) => refViews[id]).map((id) => [id, refViews[id]]));
   const context = {
@@ -148,10 +157,16 @@ async function host(
         }),
         get: async ({ sessionID }) => sessions.find((item) => item.id === sessionID),
         update: async () => {},
-        remove: async () => {}
+        remove: async () => {},
+        fork: async (input) => {
+          forks.push(input);
+          return session('forked', 'Forked session');
+        }
       },
       message: {
         list: async (input) => {
+          if (input.type === 'user')
+            return { data: PROMPTS.slice(0, input.limit), cursor: { next: 'older' } };
           if (input.type === undefined) pages.push(input.sessionID);
           return {
             data: [{ type: 'user', id: 'm1', text: 'ok', time: { created: NOW - DAY } }],
@@ -255,7 +270,11 @@ async function host(
           toasts.push(toast);
         }
       },
-      dialog: { clear() {}, select: () => new Promise(() => {}) },
+      dialog: {
+        clear() {},
+        set() {},
+        select: (options) => new Promise((resolve) => selects.push({ ...options, resolve }))
+      },
       tabs: { enabled: () => false, close: () => true, list: () => [] },
       format: { path: (value) => value }
     }
@@ -274,6 +293,8 @@ async function host(
     route,
     pages,
     scans,
+    forks,
+    selects,
     /** Runs a command registered by any layer, like `keymap.dispatch`. */
     dispatch(id) {
       const command = layers
@@ -421,6 +442,45 @@ test('the selected session is scanned from the preview page, and nothing is scan
     lastMessageID: 'm1'
   });
   assert.deepEqual(terminal.pages, [scan.sessionID]);
+});
+
+test('ctrl+b forks the selected session before the picked prompt and opens the fork', async () => {
+  const terminal = await host();
+  const rendered = await testRender(() => terminal.overlay.render({}), { width: 140, height: 30 });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  // The preview reads the selected session's transcript.
+  await eventually(rendered, () => terminal.pages.length > 0);
+  const [selected] = terminal.pages;
+  const command = (bind) =>
+    terminal.layers.flatMap((layer) => layer.commands ?? []).find((item) => item.bind === bind);
+
+  command('ctrl+b').run();
+  await eventually(rendered, () => terminal.selects.length > 0);
+  const [dialog] = terminal.selects;
+  assert.equal(dialog.title, 'Fork session');
+  assert.deepEqual(
+    dialog.options.map((option) => [option.title, option.value]),
+    [
+      ['Full session', null],
+      ['Now port the config too', 'u2'],
+      ['Move the build to Rspack', 'u1']
+    ]
+  );
+  dialog.resolve('u2');
+  await eventually(rendered, (frame) => !frame.includes('Search sessions'));
+  assert.deepEqual(terminal.forks, [{ sessionID: selected, before: 'u2' }]);
+  assert.deepEqual(terminal.route(), { type: 'session', sessionID: 'forked' });
+
+  // A Pull requests row is a pull request, not a session to fork.
+  terminal.dispatch('session.list');
+  await eventually(rendered, (frame) => frame.includes('Search sessions'));
+  assert.equal(command('ctrl+b').enabled(), true);
+  command('shift+tab').run();
+  await eventually(rendered, (frame) => /#4930 .*Migrate build to Rspack/.test(frame));
+  assert.equal(command('ctrl+b').enabled(), false);
 });
 
 // Crossing the list toward the preview used to select every row under the pointer, so the preview

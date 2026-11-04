@@ -230,7 +230,7 @@ The `@opencode/*` pins only fix the types and the tests. At runtime the plugin r
 - `keymap.ts`: command ids the takeover reuses, the `dialog.select.*` ids the settings dialog registers, layer priorities, keymap modes.
 - `events.ts`: where prompt text, assistant text and `!` commands sit in events and in stored messages (`storedHistory` for the history scan), the index keys shared with the backfill, and the last user message in a `session.context` that starts at the latest compaction.
 - `tool-hook.ts`: the shell tool's name and its `execute.after` payload.
-- `session-api.ts`: archiving and title regeneration over HTTP, the project scope of the list, the running test, the unread rule.
+- `session-api.ts`: archiving and title regeneration over HTTP, forking and the prompts a fork can start before, the project scope of the list, the running test, the unread rule.
 - `worktree.ts`: worktree listing and removal without force.
 - `files.ts`: paths of `cli.json`, the host's `session.json` and the plugin's data directory.
 - `theme.ts`: the dialog surface and backdrop, the session view background and the markdown styles.
@@ -249,6 +249,7 @@ Each assumption and what checks it:
 - The shell tool name and the `execute.after` payload: a contract test with a real agent shell call.
 - `session.update({ metadata })` replaces the object, and `session.get` returns metadata and location: a contract test.
 - Archive and restore over HTTP, and an empty title regenerating it: contract tests.
+- `session.fork` with `before` leaving that prompt and everything after it out, without it copying the whole session, the `session.forked` event (a fork publishes no `session.created`, so the browser's lists reload on this one), and the `type` filter holding across `message.list` pages: a contract test. The host's `/fork` also carries the picked prompt into the new session's composer through its route; the plugin route has no field for it, so `ctrl+b` in the browser does not.
 - `message.list` shapes, paging and the `type` filter: a contract test. The same test and the `!` command test read the prompt, the agent's shell call with its output, the answer and a `!` command through `storedHistory`. That a background shell call records `metadata.status: 'running'` is not checked against a host.
 - `session.list` filters and cursors: a contract test.
 - The worktree list marks the main checkout, and removal without force refuses local files: a contract test.
