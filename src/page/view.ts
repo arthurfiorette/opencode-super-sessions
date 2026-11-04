@@ -5,6 +5,8 @@ import {
   type BoxRenderable,
   type InputRenderable,
   type MouseEvent,
+  type Renderable,
+  RGBA,
   TextAttributes
 } from '@opentui/core';
 import { useTerminalDimensions } from '@opentui/solid';
@@ -26,7 +28,7 @@ import { refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import { type SearchScope, SuperSessions } from '../rpc.js';
 import { ICONS } from './icons.js';
-import { PAGE, type PageProps } from './page.js';
+import { type PageProps, routeKey } from './page.js';
 import { firstLine, Preview } from './preview.js';
 import {
   cells,
@@ -55,6 +57,10 @@ import {
 } from './state.js';
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+/** Keymap mode pushed while the browser is open. */
+const MODE = 'super-sessions';
+// The host dialog's backdrop color.
+const BACKDROP = RGBA.fromInts(0, 0, 0, 150);
 const PREVIEW_MIN_COLUMNS = 120;
 const REFRESH_INTERVAL = 60_000;
 const VIEW_LABELS: Record<PageView, string> = {
@@ -93,11 +99,11 @@ export default function SessionPage(props: PageProps) {
   let input: InputRenderable | undefined;
   let listBox: BoxRenderable | undefined;
 
-  // The page opens from a session, from home or from another plugin page; "this project" means
-  // the project of the session it was opened from, like the built-in list.
+  // The browser opens over a session, home or a plugin page; "this project" means the project of
+  // the session underneath, like the built-in list.
   const location = () => {
-    const back = props.data?.returnRoute;
-    const from = back?.type === 'session' ? context.data.session.get(back.sessionID) : undefined;
+    const origin = props.origin;
+    const from = origin.type === 'session' ? context.data.session.get(origin.sessionID) : undefined;
     return from?.location ?? context.location ?? context.data.location.default();
   };
   let locationInfo: Promise<LocationPublicInfo> | undefined;
@@ -359,14 +365,20 @@ export default function SessionPage(props: PageProps) {
   const toast = (message: string, variant: 'info' | 'success' | 'warning' | 'error' = 'info') =>
     context.ui.toast.show({ message, variant });
 
+  const setQuery = (value: string) =>
+    setMemory((draft) => {
+      draft.query = value;
+      draft.selected = undefined;
+      draft.scroll = 0;
+    });
   const select = (sessionID: string | undefined) => remember({ selected: sessionID });
   const move = (delta: number) => select(moveSelection(rows(), memory.selected, delta));
   const pageRows = () => Math.max(1, Math.floor(listHeight() / 2) - 1);
   const open = (sessionID = memory.selected) => {
     if (sessionID === undefined) return;
+    props.close();
     context.ui.router.navigate({ type: 'session', sessionID });
   };
-  const back = () => context.ui.router.navigate(props.data?.returnRoute ?? { type: 'home' });
   const setView = (view: PageView) =>
     setMemory((draft) => {
       draft.view = view;
@@ -399,11 +411,6 @@ export default function SessionPage(props: PageProps) {
       title: 'Rename session',
       value: live(session).title ?? ''
     });
-    // A dialog can leave the router elsewhere; come back with the same return route and state.
-    const route = context.ui.router.current();
-    if (route.type !== 'plugin' || route.name !== PAGE) {
-      context.ui.router.navigate({ type: 'plugin', name: PAGE, data: { ...props.data } });
-    }
     input?.focus();
     if (!title?.trim()) return;
     try {
@@ -495,8 +502,9 @@ export default function SessionPage(props: PageProps) {
       toast('Could not open the browser.', 'error');
   };
 
-  // Base mode (the default) turns the layer off while a dialog is open, so prompts and confirms
-  // get their keys. Created inside the component, so the layer goes away with the page.
+  // Host dialogs push the "modal" mode above this one, which turns this layer off while a rename
+  // prompt or confirm is open and back on when it closes. Created inside the component, so the
+  // layer goes away with the browser.
   const commands: KeymapCommand[] = [
     { bind: 'up', title: 'Previous session', run: () => move(-1) },
     { bind: 'down', title: 'Next session', run: () => move(1) },
@@ -507,8 +515,15 @@ export default function SessionPage(props: PageProps) {
     { bind: 'return', title: 'Open session', run: () => open() },
     // Space also types into the search box. Returning false lets the key fall through to the
     // focused input, so peeking only takes the key while the search is empty.
-    { bind: 'space', title: 'Peek session', run: () => (memory.query.length > 0 ? false : open()) },
-    { bind: 'escape', title: 'Back', run: back },
+    {
+      bind: 'space',
+      title: 'Peek session',
+      run: () => {
+        if (memory.query.length > 0) return false;
+        if (memory.selected !== undefined) props.peek(memory.selected);
+      }
+    },
+    { bind: 'escape', title: 'Close', run: props.close },
     {
       bind: 'tab',
       title: 'Next view',
@@ -559,11 +574,36 @@ export default function SessionPage(props: PageProps) {
       bind: 'ctrl+g',
       run: openRef
     },
-    // Last on purpose: the host binds ctrl+d and ctrl+c to app.exit, and quitting OpenCode from
-    // a list is never what the user meant. The specific bindings above win on shared keys.
-    { id: 'app.exit', title: 'Back', run: back }
+    // Last on purpose: the specific bindings above win on keys shared with app.exit (ctrl+d).
+    // Like the host's dialogs, the exit keys clear the search first and close on the next press;
+    // quitting OpenCode from a list is never what the user meant.
+    {
+      id: 'app.exit',
+      title: 'Close',
+      run: () => {
+        if (memory.query.length === 0) return props.close();
+        if (input) input.value = '';
+        setQuery('');
+      }
+    }
   ];
-  context.keymap.layer(() => ({ commands }));
+  context.keymap.layer(() => ({ mode: MODE, priority: 1, commands }));
+
+  // The mode turns off the prompt and every other base-mode layer while the browser is open.
+  onCleanup(context.keymap.mode.push(MODE));
+  // Peeking with the quick switch keys or the host's tab keys changes the route under the
+  // browser; the browser belongs to the route it opened over.
+  createEffect(on(() => routeKey(context.ui.router.current()), props.close, { defer: true }));
+  // Focus moves to the search input while open and back to the prompt (or whatever had it) on
+  // close, like the host's dialogs.
+  const previous = context.renderer.currentFocusedRenderable;
+  previous?.blur();
+  onCleanup(() => {
+    setTimeout(() => {
+      if (previous && !previous.isDestroyed && attached(context.renderer.root, previous))
+        previous.focus();
+    }, 1);
+  });
 
   const rowModel = (session: SessionInfo): RowModel => {
     const info = live(session);
@@ -784,12 +824,7 @@ export default function SessionPage(props: PageProps) {
         ref: (value: InputRenderable) => {
           input = value;
         },
-        onInput: (value: string) =>
-          setMemory((draft) => {
-            draft.query = value;
-            draft.selected = undefined;
-            draft.scroll = 0;
-          })
+        onInput: setQuery
       })
     ]
   });
@@ -921,12 +956,19 @@ export default function SessionPage(props: PageProps) {
     })
   });
 
-  return jsx('box', {
-    width: '100%',
-    height: '100%',
+  // Same dismissal rule as the host's dialog backdrop: a click outside the panel closes it, but
+  // releasing a text selection there does not.
+  let dismiss = false;
+  const panel = jsx('box', {
+    flexGrow: 1,
     flexDirection: 'column',
     get backgroundColor() {
       return theme().background.base;
+    },
+    onMouseUp: (event: MouseEvent) => {
+      if (context.renderer.getSelection()?.getSelectedText()) return;
+      dismiss = false;
+      event.stopPropagation();
     },
     children: [
       header,
@@ -943,6 +985,42 @@ export default function SessionPage(props: PageProps) {
       footer
     ]
   });
+
+  // Absolute inside the host's main column, so it covers the route and the horizontal tabs but
+  // leaves the vertical tab rail alone. Host dialogs (zIndex 3000 in their own layer) still draw
+  // above it.
+  return jsx('box', {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: '100%',
+    height: '100%',
+    zIndex: 1000,
+    paddingTop: 1,
+    paddingBottom: 1,
+    paddingLeft: 2,
+    paddingRight: 2,
+    backgroundColor: BACKDROP,
+    onMouseDown: () => {
+      dismiss = !!context.renderer.getSelection();
+    },
+    onMouseUp: () => {
+      if (dismiss) {
+        dismiss = false;
+        return;
+      }
+      props.close();
+    },
+    children: panel
+  });
+}
+
+/** Whether a renderable is still in the tree under `root`. */
+function attached(root: Renderable, node: Renderable): boolean {
+  for (let current: Renderable | null = node; current; current = current.parent) {
+    if (current === root) return true;
+  }
+  return false;
 }
 
 /** Turns an RPC `link` failure into a short message. */

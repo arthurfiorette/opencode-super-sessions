@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { migrateV1, resolveThemeDocument } from '@opencode/theme/tui';
 import { testRender } from '@opentui/solid';
 import { jsx } from '@opentui/solid/jsx-runtime';
-import { onCleanup } from 'solid-js';
+import { createSignal, onCleanup } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import plugin from '../../dist/tui.js';
 import themeSource from '../fixtures/theme-opencode.json';
@@ -145,7 +145,10 @@ async function host() {
   let renderer;
   const sessions = fixtures();
   const layers = [];
-  const pages = [];
+  const slots = [];
+  const modes = [];
+  const listeners = new Map();
+  const [route, setRoute] = createSignal({ type: 'session', sessionID: 'unread' });
   const navigations = [];
   const updates = [];
   const toasts = [];
@@ -204,7 +207,10 @@ async function host() {
       })
     },
     data: {
-      on: () => () => {},
+      on(type, handler) {
+        listeners.set(type, [...(listeners.get(type) ?? []), handler]);
+        return () => {};
+      },
       session: {
         list: () => sessions,
         get: () => undefined,
@@ -233,7 +239,15 @@ async function host() {
         } catch {}
       },
       dispatch() {},
-      shortcuts: (id) => (BINDINGS[id] ? [BINDINGS[id]] : [])
+      shortcuts: (id) => (BINDINGS[id] ? [BINDINGS[id]] : []),
+      mode: {
+        push(mode) {
+          const entry = { mode };
+          modes.push(entry);
+          return () => modes.splice(modes.indexOf(entry), 1);
+        },
+        current: () => modes.at(-1)?.mode ?? 'base'
+      }
     },
     storage: {
       memory(name, options) {
@@ -251,14 +265,16 @@ async function host() {
       }
     },
     ui: {
-      slot: () => () => {},
+      slot(claim) {
+        slots.push(claim);
+        return () => {};
+      },
       router: {
-        register(page) {
-          pages.push(page);
-          return () => {};
+        navigate(destination) {
+          navigations.push(destination);
+          setRoute(destination);
         },
-        navigate: (route) => navigations.push(route),
-        current: () => ({ type: 'home' })
+        current: route
       },
       toast: { show: (value) => toasts.push(value) },
       dialog: { clear() {} },
@@ -267,28 +283,45 @@ async function host() {
     }
   };
   await plugin.setup(context);
-  const page = pages.find((item) => item.name === 'sessions');
-  assert.ok(page, 'The page registers under the sessions route.');
+  const overlay = slots.find((claim) => claim.append === 'app');
+  assert.ok(overlay, 'The browser claims the app slot.');
   return {
     context,
-    page,
+    overlay,
     layers,
+    modes,
     navigations,
     updates,
     toasts,
+    route,
+    /** Runs a command registered by any layer, like `keymap.dispatch`. */
+    dispatch(id) {
+      const command = layers
+        .flatMap((layer) => layer.commands ?? [])
+        .find((item) => item.id === id);
+      return command.run();
+    },
+    emit(type, event) {
+      for (const handler of listeners.get(type) ?? []) handler(event);
+    },
     attach(value) {
       renderer = value;
     }
   };
 }
 
-/** Routes key presses through the page layer the way the host keymap does. */
+/** Routes key presses through the layers active in the current mode, like the host keymap. */
 function keymap(terminal, renderer) {
   renderer.keyInput.on('keypress', (event) => {
     const name = event.name === ' ' ? 'space' : event.name;
     const bind = `${event.ctrl ? 'ctrl+' : ''}${event.shift ? 'shift+' : ''}${name}`;
-    for (const layer of [...terminal.layers].reverse()) {
-      if (layer.mode === 'global') continue;
+    const mode = terminal.context.keymap.mode.current();
+    // Later layers first, and higher priority before that, like the host's resolution.
+    const active = [...terminal.layers]
+      .reverse()
+      .filter((layer) => layer.mode === 'global' || (layer.mode ?? 'base') === mode)
+      .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+    for (const layer of active) {
       const command = layer.commands?.find(
         (item) =>
           (item.bind ?? BINDINGS[item.id]) === bind &&
@@ -325,8 +358,9 @@ async function mount(width, height = 30) {
       jsx('box', {
         width: '100%',
         height: '100%',
+        // The host's main column: the route, then the app slot drawn over it.
         get children() {
-          return terminal.page.render({ data: { returnRoute: { type: 'home' } } });
+          return [jsx('text', { children: 'session transcript' }), terminal.overlay.render({})];
         }
       }),
     { width, height }
@@ -334,7 +368,8 @@ async function mount(width, height = 30) {
   active = rendered;
   terminal.attach(rendered.renderer);
   keymap(terminal, rendered.renderer);
-  // Mount cold first, then wait for the lazy module; renderer idle does not mean it loaded.
+  terminal.dispatch('session.list');
+  // Open cold first, then wait for the lazy module; renderer idle does not mean it loaded.
   await import('../../dist/page/view.js');
   await rendered.waitForFrame((frame) => frame.includes('Mastra build') && frame.includes('#4930'));
   return { terminal, rendered, lines: () => rendered.captureCharFrame().split('\n') };

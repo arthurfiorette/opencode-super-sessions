@@ -3,7 +3,7 @@ import { Plugin } from '@opencode/plugin/tui';
 import type { KeymapCommand } from '@opencode/plugin/tui/context';
 import { z } from 'zod';
 import { type Options, parseOptions } from './config.js';
-import { copyRoute, PAGE, renderPage } from './page/page.js';
+import { installBrowser } from './page/page.js';
 import { createPins, type Pins } from './pins.js';
 import { type Availability, SuperSessions } from './rpc.js';
 import { installSidebar } from './sidebar.js';
@@ -18,7 +18,7 @@ const availability: Record<Availability, string> = {
 
 /**
  * TUI plugin loaded by each OpenCode terminal client. It takes over the session list command,
- * registers the session page and the sidebar section, and adds the archive commands.
+ * installs the session browser overlay and the sidebar section, and adds the archive commands.
  */
 export default Plugin.define({
   id: 'opencode-super-sessions.tui',
@@ -37,20 +37,15 @@ export default Plugin.define({
       return;
     }
     const pins = createPins(context);
-    const router = context.ui.router;
-    const unregister = router.register({
-      name: PAGE,
-      render: ({ data }) => renderPage({ context, options, pins, data })
-    });
+    const browser = installBrowser(context, options, pins);
     const uninstallSidebar = installSidebar(context, options);
 
     // Must stay synchronous: the keymap only falls through to the built-in dialog when `run`
     // returns a literal `false`, and a Promise counts as handled.
-    const openPage = () => {
-      const current = router.current();
-      if (current.type === 'plugin' && current.name === PAGE) return;
+    const toggleBrowser = () => {
+      // The palette and other host dialogs would otherwise stay open above the browser.
       context.ui.dialog.clear();
-      router.navigate({ type: 'plugin', name: PAGE, data: { returnRoute: copyRoute(current) } });
+      browser.toggle();
     };
 
     const commands: KeymapCommand[] = [
@@ -60,7 +55,7 @@ export default Plugin.define({
         group: 'Session',
         palette: true,
         slash: { name: 'sessions', aliases: ['resume', 'continue'] },
-        run: (input) => (input?.trim() === 'classic' ? false : openPage())
+        run: (input) => (input?.trim() === 'classic' ? false : toggleBrowser())
       },
       ...quickSwitch(context, pins),
       {
@@ -123,7 +118,7 @@ export default Plugin.define({
     return () => {
       offRenamed?.();
       pins.dispose();
-      unregister();
+      browser.dispose();
       uninstallSidebar();
     };
   }
