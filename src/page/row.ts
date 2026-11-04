@@ -151,9 +151,6 @@ function rowColors(theme: ResolvedTheme, model: RowModel) {
   return { bg: model.stripe, fg: undefined };
 }
 
-// Cells each row line pads on either side, which the stripe and the selection fill.
-const ROW_PADDING = 1;
-
 /** A row line's outer box: height, padding, colors and pointer handlers. */
 function lineBox(
   theme: () => ResolvedTheme,
@@ -165,8 +162,8 @@ function lineBox(
     flexDirection: 'row',
     height: 1,
     flexShrink: 0,
-    paddingLeft: ROW_PADDING,
-    paddingRight: ROW_PADDING,
+    paddingLeft: 1,
+    paddingRight: 1,
     get backgroundColor() {
       return rowColors(theme(), model()).bg;
     },
@@ -184,20 +181,13 @@ function lineBox(
 // Marker column plus the gap before the right column.
 const MARKER_WIDTH = 2;
 const RIGHT_GAP = 2;
+// Lines under the title start this many cells right of it, so the titles form their own column.
+const DETAIL_INDENT = 2;
 
 /** Cells the title gets on its line, after the marker, the label and the age. */
 export function titleRoom(model: Pick<RowModel, 'width' | 'label' | 'right'>): number {
   const label = model.label ? cells(model.label) + RIGHT_GAP : 0;
   return model.width - MARKER_WIDTH - RIGHT_GAP - label - cells(model.right);
-}
-
-/**
- * Cells a title line takes besides its title, padding included, with `right` in the age column
- * and no label. Labels only appear while searching, and the columns must not move as the user
- * types.
- */
-export function titleChrome(right: string): number {
-  return 2 * ROW_PADDING + MARKER_WIDTH + RIGHT_GAP + cells(right);
 }
 
 /** First row line: marker column, title at the full remaining width, then label and age. */
@@ -260,7 +250,10 @@ export function titleLine(
   ]);
 }
 
-/** A line under the title, indented to the title column, cut to the row width. */
+/**
+ * A line under the title, indented past the title column, cut to the row width. The indent sits
+ * inside the line box, so the stripe and the selection still fill the whole row.
+ */
 function detailLine(
   theme: () => ResolvedTheme,
   model: () => RowModel,
@@ -268,7 +261,7 @@ function detailLine(
   segments: () => Segment[]
 ): JSX.Element {
   return lineBox(theme, model, events, [
-    jsx('box', { width: MARKER_WIDTH, flexShrink: 0 }),
+    jsx('box', { width: MARKER_WIDTH + DETAIL_INDENT, flexShrink: 0 }),
     jsx('text', {
       flexGrow: 1,
       flexShrink: 1,
@@ -277,7 +270,8 @@ function detailLine(
       get children() {
         const current = model();
         const override = rowColors(theme(), current).fg;
-        return fitSegments(segments(), current.width - MARKER_WIDTH).map((segment) =>
+        const room = current.width - MARKER_WIDTH - DETAIL_INDENT;
+        return fitSegments(segments(), room).map((segment) =>
           jsx('span', {
             style: { fg: override ?? segment.fg, bold: segment.bold ?? false },
             children: segment.text
