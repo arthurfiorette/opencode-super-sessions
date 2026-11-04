@@ -1,0 +1,111 @@
+{
+  "_comment": "Captured from gh 2.103.3 against github.com with the document buildSnapshotQuery builds; only rate limit headers kept.",
+  "code": 1,
+  "status": "HTTP/2.0 200 OK",
+  "headers": {
+    "X-Ratelimit-Limit": "5000",
+    "X-Ratelimit-Remaining": "4847",
+    "X-Ratelimit-Reset": "1793753200",
+    "X-Ratelimit-Resource": "graphql",
+    "X-Ratelimit-Used": "153"
+  },
+  "body": {
+    "data": {
+      "rateLimit": { "remaining": 4847, "resetAt": "2026-11-04T00:46:40Z" },
+      "r0": {
+        "i0": {
+          "__typename": "PullRequest",
+          "state": "MERGED",
+          "isDraft": false,
+          "title": "fix(gh auth status): explain expired expiring tokens with `--no-refresh`",
+          "url": "https://github.com/cli/cli/pull/14815",
+          "mergedAt": "2026-10-26T18:02:47Z",
+          "closedAt": "2026-10-26T18:02:47Z",
+          "closingIssuesReferences": {
+            "nodes": [{ "number": 14814, "repository": { "nameWithOwner": "cli/cli" } }]
+          }
+        },
+        "i1": {
+          "__typename": "Issue",
+          "state": "CLOSED",
+          "stateReason": "COMPLETED",
+          "title": "`gh auth status --no-refresh` shows a misleading error for expired tokens",
+          "url": "https://github.com/cli/cli/issues/14814",
+          "closedAt": "2026-10-26T18:02:49Z",
+          "closedByPullRequestsReferences": {
+            "nodes": [{ "number": 14815, "repository": { "nameWithOwner": "cli/cli" } }]
+          }
+        },
+        "i2": {
+          "__typename": "PullRequest",
+          "state": "OPEN",
+          "isDraft": true,
+          "title": "Add guided multi-account setup and evaluation",
+          "url": "https://github.com/cli/cli/pull/14927",
+          "mergedAt": null,
+          "closedAt": null,
+          "closingIssuesReferences": { "nodes": [] }
+        },
+        "i3": {
+          "__typename": "PullRequest",
+          "state": "OPEN",
+          "isDraft": false,
+          "title": "Fix: `gh issue develop --base` outside a git repository creates the branch,",
+          "url": "https://github.com/cli/cli/pull/14914",
+          "mergedAt": null,
+          "closedAt": null,
+          "closingIssuesReferences": {
+            "nodes": [{ "number": 14856, "repository": { "nameWithOwner": "cli/cli" } }]
+          }
+        },
+        "i4": {
+          "__typename": "PullRequest",
+          "state": "CLOSED",
+          "isDraft": false,
+          "title": "Fix per-page limit not shrinking on subsequent `gh issue list --search` pages",
+          "url": "https://github.com/cli/cli/pull/14904",
+          "mergedAt": null,
+          "closedAt": "2026-11-02T05:24:58Z",
+          "closingIssuesReferences": {
+            "nodes": [{ "number": 13906, "repository": { "nameWithOwner": "cli/cli" } }]
+          }
+        },
+        "i5": {
+          "__typename": "Issue",
+          "state": "OPEN",
+          "stateReason": null,
+          "title": "`gh pr merge` without `--admin` silently bypasses rulesets when `mergeStateStatus` is `UNKNOWN`",
+          "url": "https://github.com/cli/cli/issues/14930",
+          "closedAt": null,
+          "closedByPullRequestsReferences": { "nodes": [] }
+        },
+        "i6": {
+          "__typename": "Issue",
+          "state": "CLOSED",
+          "stateReason": "NOT_PLANNED",
+          "title": "`--allow-forking=false` not interpreted correctly if forking disabled at organization level",
+          "url": "https://github.com/cli/cli/issues/10000",
+          "closedAt": "2024-12-06T20:49:46Z",
+          "closedByPullRequestsReferences": { "nodes": [] }
+        },
+        "i7": null
+      },
+      "r1": null
+    },
+    "errors": [
+      {
+        "type": "NOT_FOUND",
+        "path": ["r1"],
+        "locations": [{ "line": 1, "column": 852 }],
+        "message": "Could not resolve to a Repository with the name 'arthurfiorette/does-not-exist-zz'."
+      },
+      {
+        "type": "NOT_FOUND",
+        "path": ["r0", "i7"],
+        "locations": [{ "line": 1, "column": 760 }],
+        "message": "Could not resolve to an issue or pull request with the number of 999999."
+      }
+    ]
+  },
+  "stderr": "gh: Could not resolve to a Repository with the name 'arthurfiorette/does-not-exist-zz'.\nCould not resolve to an issue or pull request with the number of 999999.\n"
+}

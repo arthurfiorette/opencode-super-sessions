@@ -23,8 +23,12 @@ try {
   for (const name of ['first-project', 'second-project']) {
     const location: LocationRef = { directory: path.join(directory, name) };
     await mkdir(location.directory);
-    await host.sessions.create({ location });
-    assert.deepEqual(await host.rpc(SuperSessions).status({}, { location }), { providers: {} });
+    const session = await host.sessions.create({ location });
+    // `refs` never runs gh, so the developer's real login is not touched by this fixture.
+    assert.deepEqual(
+      await host.rpc(SuperSessions).refs({ sessionIDs: [session.id] }, { location }),
+      { [session.id]: { links: [], branchRefs: [], states: {} } }
+    );
   }
 
   console.log('OpenCode integration passed');

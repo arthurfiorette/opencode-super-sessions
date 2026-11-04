@@ -10,4 +10,5 @@ coverage
 .wrangler
 .DS_Store
 .serena
-docs/tmp.worktrees
+docs/tmp
+.worktrees
