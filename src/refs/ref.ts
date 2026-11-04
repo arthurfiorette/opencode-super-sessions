@@ -90,6 +90,8 @@ export const refStatusSchema = z.enum([
  *   unless every check passed.
  *   GitHub counts successful, neutral and skipped check runs and successful statuses as passed;
  *   GitLab counts successful and skipped jobs of the head pipeline, without retried or manual ones.
+ * - `conflicts`: whether the branch conflicts with its base; absent while the forge has not
+ *   computed it, which the snapshot cache then fills with the last known answer.
  */
 export const refReviewSchema = z.strictObject({
   decision: z.enum(['approved', 'changes_requested', 'review_required']).optional(),
@@ -97,7 +99,8 @@ export const refReviewSchema = z.strictObject({
   threads: z.number().int().nonnegative().optional(),
   checks: z.enum(['passing', 'failing', 'pending']).optional(),
   checksPassed: z.number().int().nonnegative().optional(),
-  checksTotal: z.number().int().nonnegative().optional()
+  checksTotal: z.number().int().nonnegative().optional(),
+  conflicts: z.boolean().optional()
 });
 
 export const refStateSchema = z.strictObject({

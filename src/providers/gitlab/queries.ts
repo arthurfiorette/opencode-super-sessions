@@ -6,11 +6,11 @@ import type { GraphQLError, GraphQLResponse } from './output.js';
 // GitLab rejects a whole document above 200 complexity points when anonymous (250 signed in).
 // Costs were measured on gitlab.com with `queryComplexity { score }`; the budget leaves room
 // for the query itself and `metadata`. The review fields and `diffHeadSha` raised a merge
-// request from 21 to 34, and `updatedAt` with the two job counts to 43, so an all-merge-request
-// batch holds 4.
+// request from 21 to 34, `updatedAt` with the two job counts to 43 and `conflicts` to 44, so an
+// all-merge-request batch holds 4 (four in one project scored 182 of 200).
 const COMPLEXITY_BUDGET = 180;
 const PROJECT_COST = 2;
-const MERGE_REQUEST_COST = 43;
+const MERGE_REQUEST_COST = 44;
 const ISSUE_COST = 6;
 
 /** GraphQL field that lists the issues a merge request closes. Older GitLab servers lack it. */
@@ -62,7 +62,7 @@ const COUNTED_JOBS =
   'CREATED, WAITING_FOR_RESOURCE, PREPARING, WAITING_FOR_CALLBACK, PENDING, RUNNING, FAILED, SUCCESS, CANCELED, CANCELING, SKIPPED, SCHEDULED';
 // One approver is enough to tell "someone approved" from "nobody did". The discussion and job
 // counts are precomputed by GitLab, so no discussion or job is read.
-const REVIEW_SELECTION = `approved approvedBy(first: 1) { nodes { id } } detailedMergeStatus resolvableDiscussionsCount resolvedDiscussionsCount headPipeline { status total: jobs(retried: false, statuses: [${COUNTED_JOBS}]) { count } passed: jobs(retried: false, statuses: [SUCCESS, SKIPPED]) { count } }`;
+const REVIEW_SELECTION = `approved approvedBy(first: 1) { nodes { id } } detailedMergeStatus conflicts resolvableDiscussionsCount resolvedDiscussionsCount headPipeline { status total: jobs(retried: false, statuses: [${COUNTED_JOBS}]) { count } passed: jobs(retried: false, statuses: [SUCCESS, SKIPPED]) { count } }`;
 const ISSUE_FIELDS = 'state title webUrl closedAt';
 
 /**
@@ -224,6 +224,22 @@ function decisionOf(node: Record<string, unknown>, enterprise: unknown): RefRevi
   return node.approved === true && approvals > 0 ? 'approved' : undefined;
 }
 
+// GitLab answers `conflicts: false` until it has checked mergeability, so these mean unknown.
+const UNCHECKED = new Set(['UNCHECKED', 'CHECKING', 'PREPARING']);
+
+/**
+ * Whether the merge request conflicts with its target branch. `detailedMergeStatus` names only
+ * the first check that blocks the merge, so `conflicts` is read too: a draft with conflicts
+ * reports `DRAFT_STATUS`.
+ */
+function conflictsOf(node: Record<string, unknown>): boolean | undefined {
+  if (node.conflicts === true || node.detailedMergeStatus === 'CONFLICT') return true;
+  if (typeof node.detailedMergeStatus === 'string' && UNCHECKED.has(node.detailedMergeStatus)) {
+    return undefined;
+  }
+  return typeof node.conflicts === 'boolean' ? node.conflicts : undefined;
+}
+
 /** Reads `{ count }` of a job connection. */
 function jobCount(connection: unknown): number | undefined {
   const count = isRecord(connection) ? connection.count : undefined;
@@ -258,6 +274,8 @@ function reviewOf(
     review.checksPassed = passed;
     review.checksTotal = total;
   }
+  const conflicts = conflictsOf(node);
+  if (conflicts !== undefined) review.conflicts = conflicts;
   return Object.keys(review).length > 0 ? review : undefined;
 }
 

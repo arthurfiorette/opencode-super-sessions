@@ -62,14 +62,17 @@ function openReview(state: RefState | undefined): RefReview | undefined {
 
 /**
  * Whether the lines under an open pull request (see {@link workStatus}) have something to show:
- * a review verdict, a CI result or unresolved threads for the icon line, which failing checks
- * always come with.
+ * a review verdict, a CI result, merge conflicts or unresolved threads for the icon line, which
+ * failing checks always come with.
  */
 export function hasWorkStatus(state: RefState | undefined): boolean {
   const review = openReview(state);
   if (review === undefined) return false;
   return (
-    review.decision !== undefined || review.checks !== undefined || (review.unresolved ?? 0) > 0
+    review.decision !== undefined ||
+    review.checks !== undefined ||
+    review.conflicts === true ||
+    (review.unresolved ?? 0) > 0
   );
 }
 

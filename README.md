@@ -94,11 +94,12 @@ With animations off in OpenCode, the spinner is a still `⋯`. Titles wrap onto 
 
 An open or draft pull request shows these Nerd Font icons in this order. On list rows and in the Pull requests view they follow its icon and number on the same line. In the preview's Work rows and in the sidebar they get their own line under the pull request, so the title keeps its room. A part without data is left out, so the icon and number always start in the same column.
 
-| Part    | Icons                                                                                                                         |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Review  | Changes requested (red), approved (green) or review required (muted)                                                          |
-| CI      | Passing (green check), failing (red x) or pending (yellow dot), then `passed/total` such as `91/93` unless every check passed |
-| Threads | A comment icon and the number of unresolved review threads, in yellow                                                         |
+| Part      | Icons                                                                                                                         |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Review    | Changes requested (red), approved (green) or review required (muted)                                                          |
+| CI        | Passing (green check), failing (red x) or pending (yellow dot), then `passed/total` such as `91/93` unless every check passed |
+| Conflicts | An alert icon in red when the branch conflicts with its base. Nothing while the forge has not checked yet                     |
+| Threads   | A comment icon and the number of unresolved review threads, in yellow                                                         |
 
 On GitHub, successful, neutral and skipped check runs and successful statuses count as passed. github.com's own list leaves out a check run that a re-run replaced, so the totals here can be higher than there. On GitLab, the counts are the head pipeline's jobs: successful and skipped ones pass, and manual and retried jobs are not counted.
 
@@ -108,7 +109,7 @@ Each row is a pull request: a muted `-` in the marker column, its icon and numbe
 
 `enter` or a double click opens the newest session that tracks the selected pull request, `space` peeks it, `ctrl+g` opens the pull request in your web browser, and `f5` reloads it with its checks. The keys that change one session (archive, Done, rename, pin, delete, link) are off in this view. The footer reads `enter open  space peek  ctrl+g open PR  ctrl+/ keys`.
 
-The preview shows the title and state, `head -> base`, the author, the review verdict and unresolved threads, every CI check with its status, the issues the pull request closes and the ones its sessions track, the description, and the sessions that worked on it. A check is a link to its page, such as the job's log: hovering makes its name bold, a click opens it and a ctrl+click copies it. `right` moves the arrow keys to the sessions, `enter` opens one, and `left` or `esc` goes back. Author, branches, checks and description are fetched for the selected pull request only, and cached as long as its state.
+The preview shows the title and state, `head -> base`, the author, the review verdict, merge conflicts and unresolved threads, every CI check with its status, the issues the pull request closes and the ones its sessions track, the description, and the sessions that worked on it. A check is a link to its page, such as the job's log: hovering makes its name bold, a click opens it and a ctrl+click copies it. `right` moves the arrow keys to the sessions, `enter` opens one, and `left` or `esc` goes back. Author, branches, checks and description are fetched for the selected pull request only, and cached as long as its state.
 
 ### Pins
 

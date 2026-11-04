@@ -52,7 +52,8 @@ const view = {
                 checksTotal: 2
               }
             }
-          : {})
+          : // Conflicts alone still earn the status line.
+            { review: { conflicts: true } })
       }
     ])
   )
@@ -115,6 +116,7 @@ test('the Work rows load cold, put status icons and failed checks under the PR l
         frame.includes('#4871') &&
         frame.includes(' 1/2') &&
         !frame.includes('changes requested') &&
+        frame.includes('\uf421') &&
         frame.includes('Lint') &&
         !frame.includes('Build')
     );

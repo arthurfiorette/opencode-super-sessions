@@ -284,6 +284,10 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
         } else if (current.decision === 'review_required') {
           parts.push({ text: 'review required', fg: muted() });
         }
+        if (current.conflicts === true) {
+          if (parts.length > 0) parts.push({ text: ' · ', fg: muted() });
+          parts.push({ text: 'merge conflicts', fg: feedback.error.base });
+        }
         const count = current.unresolved ?? 0;
         if (count > 0) {
           if (parts.length > 0) parts.push({ text: ' · ', fg: muted() });

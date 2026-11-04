@@ -40,7 +40,9 @@ test('a batch with a missing number and a missing repository still resolves ever
     // Open draft with nine unresolved review threads and a failing head commit.
     candidate('cli/cli', 14921, 'pr'),
     // Neutral and skipped check runs and three statuses, one of them successful.
-    candidate('mastra-ai/mastra', 29382, 'pr')
+    candidate('mastra-ai/mastra', 29382, 'pr'),
+    // Open, no checks, and `mergeable: CONFLICTING`.
+    candidate('cli/cli', 10423, 'pr')
   ];
   const response = parseGraphQLOutput(asRun(fixture('snapshot.json')), NOW);
   assert.ok('data' in response, 'a non-zero exit with data must not fail the whole document');
@@ -63,15 +65,18 @@ test('a batch with a missing number and a missing repository still resolves ever
       'not-found',
       'pr 14815 merged',
       'pr 14921 draft',
-      'pr 29382 open'
+      'pr 29382 draft',
+      'pr 10423 open'
     ]
   );
 
   const [merged, issue] = entries;
-  const reviewed = entries.at(-2);
-  const counted = entries.at(-1);
+  const reviewed = entries.at(-3);
+  const counted = entries.at(-2);
+  const conflicting = entries.at(-1);
   assert.ok(merged && 'ref' in merged && issue && 'ref' in issue);
   assert.ok(reviewed && 'ref' in reviewed && counted && 'ref' in counted);
+  assert.ok(conflicting && 'ref' in conflicting);
   // 11 successful and 13 skipped runs pass; the failing one does not.
   assert.deepEqual(reviewed.state.review, {
     decision: 'review_required',
@@ -79,7 +84,14 @@ test('a batch with a missing number and a missing repository still resolves ever
     unresolved: 9,
     checks: 'failing',
     checksPassed: 24,
-    checksTotal: 25
+    checksTotal: 25,
+    conflicts: false
+  });
+  assert.deepEqual(conflicting.state.review, {
+    decision: 'review_required',
+    threads: 0,
+    unresolved: 0,
+    conflicts: true
   });
   // 79 successful, 3 neutral and 10 skipped runs plus 1 successful status, of 93 runs and 3
   // statuses.

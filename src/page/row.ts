@@ -120,8 +120,8 @@ export function checkCounts(review: RefReview | undefined): string | undefined {
 /**
  * The review and CI icons drawn after an open pull request's number, in GitHub's colors: the
  * review verdict, the CI result with `passed/total` muted unless every check passed (see
- * {@link checkCounts}), then the unresolved threads in the
- * warning color. A part without data is left out. Each part starts with its separating space, so
+ * {@link checkCounts}), an alert in the error color when the branch has merge conflicts, then the
+ * unresolved threads in the warning color. A part without data is left out. Each part starts with its separating space, so
  * the number and the state icon stay in the same column on every row, and each glyph keeps a
  * 2-cell slot like the ref icons because a space always follows it (the next part's or the
  * title's).
@@ -147,6 +147,9 @@ export function badgeSegments(review: RefReview | undefined, theme: ResolvedThem
     parts.push({ text: ` ${glyph}`, fg });
     const counts = checkCounts(review);
     if (counts !== undefined) parts.push({ text: ` ${counts}`, fg: muted });
+  }
+  if (review.conflicts === true) {
+    parts.push({ text: ` ${ICONS.conflicts}`, fg: feedback.error.base });
   }
   if (review.unresolved !== undefined && review.unresolved > 0) {
     parts.push({ text: ` ${ICONS.threads} ${review.unresolved}`, fg: feedback.warning.base });

@@ -1,18 +1,18 @@
 {
-  "_comment": "Captured on 2026-11-04 from gh 2.103.3 against github.com (authenticated, read-only) with the document buildSnapshotQuery builds for the candidates in github.test.ts. Only rate limit headers kept. github.com's pull request list showed mastra-ai/mastra#29382 as `92/95 checks passing` at the same time: it leaves out a re-run check that these counts include.",
+  "_comment": "Captured on 2026-11-04 from gh 2.103.3 against github.com (authenticated, read-only) with the document buildSnapshotQuery builds for the candidates in github.test.ts. Only rate limit headers kept. github.com's pull request list showed mastra-ai/mastra#29382 as `92/95 checks passing` in the first capture: it leaves out a re-run check that these counts include. Recaptured the same day to add `mergeable`; cli/cli#10423 conflicts with its base.",
   "code": 1,
   "status": "HTTP/2.0 200 OK",
   "headers": {
     "X-Ratelimit-Limit": "5000",
-    "X-Ratelimit-Remaining": "4893",
-    "X-Ratelimit-Reset": "1793801788",
+    "X-Ratelimit-Remaining": "4852",
+    "X-Ratelimit-Reset": "1793807063",
     "X-Ratelimit-Resource": "graphql",
-    "X-Ratelimit-Used": "107"
+    "X-Ratelimit-Used": "148"
   },
-  "stderr": "",
+  "stderr": "gh: Could not resolve to a Repository with the name 'arthurfiorette/does-not-exist-zz'.\nCould not resolve to an issue or pull request with the number of 999999.\n",
   "body": {
     "data": {
-      "rateLimit": { "remaining": 4893, "resetAt": "2026-11-04T14:16:28Z" },
+      "rateLimit": { "remaining": 4852, "resetAt": "2026-11-04T15:44:23Z" },
       "r0": {
         "i0": {
           "__typename": "PullRequest",
@@ -25,6 +25,7 @@
           "updatedAt": "2026-10-26T18:02:50Z",
           "reviewDecision": "APPROVED",
           "headRefOid": "ab3efc24f8e74f7588f06d0d368d31279166950d",
+          "mergeable": "UNKNOWN",
           "closingIssuesReferences": {
             "nodes": [{ "number": 14814, "repository": { "nameWithOwner": "cli/cli" } }]
           },
@@ -89,6 +90,7 @@
           "updatedAt": "2026-11-03T21:29:03Z",
           "reviewDecision": "REVIEW_REQUIRED",
           "headRefOid": "d43c4e3ad3c34332c803a568f85f116e3ee58f19",
+          "mergeable": "MERGEABLE",
           "closingIssuesReferences": { "nodes": [] },
           "latestReviews": { "nodes": [{ "state": "COMMENTED" }] },
           "reviewThreads": {
@@ -148,6 +150,7 @@
           "updatedAt": "2026-11-03T10:40:39Z",
           "reviewDecision": "REVIEW_REQUIRED",
           "headRefOid": "8aefc2564e7fa0d6aad62418fc491e266f193931",
+          "mergeable": "MERGEABLE",
           "closingIssuesReferences": {
             "nodes": [{ "number": 14856, "repository": { "nameWithOwner": "cli/cli" } }]
           },
@@ -166,6 +169,7 @@
           "updatedAt": "2026-11-02T05:24:58Z",
           "reviewDecision": "REVIEW_REQUIRED",
           "headRefOid": "85cd1cb6bf49f6c666c6b25d1fbf13d9234e5618",
+          "mergeable": "MERGEABLE",
           "closingIssuesReferences": {
             "nodes": [{ "number": 13906, "repository": { "nameWithOwner": "cli/cli" } }]
           },
@@ -238,6 +242,7 @@
           "updatedAt": "2026-11-03T21:29:16Z",
           "reviewDecision": "REVIEW_REQUIRED",
           "headRefOid": "a123f7736e7aaabe56b4662de888cc2bff1338a6",
+          "mergeable": "MERGEABLE",
           "closingIssuesReferences": { "nodes": [] },
           "latestReviews": { "nodes": [{ "state": "COMMENTED" }] },
           "reviewThreads": {
@@ -290,6 +295,25 @@
               }
             ]
           }
+        },
+        "i9": {
+          "__typename": "PullRequest",
+          "state": "OPEN",
+          "isDraft": false,
+          "title": "[gh env] Introduce `gh env list` subcommand",
+          "url": "https://github.com/cli/cli/pull/10423",
+          "mergedAt": null,
+          "closedAt": null,
+          "updatedAt": "2026-10-28T12:37:20Z",
+          "reviewDecision": "REVIEW_REQUIRED",
+          "headRefOid": "fdc6dfb42c8679677e6b0c1481ca796b8eb773f7",
+          "mergeable": "CONFLICTING",
+          "closingIssuesReferences": {
+            "nodes": [{ "number": 10502, "repository": { "nameWithOwner": "cli/cli" } }]
+          },
+          "latestReviews": { "nodes": [{ "state": "COMMENTED" }] },
+          "reviewThreads": { "totalCount": 0, "nodes": [] },
+          "commits": { "nodes": [{ "commit": { "statusCheckRollup": null } }] }
         }
       },
       "r1": null,
@@ -297,14 +321,15 @@
         "i0": {
           "__typename": "PullRequest",
           "state": "OPEN",
-          "isDraft": false,
+          "isDraft": true,
           "title": "fix(core,mcp): keep MCP server text out of tracked exceptions",
           "url": "https://github.com/mastra-ai/mastra/pull/29382",
           "mergedAt": null,
           "closedAt": null,
-          "updatedAt": "2026-11-04T09:44:12Z",
+          "updatedAt": "2026-11-04T14:09:29Z",
           "reviewDecision": "REVIEW_REQUIRED",
           "headRefOid": "97c9ca2b006807810eb2b0a2e9cfc4e69a8a324c",
+          "mergeable": "MERGEABLE",
           "closingIssuesReferences": {
             "nodes": [{ "number": 29351, "repository": { "nameWithOwner": "mastra-ai/mastra" } }]
           },
@@ -353,7 +378,7 @@
       {
         "type": "NOT_FOUND",
         "path": ["r1"],
-        "locations": [{ "line": 1, "column": 969 }],
+        "locations": [{ "line": 1, "column": 1058 }],
         "message": "Could not resolve to a Repository with the name 'arthurfiorette/does-not-exist-zz'."
       },
       {

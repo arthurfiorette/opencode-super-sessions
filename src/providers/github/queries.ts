@@ -22,7 +22,7 @@ export interface SnapshotDocument {
 // check counts come from `contexts(first: 0)`, which reads no context node.
 const SNAPSHOT_FRAGMENTS = `
 fragment PullRequestFields on PullRequest {
-  state isDraft title url mergedAt closedAt updatedAt reviewDecision headRefOid
+  state isDraft title url mergedAt closedAt updatedAt reviewDecision headRefOid mergeable
   closingIssuesReferences(first: 10) { nodes { number repository { nameWithOwner } } }
   latestReviews(first: 20) { nodes { state } }
   reviewThreads(first: 100) { totalCount nodes { isResolved } }
@@ -224,6 +224,9 @@ function reviewOf(node: Record<string, unknown>, status: RefStatus): RefReview |
   const checks = typeof rollup?.state === 'string' ? CHECKS[rollup.state] : undefined;
   if (checks) review.checks = checks;
   Object.assign(review, checkCounts(rollup));
+  // GitHub computes mergeability lazily and answers UNKNOWN until it has, which stays undefined.
+  if (node.mergeable === 'CONFLICTING') review.conflicts = true;
+  else if (node.mergeable === 'MERGEABLE') review.conflicts = false;
   return Object.keys(review).length > 0 ? review : undefined;
 }
 
