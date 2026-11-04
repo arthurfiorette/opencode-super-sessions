@@ -52,7 +52,8 @@ const view = {
                 checksTotal: 2
               }
             }
-          : {})
+          : // Conflicts alone still earn the status line.
+            { review: { conflicts: true } })
       }
     ])
   )
@@ -110,11 +111,13 @@ test('the Work rows load cold, put status icons and failed checks under the PR l
     await import('../../dist/sidebar-view.js');
     await rendered.waitForFrame(
       (frame) =>
-        // The PR line holds only the number and title; the icons and counts go on the next line.
+        // The PR line holds only the number and title; the icons go on the next line, without
+        // check counts, since the failed checks are listed under them.
         frame.includes('#4930 Migrate build to Rspack') &&
         frame.includes('#4871') &&
-        frame.includes(' 1/2') &&
+        !frame.includes('1/2') &&
         !frame.includes('changes requested') &&
+        frame.includes('\uf421') &&
         frame.includes('Lint') &&
         !frame.includes('Build')
     );

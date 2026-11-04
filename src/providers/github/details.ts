@@ -58,7 +58,9 @@ function checkStatus(node: Record<string, unknown>): PullCheck['status'] {
     case 'TIMED_OUT':
     case 'STARTUP_FAILURE':
       return 'failure';
+    // A stale run ended without a result, as the snapshot's counts treat it.
     case 'CANCELLED':
+    case 'STALE':
       return 'cancelled';
     case 'SKIPPED':
       return 'skipped';

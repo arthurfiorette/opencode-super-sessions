@@ -18,6 +18,8 @@ export interface TuiSettings {
   /** Default browser scope. */
   scope(): TuiValues['scope'];
   refLine(): boolean;
+  /** Whether a row joins its issues on one line instead of one line each. */
+  groupIssues(): boolean;
   /** Whether hovered titles scroll, given the host's `animations` value for `auto`. */
   titleScroll(animations: boolean): boolean;
   previewPane(): boolean;
@@ -74,6 +76,7 @@ function buildTuiSettings(context: Plugin.Context, options: Options): TuiSetting
       }),
     scope: () => values().scope,
     refLine: () => values().refLine,
+    groupIssues: () => values().groupIssues,
     titleScroll(animations) {
       const mode = values().titleScroll;
       return mode === 'auto' ? animations : mode === 'on';

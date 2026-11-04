@@ -136,14 +136,18 @@ export interface Group {
   sessions: SessionInfo[];
 }
 
-/** Lines a session row can draw under its title, in this order. */
-export type DetailKind = 'pr' | 'issues';
+/**
+ * A line a session row can draw under its title: the PR line, then either the joined issues
+ * line or the `index`th of the one-per-issue lines.
+ */
+export type DetailLine = { kind: 'pr' | 'issues' } | { kind: 'issue'; index: number };
 
 /** One terminal line of the session list. A session takes a `title` line and the others it needs. */
 export type Line =
   | { kind: 'blank' }
   | { kind: 'header'; title: string }
-  | { kind: 'title' | DetailKind; session: SessionInfo }
+  | { kind: 'title'; session: SessionInfo }
+  | (DetailLine & { session: SessionInfo })
   /** The `index`th line (1 and up) of a title that wraps. */
   | { kind: 'wrap'; session: SessionInfo; index: number }
   /** A row of the Pull requests view. */
@@ -204,6 +208,9 @@ export function sessionDone(
   });
 }
 
+/** Title of the group of running sessions, whose header takes the spinner's color. */
+export const RUNNING_GROUP = 'Running';
+
 /**
  * Groups sessions for a view.
  *
@@ -238,7 +245,7 @@ export function groupSessions(input: GroupInput): Group[] {
   const idle = rest.filter((session) => !input.running(session.id)).sort(byUpdated);
   return [
     ...(pinned.length > 0 ? [{ title: 'Pinned', sessions: pinned }] : []),
-    ...(running.length > 0 ? [{ title: 'Running', sessions: running }] : []),
+    ...(running.length > 0 ? [{ title: RUNNING_GROUP, sessions: running }] : []),
     ...byDay(idle, (session) => session.time.updated, input.now)
   ];
 }
@@ -272,7 +279,7 @@ export function groupSearch(
     .filter((session) => !running(session.id))
     .sort((a, b) => day(b) - day(a) || ranked(a, b));
   return [
-    ...(active.length > 0 ? [{ title: 'Running', sessions: active }] : []),
+    ...(active.length > 0 ? [{ title: RUNNING_GROUP, sessions: active }] : []),
     ...byDay(idle, (session) => session.time.updated, now)
   ];
 }
@@ -310,7 +317,7 @@ export function rowsOf(groups: readonly Group[]): SessionInfo[] {
  */
 export function layoutLines(
   groups: readonly Group[],
-  details: (session: SessionInfo) => readonly DetailKind[],
+  details: (session: SessionInfo) => readonly DetailLine[],
   titleLines: (session: SessionInfo) => number = () => 1
 ): Line[] {
   return groups.flatMap((group, index): Line[] => [
@@ -323,7 +330,7 @@ export function layoutLines(
         session,
         index: line + 1
       })),
-      ...details(session).map((kind) => ({ kind, session }))
+      ...details(session).map((line): Line => ({ ...line, session }))
     ])
   ]);
 }

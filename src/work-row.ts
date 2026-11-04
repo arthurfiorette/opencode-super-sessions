@@ -17,7 +17,8 @@ import { refUrl } from './browser.js';
 import type { Options } from './config.js';
 import { clickLink } from './link.js';
 import { type createMarquee, marqueeText } from './marquee.js';
-import { ICONS, refColor, refIcon } from './page/icons.js';
+import { checkLook, hasListedChecks, listedChecks } from './page/checks.js';
+import { refColor, refIcon } from './page/icons.js';
 import { cells, fitText, stateBadges } from './page/row.js';
 import {
   type PullCheck,
@@ -62,39 +63,30 @@ function openReview(state: RefState | undefined): RefReview | undefined {
 
 /**
  * Whether the lines under an open pull request (see {@link workStatus}) have something to show:
- * a review verdict, a CI result or unresolved threads for the icon line, which failing checks
- * always come with.
+ * a review verdict, a CI result, merge conflicts or unresolved threads for the icon line, which
+ * failing checks always come with.
  */
 export function hasWorkStatus(state: RefState | undefined): boolean {
   const review = openReview(state);
   if (review === undefined) return false;
   return (
-    review.decision !== undefined || review.checks !== undefined || (review.unresolved ?? 0) > 0
-  );
-}
-
-/** Whether a pull request's checks are failing, so its details hold failed checks to list. */
-export function failingChecks(state: RefState | undefined): boolean {
-  return openReview(state)?.checks === 'failing';
-}
-
-/** The checks listed as failed: failures and checks that wait for an action, both drawn red. */
-function failedChecks(details: PullDetails | undefined): PullCheck[] {
-  return (details?.checks ?? []).filter(
-    (check) => check.status === 'failure' || check.status === 'action_required'
+    review.decision !== undefined ||
+    review.checks !== undefined ||
+    review.conflicts === true ||
+    (review.unresolved ?? 0) > 0
   );
 }
 
 /** The page of a pull request that lists all its checks: `/checks` on GitHub, pipelines on GitLab. */
-function checksPage(ref: Ref, state: RefState | undefined): string {
+export function checksPage(ref: Ref, state: RefState | undefined): string {
   return `${refUrl(ref, state)}/${ref.provider === 'gitlab' ? 'pipelines' : 'checks'}`;
 }
 
 /**
- * Details of the failing open pull requests among `refs()`, loaded through `load` (the server's
- * details cache) whenever that set or their check counts change, so a new CI result lists its
- * failed checks. Only failing pull requests are asked about, since only they have checks to list.
- * A key stays undefined while loading or after a failed load.
+ * Details of the open pull requests among `refs()` that have checks to list by name (see
+ * {@link hasListedChecks}), loaded through `load` (the server's details cache) whenever that set
+ * or their check counts change, so a new CI result lists its failed checks. A key stays
+ * undefined while loading or after a failed load.
  */
 export function createFailedChecks(input: {
   refs(): Array<{ ref: Ref; state: RefState | undefined }>;
@@ -104,13 +96,11 @@ export function createFailedChecks(input: {
   const wanted = createMemo(() =>
     input
       .refs()
-      .filter((item) => item.ref.kind === 'pr' && failingChecks(item.state))
+      .filter((item) => item.ref.kind === 'pr' && hasListedChecks(openReview(item.state)))
       .map((item) => {
         const review = item.state?.review;
-        return {
-          ref: item.ref,
-          stamp: `${refKey(item.ref)}@${review?.checksPassed}/${review?.checksTotal}`
-        };
+        const counts = [review?.checksPassed, review?.checksTotal, review?.checksFailed];
+        return { ref: item.ref, stamp: `${refKey(item.ref)}@${counts.join('/')}` };
       })
   );
   createEffect(
@@ -137,11 +127,12 @@ export function createFailedChecks(input: {
 
 /**
  * The lines under an open pull request in a Work section, indented by one icon slot: one line of
- * review, CI and thread icons without words (see {@link stateBadges}), then each failed check
- * with a red x, at most five and then `+N more`. The icons sit here rather than on the pull
- * request's line so a narrow sidebar keeps room for the title. A failed check links to its page
- * and `+N more` to the pull request's checks page; a click opens them and a ctrl+click copies
- * them, and hover makes them bold. Empty for any other ref.
+ * review, CI and thread icons without words or check counts (see {@link stateBadges}), then the
+ * checks that failed or wait for an action (see {@link listedChecks}), at most five and then
+ * `+N more`. Cancelled checks are counted on the rows, never listed. The icons sit here rather
+ * than on the pull request's line so a narrow sidebar keeps room for the title. A listed check
+ * links to its page and `+N more` to the pull request's checks page; a click opens them and a
+ * ctrl+click copies them, and hover makes them bold. Empty for any other ref.
  */
 export function workStatus(input: {
   context: Plugin.Context;
@@ -158,10 +149,10 @@ export function workStatus(input: {
   const room = () => Math.floor(input.width()) - ICON;
   // Each badge starts with its separating space, which the line's first one does not need.
   const icons = () =>
-    stateBadges(input.state(), theme()).map((segment, index) =>
+    stateBadges(input.state(), theme(), false).map((segment, index) =>
       index === 0 ? { ...segment, text: segment.text.trimStart() } : segment
     );
-  const failed = () => (review()?.checks === 'failing' ? failedChecks(input.details()) : []);
+  const failed = () => (hasListedChecks(review()) ? listedChecks(input.details()?.checks) : []);
 
   /** Segments in their colors, cut together to the room. */
   const fitted = (segments: Array<{ text: string; fg: string | RGBA }>, bold = false) => {
@@ -214,10 +205,13 @@ export function workStatus(input: {
         children: (check: PullCheck) =>
           link(
             () => check.url,
-            () => [
-              { text: `${ICONS.checksFailing} `, fg: theme().text.feedback.error.base },
-              { text: check.name, fg: theme().text.base }
-            ]
+            () => {
+              const [glyph, fg] = checkLook(check.status, theme());
+              return [
+                { text: `${glyph} `, fg },
+                { text: check.name, fg: theme().text.base }
+              ];
+            }
           )
       }),
       jsx('box', {
