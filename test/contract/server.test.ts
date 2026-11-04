@@ -109,6 +109,20 @@ test('an agent shell call reaches execute.after as tool shell with the command a
   assert.notEqual(output.status, 'running');
 });
 
+test('the plugin tells every agent step, once, what it tracks without link_work', {
+  timeout: 60_000
+}, async () => {
+  const before = model.requests.length;
+  await agentRun('instruction', 'track this');
+  // The run takes two steps (the shell call, then the answer); each is its own request.
+  const steps = model.requests.slice(before);
+  assert.equal(steps.length, 2);
+  for (const step of steps) {
+    const system = step.system.join('\n');
+    assert.equal(system.split('You MUST call link_work').length - 1, 1, system);
+  }
+});
+
 test('prompt and text events carry the text detection reads and the ids the backfill derives', {
   timeout: 60_000
 }, async () => {
