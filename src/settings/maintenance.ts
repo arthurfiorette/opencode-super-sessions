@@ -65,10 +65,13 @@ export function installMaintenance(
   const report = () => {
     clearTimeout(presenceTimer);
     presenceTimer = setTimeout(() => {
-      void rpc()
-        .presence(
-          { clientID, pinned: [...pins.ids()].slice(0, 500), open: openSessions() },
-          options()
+      // Inside `then`, so any failure stays a rejected promise instead of a throw in a timer.
+      void Promise.resolve()
+        .then(() =>
+          rpc().presence(
+            { clientID, pinned: [...pins.ids()].slice(0, 500), open: openSessions() },
+            options()
+          )
         )
         .catch(() => {});
     }, PRESENCE_DELAY);

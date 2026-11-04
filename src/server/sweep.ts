@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { SessionInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin';
@@ -230,19 +231,23 @@ function createSweeper(runtime: Runtime): Sweeper {
     };
     const running = new Set(sessions.filter(isBusy).map((info) => rootOf(info.id)));
     const roots = sessions.filter((info) => info.parentID === undefined);
-    const live = reports(now);
-    const pinned = new Set(live.flatMap((entry) => entry.pinned));
-    const open = new Set(live.flatMap((entry) => entry.open.map(rootOf)));
+    const clients = reports(now);
+    const pinned = new Set(clients.flatMap((entry) => entry.pinned));
+    const open = new Set(clients.flatMap((entry) => entry.open.map(rootOf)));
 
     const worktrees = want.cleaning ? await listWorktrees(runtime, context, roots) : [];
-    const owners = assignSessions(roots, worktrees);
+    const owners = await assignSessions(roots, worktrees);
 
-    // Done needs forge state; only sessions a decision reads pay for it.
+    // Done needs forge state; only sessions a decision reads pay for it. The main checkout is
+    // always kept, so its sessions are left out.
     const doneFor = new Set<string>();
     if (want.archiving) {
       for (const info of roots) if (info.time.archived === undefined) doneFor.add(info.id);
     }
-    for (const [, ids] of owners) for (const id of ids) doneFor.add(id);
+    for (const worktree of worktrees) {
+      if (worktree.root) continue;
+      for (const id of owners.get(worktree.directory) ?? []) doneFor.add(id);
+    }
     const done = await doneFacts(context, [...doneFor], running);
 
     const due: Array<{ sessionID: string; title: string }> = [];
@@ -619,18 +624,35 @@ async function listWorktrees(
  * worktree containing its directory, since linked worktrees often sit inside the main checkout
  * (`.worktrees/<name>`).
  */
-function assignSessions(roots: SessionInfo[], worktrees: KnownWorktree[]): Map<string, string[]> {
+async function assignSessions(
+  roots: SessionInfo[],
+  worktrees: KnownWorktree[]
+): Promise<Map<string, string[]>> {
   const owners = new Map<string, string[]>();
-  const sorted = [...worktrees].sort((a, b) => b.directory.length - a.directory.length);
+  // OpenCode stores worktrees resolved, but a session's directory keeps the path it was opened
+  // with (`/var` and `/private/var` on macOS), so both sides are compared resolved.
+  const resolved = new Map<string, Promise<string>>();
+  const real = (directory: string) => {
+    let value = resolved.get(directory);
+    if (value === undefined) {
+      value = realpath(directory).catch(() => directory);
+      resolved.set(directory, value);
+    }
+    return value;
+  };
+  // Deepest first, so `.worktrees/a` wins over the checkout that contains it.
+  const targets = (
+    await Promise.all(
+      worktrees.map(async (worktree) => ({ worktree, real: await real(worktree.directory) }))
+    )
+  ).sort((a, b) => b.real.length - a.real.length);
   for (const info of roots) {
-    const directory = info.location.directory;
-    const owner = sorted.find(
-      (worktree) =>
-        directory === worktree.directory ||
-        directory.startsWith(
-          worktree.directory.endsWith(path.sep) ? worktree.directory : worktree.directory + path.sep
-        )
-    );
+    const directory = await real(info.location.directory);
+    const owner = targets.find(
+      (target) =>
+        directory === target.real ||
+        directory.startsWith(target.real.endsWith(path.sep) ? target.real : target.real + path.sep)
+    )?.worktree;
     if (owner === undefined) continue;
     const list = owners.get(owner.directory) ?? [];
     list.push(info.id);

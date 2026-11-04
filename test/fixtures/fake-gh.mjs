@@ -22,6 +22,17 @@ const refs = {
       nodes: [{ number: 34, repository: { nameWithOwner: 'acme/widgets' } }]
     }
   },
+  // Merged, for worktree cleanup.
+  'acme/widgets#78': {
+    __typename: 'PullRequest',
+    state: 'MERGED',
+    isDraft: false,
+    title: 'Speed up the widget list',
+    url: 'https://github.com/acme/widgets/pull/78',
+    mergedAt: '2026-11-01T10:00:00Z',
+    closedAt: '2026-11-01T10:00:00Z',
+    closingIssuesReferences: { nodes: [] }
+  },
   'acme/widgets#34': {
     __typename: 'PullRequest',
     state: 'OPEN',

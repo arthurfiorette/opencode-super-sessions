@@ -217,6 +217,8 @@ async function host(search) {
         })
       },
       rpc: () => ({
+        // Settings and maintenance listen for server events from setup on.
+        events: { on: () => () => {} },
         refs: async ({ sessionIDs }) =>
           Object.fromEntries(
             sessionIDs.filter((id) => refViews[id]).map((id) => [id, refViews[id]])
@@ -243,6 +245,7 @@ async function host(search) {
         cost: () => 0,
         status: (id) => (id === 'running' ? 'running' : 'idle'),
         family: (id) => [id],
+        root: (id) => id,
         permission: { list: () => [], sync: async () => {} },
         form: { list: () => [], sync: async () => {} }
       },
@@ -308,7 +311,7 @@ async function host(search) {
       },
       toast: { show() {} },
       dialog: { clear() {} },
-      tabs: { enabled: () => false, close: () => true },
+      tabs: { enabled: () => false, close: () => true, list: () => [] },
       format: { path: (value) => value }
     }
   };
