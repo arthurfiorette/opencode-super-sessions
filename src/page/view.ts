@@ -1252,7 +1252,8 @@ export default function SessionBrowser(props: PageProps) {
     // the rest of the actions live in the keys dialog.
     return [
       ['peek', 'space'],
-      ['archive', 'ctrl+s'],
+      // Same key and place in every view; only the word follows what ctrl+s does there.
+      [memory.view === 'archived' ? 'restore' : 'archive', 'ctrl+s'],
       ['done', DONE_KEY],
       ['keys', 'ctrl+/']
     ];
