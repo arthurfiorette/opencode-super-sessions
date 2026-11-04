@@ -824,8 +824,9 @@ export default function SessionBrowser(props: PageProps) {
   const listBar = jsx('box', {
     width: 1,
     flexShrink: 0,
+    // Only while the list overflows: with nothing to scroll the slider is one solid column.
     get visible() {
-      return settings.session.scrollbar;
+      return settings.session.scrollbar && lines().length > listHeight();
     },
     ref: (value: BoxRenderable) => {
       slider = new SliderRenderable(context.renderer, {
