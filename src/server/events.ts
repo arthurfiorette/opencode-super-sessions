@@ -1,5 +1,6 @@
 import type { OpenCodeEvent } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin';
+import { FORM_EVENT_TYPES, type FormEvent } from '../host/forms.js';
 
 /**
  * Event types the server reacts to: user prompts and finished assistant text, plus deletions so
@@ -29,10 +30,10 @@ export const LIFECYCLE_TYPES = [
 
 export type LifecycleEvent = Extract<OpenCodeEvent, { type: (typeof LIFECYCLE_TYPES)[number] }>;
 
-/** Every event the process-wide subscriber receives. */
-export type SubscribedEvent = HandledEvent | LifecycleEvent;
+/** Every event the process-wide subscriber receives. Form events track pending questions. */
+export type SubscribedEvent = HandledEvent | LifecycleEvent | FormEvent;
 
-const SUBSCRIBED_TYPES = [...new Set([...EVENT_TYPES, ...LIFECYCLE_TYPES])];
+const SUBSCRIBED_TYPES = [...new Set([...EVENT_TYPES, ...LIFECYCLE_TYPES, ...FORM_EVENT_TYPES])];
 const handledTypes: ReadonlySet<string> = new Set(EVENT_TYPES);
 
 /** Whether the detection handler parses this event. */

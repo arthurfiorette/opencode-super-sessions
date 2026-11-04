@@ -130,7 +130,11 @@ export const SuperSessions = Rpc.define({
       errors: {
         invalid_reference: z.strictObject({}),
         not_found: z.strictObject({}),
-        unavailable: z.strictObject({ reason: z.string() })
+        /** `provider` names the forge that could not be asked, when the reference named one. */
+        unavailable: z.strictObject({
+          reason: z.string(),
+          provider: providerIdSchema.optional()
+        })
       }
     },
     /** Removes a link and records the key as dismissed so detection never re-adds it. */

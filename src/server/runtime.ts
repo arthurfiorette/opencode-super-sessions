@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { createSnapshotCache, type SnapshotCache } from '../cache.js';
 import type { Options } from '../config.js';
+import { createPendingForms, isFormEvent, type PendingForms } from '../host/forms.js';
 import { github } from '../providers/github/definition.js';
 import { createGitHubProvider } from '../providers/github/provider.js';
 import { createGitLabDefinition } from '../providers/gitlab/definition.js';
@@ -40,6 +41,8 @@ export interface Runtime {
   readonly writes: WriteQueue;
   readonly branches: BranchCache;
   readonly events: EventHub;
+  /** Questions waiting on the user, which keep a session's worktree like a pending permission. */
+  readonly forms: PendingForms;
   /** Sessions with a background refresh running, so repeated `refs` calls do not stack them. */
   readonly refreshing: Set<string>;
   /** The message search index, opened on first use. Disabled when `search.body` is off. */
@@ -174,8 +177,13 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
         );
       }
     }),
+    forms: createPendingForms(),
     events: createEventHub({
       async handle(event, context) {
+        if (isFormEvent(event)) {
+          runtime.forms.apply(event);
+          return;
+        }
         // Deletions reach both: the message index forgets them and cleanup records the worktree.
         if (event.type === 'session.deleted' || !isHandledEvent(event)) {
           runtime.onLifecycle?.(event, context);

@@ -49,7 +49,10 @@ export function rpcHandlers(
       if (resolution?.status !== 'found') {
         const reason =
           resolution !== undefined && 'reason' in resolution ? resolution.reason : 'failed';
-        return invocation.error('unavailable', `Could not check ${reference}.`, { reason });
+        return invocation.error('unavailable', `Could not check ${reference}.`, {
+          reason,
+          provider: candidate.provider
+        });
       }
       const key = refKey(resolution.ref);
       // `manual` is explicit, so mergeLinks lifts an earlier dismissal of the key.

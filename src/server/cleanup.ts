@@ -19,7 +19,7 @@ export interface WorktreeSession {
   /** Epoch milliseconds of the session's last update. */
   updated: number;
   running: boolean;
-  /** A permission request waits for the user. */
+  /** A permission request or a question waits for the user. */
   pending: boolean;
   /** Open in a TUI that reported it. */
   open: boolean;
@@ -114,7 +114,8 @@ export function decideWorktree(
   if (!cleanupEnabled(settings)) return keep('no cleanup rule is on');
   const sessions = facts.sessions;
   if (sessions.some((session) => session.running)) return keep('a session in it is running');
-  if (sessions.some((session) => session.pending)) return keep('a session waits for a permission');
+  if (sessions.some((session) => session.pending))
+    return keep('a session waits for a permission or an answer');
   if (sessions.some((session) => session.open)) return keep('a session in it is open');
   if (sessions.some((session) => session.pinned)) return keep('a session in it is pinned');
   if (facts.status === undefined) return keep('git status could not be read');
