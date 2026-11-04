@@ -1,20 +1,13 @@
 import type { SessionInfo, SessionMessageInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import { generateSyntax, type ResolvedTheme } from '@opencode/theme/tui';
-import {
-  type MouseEvent,
-  RGBA,
-  type ScrollBoxRenderable,
-  type SyntaxStyle,
-  TextAttributes
-} from '@opentui/core';
+import { type MouseEvent, RGBA, type ScrollBoxRenderable, SyntaxStyle } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import {
   createComponent,
   createEffect,
   createMemo,
   createSignal,
-  For,
   type JSX,
   on,
   onCleanup
@@ -24,7 +17,8 @@ import type { Options } from '../config.js';
 import { createMarquee } from '../marquee.js';
 import type { SessionRefView } from '../rpc.js';
 import { PreviewHeader } from './preview-header.js';
-import { fitText } from './row.js';
+import { Transcript } from './transcript.js';
+import { transcriptRows } from './transcript-model.js';
 
 /** Inputs of the preview pane. */
 export interface PreviewProps {
@@ -48,11 +42,6 @@ export interface PreviewProps {
 const FOLLOW_DELAY = 150;
 const PAGE_SIZE = 30;
 const SPINNER_INTERVAL = 80;
-
-type Block =
-  | { kind: 'label'; text: string }
-  | { kind: 'markdown'; text: string }
-  | { kind: 'tool'; text: string };
 
 /** Right-hand pane: session summary, refs and a scrollable transcript. */
 export function Preview(props: PreviewProps): JSX.Element {
@@ -125,44 +114,30 @@ export function Preview(props: PreviewProps): JSX.Element {
     )
   );
 
-  const blocks = createMemo(() => toBlocks(transcript.state.messages));
-  const body = createComponent(For, {
-    get each() {
-      return blocks();
+  const rows = createMemo(() => transcriptRows(transcript.state.messages));
+  const body = createComponent(Transcript, {
+    context,
+    theme,
+    rows,
+    syntax: () => syntax().markdown,
+    thinking: () => syntax().thinking,
+    width: () => props.width(),
+    frame,
+    agentColor: (agent: string) => {
+      const current = session();
+      return current ? agentColor(context, theme(), current, agent) : theme().text.muted;
     },
-    children: (block: Block) => {
-      if (block.kind === 'markdown') {
-        return jsx('box', {
-          paddingLeft: 2,
-          flexShrink: 0,
-          children: jsx('markdown', {
-            get syntaxStyle() {
-              return syntax();
-            },
-            content: block.text,
-            conceal: true,
-            get fg() {
-              return theme().markdown.text;
-            }
-          })
-        });
-      }
-      const indent = block.kind === 'tool' ? 2 : 0;
-      return jsx('box', {
-        flexShrink: 0,
-        paddingLeft: indent,
-        children: jsx('text', {
-          wrapMode: 'none',
-          attributes: block.kind === 'label' ? TextAttributes.BOLD : 0,
-          get fg() {
-            return block.kind === 'label' ? theme().text.base : theme().text.muted;
-          },
-          get children() {
-            return fitText(block.text, props.width() - indent);
-          }
-        })
-      });
-    }
+    modelName: (model: { providerID: string; id: string }) => {
+      const current = session();
+      const known = current
+        ? context.data.location.model
+            .list(current.location)
+            ?.find((item) => item.id === model.id && item.providerID === model.providerID)
+        : undefined;
+      // Same fallback as the host's footer when the model is not in the catalog.
+      return known?.name ?? `${model.providerID}/${model.id}`;
+    },
+    agent: () => session()?.agent ?? 'build'
   });
 
   return jsx('box', {
@@ -333,21 +308,28 @@ function createTranscript(context: Plugin.Context, shown: () => string | undefin
   };
 }
 
+interface Syntax {
+  markdown: SyntaxStyle;
+  /** The same styles in the muted color, for thoughts (routes/session/thinking-syntax.ts, MIT). */
+  thinking: SyntaxStyle;
+}
+
 /**
- * Markdown syntax style for the current theme. A replaced style is destroyed only after the
- * renderer goes idle, because a frame in flight may still draw with it (same as the host).
+ * Syntax styles for the current theme, one set per pane, never per session. A replaced set is
+ * destroyed only after the renderer goes idle, because a frame in flight may still draw with it
+ * (same as the host's `createSyntaxStyleMemo`).
  */
 function createSyntax(context: Plugin.Context, theme: () => ResolvedTheme) {
   const retained = new Set<SyntaxStyle>();
-  let current: SyntaxStyle | undefined;
-  const release = (style: SyntaxStyle) => {
-    retained.add(style);
+  let current: Syntax | undefined;
+  const release = (syntax: Syntax) => {
+    const styles = [syntax.markdown, syntax.thinking];
+    for (const style of styles) retained.add(style);
     void context.renderer
       .idle()
       .catch(() => {})
       .finally(() => {
-        if (!retained.delete(style)) return;
-        style.destroy();
+        for (const style of styles) if (retained.delete(style)) style.destroy();
       });
   };
   onCleanup(() => {
@@ -355,55 +337,21 @@ function createSyntax(context: Plugin.Context, theme: () => ResolvedTheme) {
   });
   return createMemo(() => {
     const previous = current;
-    current = generateSyntax(theme(), context.renderer.nativeScene);
+    const owner = context.renderer.nativeScene;
+    const markdown = generateSyntax(theme(), owner);
+    const muted = theme().text.muted;
+    const thinking = SyntaxStyle.fromStyles(
+      Object.fromEntries(
+        markdown
+          .getRegisteredNames()
+          .map((name) => [name, { ...markdown.getStyle(name), fg: muted }])
+      ),
+      owner
+    );
+    current = { markdown, thinking };
     if (previous) release(previous);
     return current;
   });
-}
-
-/** Turns messages into labeled text, markdown and one-line tool blocks. */
-function toBlocks(messages: readonly SessionMessageInfo[]): Block[] {
-  const blocks: Block[] = [];
-  let speaker: string | undefined;
-  const say = (who: string) => {
-    if (speaker === who) return;
-    speaker = who;
-    blocks.push({ kind: 'label', text: who });
-  };
-  for (const message of messages) {
-    if (message.type === 'user') {
-      if (!message.text.trim()) continue;
-      say('you');
-      blocks.push({ kind: 'markdown', text: message.text });
-    } else if (message.type === 'shell') {
-      say('you');
-      blocks.push({ kind: 'tool', text: `▸ shell  ${firstLine(message.command)}` });
-    } else if (message.type === 'assistant') {
-      for (const part of message.content) {
-        if (part.type === 'text' && part.text.trim()) {
-          say('assistant');
-          blocks.push({ kind: 'markdown', text: part.text });
-        } else if (part.type === 'tool') {
-          say('assistant');
-          blocks.push({ kind: 'tool', text: toolSummary(part.name, part.state.input) });
-        }
-      }
-    }
-  }
-  return blocks;
-}
-
-// Input fields that best describe a tool call, in the order they are tried.
-const SUMMARY_FIELDS = ['command', 'filePath', 'path', 'pattern', 'query', 'url', 'description'];
-
-/** One line describing a tool call: its name and its most telling argument. */
-function toolSummary(name: string, input: unknown): string {
-  const record =
-    typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
-  const value = SUMMARY_FIELDS.map((field) => record[field]).find(
-    (item): item is string => typeof item === 'string' && item.trim().length > 0
-  );
-  return value === undefined ? `▸ ${name}` : `▸ ${name}  ${firstLine(value)}`;
 }
 
 /** First non-empty line, trimmed. */

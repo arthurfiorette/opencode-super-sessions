@@ -406,7 +406,7 @@ test('the preview pane shows only on wide terminals', async () => {
     (frame) => frame.includes('tokens') && frame.includes('can we keep rollup as a fallback?')
   );
   const frame = wide.rendered.captureCharFrame();
-  assert.match(frame, /▸ shell\s+pnpm test --filter deployer/);
+  assert.match(frame, /\$ pnpm test --filter deployer/);
   assert.match(frame, /Rollup stays as a fallback\./, 'Markdown renders without its markup.');
 });
 
