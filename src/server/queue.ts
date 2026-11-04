@@ -1,5 +1,5 @@
 import type { Plugin } from '@opencode/plugin';
-import { readSessionRefs, type SessionRefs } from '../refs/ref.js';
+import { METADATA_KEY, readSessionRefs, type SessionRefs, sessionRefsSchema } from '../refs/ref.js';
 import { type RefsUpdate, withSessionRefs } from '../refs/store.js';
 
 /** The part of a Location's session API the write queue needs. */
@@ -21,8 +21,11 @@ export interface WriteQueue {
  * Creates the per-session write queue. `session.update({ metadata })` replaces the whole metadata
  * object, so two writers that read before either writes would drop one change. Every link change
  * from tools, hooks, events and RPC goes through one process-wide queue to rule that out.
+ *
+ * A stored value that does not parse, such as one a newer plugin version wrote, is never
+ * replaced: the update rejects and `warn` names the session.
  */
-export function createWriteQueue(): WriteQueue {
+export function createWriteQueue(warn: (message: string) => void = () => {}): WriteQueue {
   const tails = new Map<string, Promise<unknown>>();
 
   return {
@@ -31,6 +34,12 @@ export function createWriteQueue(): WriteQueue {
       // A failed write must not block the next one, so the chain continues on either outcome.
       const next = previous.then(noop, noop).then(async () => {
         const info = await session.get({ sessionID });
+        const stored = info.metadata?.[METADATA_KEY];
+        if (stored !== undefined && !sessionRefsSchema.safeParse(stored).success) {
+          const message = `Session ${sessionID} holds a ${METADATA_KEY} value this version cannot read, so its links were not changed`;
+          warn(message);
+          throw new Error(message);
+        }
         const result = mutate(readSessionRefs(info.metadata));
         if (result.changed) {
           await session.update({

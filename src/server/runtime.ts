@@ -171,7 +171,7 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
     },
     settings,
     cache,
-    writes: createWriteQueue(),
+    writes: createWriteQueue(warn),
     branches: createBranchCache({
       isOpen(ref) {
         const snapshot = cache.get(refKey(ref));

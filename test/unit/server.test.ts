@@ -89,6 +89,25 @@ function fakeBus() {
   };
 }
 
+test('the write queue never overwrites a stored value it cannot read, such as a newer schema', async () => {
+  const newer = { v: 2, links: [{ future: true }], dismissed: [] };
+  const writes: unknown[] = [];
+  const session = {
+    get: async () => ({ metadata: { 'super-sessions': newer } }),
+    update: async (input: { metadata?: Record<string, unknown> }) => {
+      writes.push(input.metadata);
+    }
+  } as unknown as SessionAccess;
+  const queue = createWriteQueue();
+  await assert.rejects(queue.update(session, 'ses_1', (refs) => mergeLinks(refs, [link(1)])));
+  assert.deepEqual(writes, []);
+
+  // A session without the key is a first write, not an unreadable one.
+  const fresh = { ...session, get: async () => ({ metadata: {} }) } as unknown as SessionAccess;
+  await queue.update(fresh, 'ses_2', (refs) => mergeLinks(refs, [link(1)]));
+  assert.equal(writes.length, 1);
+});
+
 test('every copy of the plugin module gets the one sweeper of the shared runtime', async () => {
   // The daemon loads a local-path plugin once per Location, each a module of its own; a query
   // string gives the same file a new module instance the same way.
