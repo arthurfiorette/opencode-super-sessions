@@ -25,7 +25,8 @@ mock.module('node:child_process', {
 });
 
 // User `!` commands run in a real shell, out of reach of the spawn mock, so `gh` there resolves
-// through PATH to this shim.
+// through PATH to this shim. The Windows host picks PowerShell, which runs only names with a
+// PATHEXT extension and would otherwise find the runner's real gh.
 const bin = path.join(directory, 'bin');
 await mkdir(bin);
 await writeFile(
@@ -33,6 +34,9 @@ await writeFile(
   `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeGh)} "$@"\n`,
   { mode: 0o755 }
 );
+if (process.platform === 'win32') {
+  await writeFile(path.join(bin, 'gh.cmd'), `@"${process.execPath}" "${fakeGh}" %*\r\n`);
+}
 process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
 
 const { OpenCode } = await import('@opencode/sdk');
