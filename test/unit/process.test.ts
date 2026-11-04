@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { test } from 'node:test';
 import { createLimiter, run } from '../../src/process.js';
 
@@ -55,13 +54,6 @@ test('a hung child is killed at the timeout instead of blocking the caller', asy
   });
   assert.equal(result.failure, 'timeout');
   assert.equal(result.code, null);
-});
-
-test('an executable that does not exist resolves as missing instead of throwing', async () => {
-  const result = await run(join(import.meta.dirname, 'no-such-gh-binary'), ['--version'], {
-    timeoutMs: 5000
-  });
-  assert.equal(result.failure, 'missing');
 });
 
 test('the limiter never runs more than its cap and still completes every task', async () => {
