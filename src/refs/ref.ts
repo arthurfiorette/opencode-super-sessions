@@ -66,6 +66,21 @@ export const refStatusSchema = z.enum([
   'not_planned'
 ]);
 
+/**
+ * Review and CI summary of a pull or merge request. Every field is optional: a forge or server
+ * that does not report one leaves it out, and states cached before this existed stay valid.
+ *
+ * - `decision`: the forge's review verdict; absent when nobody reviewed and none is required.
+ * - `unresolved` / `threads`: resolvable review threads still open, and all of them.
+ * - `checks`: the head commit's combined CI result; absent when nothing ran.
+ */
+export const refReviewSchema = z.strictObject({
+  decision: z.enum(['approved', 'changes_requested', 'review_required']).optional(),
+  unresolved: z.number().int().nonnegative().optional(),
+  threads: z.number().int().nonnegative().optional(),
+  checks: z.enum(['passing', 'failing', 'pending']).optional()
+});
+
 export const refStateSchema = z.strictObject({
   status: refStatusSchema,
   title: z.string(),
@@ -75,7 +90,9 @@ export const refStateSchema = z.strictObject({
   // Pull requests: issues this PR closes when merged.
   closes: z.array(refSchema).optional(),
   // Issues: pull requests that reference this issue as closed by them.
-  closedBy: z.array(refSchema).optional()
+  closedBy: z.array(refSchema).optional(),
+  // Pull requests only.
+  review: refReviewSchema.optional()
 });
 
 export type ProviderId = z.output<typeof providerIdSchema>;
@@ -85,6 +102,7 @@ export type RefSource = z.output<typeof refSourceSchema>;
 export type RefLink = z.output<typeof refLinkSchema>;
 export type SessionRefs = z.output<typeof sessionRefsSchema>;
 export type RefStatus = z.output<typeof refStatusSchema>;
+export type RefReview = z.output<typeof refReviewSchema>;
 export type RefState = z.output<typeof refStateSchema>;
 
 /** Sources whose refs count toward Done and appear on the row. `mention` is excluded on purpose. */
