@@ -42,7 +42,6 @@ import {
   refsLine,
   type Segment,
   sessionBackground,
-  titleChrome,
   titleLine,
   titleRoom
 } from './row.js';
@@ -64,17 +63,7 @@ const MODE = 'super-sessions';
 // The host dialog's backdrop color.
 const BACKDROP = RGBA.fromInts(0, 0, 0, 150);
 const PREVIEW_MIN_COLUMNS = 120;
-// Share of the panel the list column may take when sized from the titles. Renamed titles have
-// no length cap (generated ones stop at 100 characters), so neither column can crowd out the other.
-const LIST_MIN_SHARE = 0.4;
-const LIST_MAX_SHARE = 0.6;
-// The list box pads one cell on each side, and its scrollbar takes one more column.
-const LIST_PADDING = 1;
-const LIST_BAR_WIDTH = 1;
-// The widest age `formatAge` returns.
-const WIDEST_AGE = '12mo';
 const REFRESH_INTERVAL = 60_000;
-const UNTITLED = 'Untitled session';
 const VIEW_LABELS: Record<PageView, string> = {
   active: 'Active',
   done: 'Done',
@@ -85,6 +74,29 @@ const EMPTY: Record<PageView, string> = {
   done: 'No done sessions',
   archived: 'No archived sessions'
 };
+// Header row layout, shared by the boxes and the measure that decides which pieces fit.
+const HEADER_PADDING = 2;
+const TABS_INDENT = 4;
+const TAB_GAP = 3;
+// Blank cells kept between the last tab and the `esc` hint.
+const ESC_GAP = 2;
+
+/** Which optional pieces the header row shows. */
+interface HeaderFit {
+  project: boolean;
+  icons: boolean;
+  counts: boolean;
+}
+
+// The tab names alone, kept even when they do not fit.
+const LABELS_ONLY: HeaderFit = { project: false, icons: false, counts: false };
+// Widest first; each step drops one more piece.
+const HEADER_FITS: readonly HeaderFit[] = [
+  { project: true, icons: true, counts: true },
+  { project: false, icons: true, counts: true },
+  { project: false, icons: false, counts: true },
+  LABELS_ONLY
+];
 
 /**
  * Session browser drawn over the current route like the host's dialogs, only larger: header with
@@ -625,12 +637,13 @@ export default function SessionBrowser(props: PageProps) {
       title:
         deleting() === session.id
           ? `Press ${shortcut('session.delete', 'ctrl+d')} again to delete`
-          : info.title || UNTITLED,
+          : info.title || 'Untitled session',
       label: matchLabel(reason(session), data.refs[session.id]),
-      right: ageColumn(
-        formatAge(now - info.time.updated),
-        archivedAt === undefined ? undefined : formatAge(now - archivedAt)
-      ),
+      right:
+        archivedAt === undefined
+          ? // Padded to the widest age (`11mo`), so labels before it line up down the list.
+            formatAge(now - info.time.updated).padStart(4)
+          : `archived ${formatAge(now - archivedAt)} · updated ${formatAge(now - info.time.updated)}`,
       // The row box pads one cell on each side.
       width: listWidth() - 2,
       refs: refsOf(session),
@@ -718,13 +731,10 @@ export default function SessionBrowser(props: PageProps) {
     });
 
   /** The `esc` hint, which closes the browser on click. */
-  const closeHint = (visible: () => boolean) =>
+  const closeHint = () =>
     jsx('text', {
       flexShrink: 0,
       wrapMode: 'none',
-      get visible() {
-        return visible();
-      },
       get fg() {
         return theme().text.muted;
       },
@@ -735,12 +745,37 @@ export default function SessionBrowser(props: PageProps) {
       children: 'esc'
     });
 
+  /** ` for <project>` after "Sessions" while the list shows one project, else nothing. */
+  const projectSuffix = () =>
+    scope() === 'project' && projectLabel() ? ` for ${projectLabel()}` : '';
+  /**
+   * The header pieces that fit the left column. They drop in order (the project, then the tab
+   * icons, then the counts) instead of the text getting cut mid-word, which happens on narrow
+   * terminals and with long project names.
+   */
+  const headerFit = createMemo((): HeaderFit => {
+    const counts = model.counts();
+    // Whole cells the header row has for its text, besides the `esc` hint when it sits here.
+    const room = leftWidth() - 2 * HEADER_PADDING - (wide() ? 0 : cells('esc') + ESC_GAP);
+    const fixed = cells('Sessions') + TABS_INDENT + TAB_GAP * (VIEWS.length - 1);
+    /** Cells the header text takes with `fit`'s pieces shown. */
+    const size = (fit: HeaderFit) =>
+      fixed +
+      (fit.project ? cells(projectSuffix()) : 0) +
+      VIEWS.reduce(
+        (total, view) =>
+          total + cells(tabLabel(view, fit.icons)) + (fit.counts ? cells(` ${counts[view]}`) : 0),
+        0
+      );
+    return HEADER_FITS.find((fit) => size(fit) <= room) ?? LABELS_ONLY;
+  });
+
   const header = jsx('box', {
     flexDirection: 'row',
     height: 1,
     flexShrink: 0,
-    paddingLeft: 2,
-    paddingRight: 2,
+    paddingLeft: HEADER_PADDING,
+    paddingRight: HEADER_PADDING,
     children: [
       jsx('text', {
         flexShrink: 0,
@@ -748,7 +783,7 @@ export default function SessionBrowser(props: PageProps) {
         children: [
           span('Sessions', () => theme().text.base, true),
           span(
-            () => (scope() === 'project' && projectLabel() ? ` for ${projectLabel()}` : ''),
+            () => (headerFit().project ? projectSuffix() : ''),
             () => theme().text.muted
           )
         ]
@@ -758,13 +793,14 @@ export default function SessionBrowser(props: PageProps) {
         flexGrow: 1,
         flexShrink: 1,
         minWidth: 0,
-        paddingLeft: 4,
-        gap: 3,
+        paddingLeft: TABS_INDENT,
+        // Clips only when even the bare tab names do not fit, so the cut tabs stop short of `esc`
+        // instead of running under it.
+        overflow: 'hidden',
+        gap: TAB_GAP,
         // One text per tab, since spans take no pointer events: a left click switches the view.
         children: VIEWS.map((view) => {
           const current = () => memory.view === view && !data.search;
-          const icon =
-            view === 'done' ? `${ICONS.done} ` : view === 'archived' ? `${ICONS.archived} ` : '';
           return jsx('text', {
             flexShrink: 0,
             wrapMode: 'none',
@@ -774,20 +810,28 @@ export default function SessionBrowser(props: PageProps) {
               setView(view);
             },
             get children() {
+              const fit = headerFit();
               return [
                 span(
-                  `${icon}${VIEW_LABELS[view]}`,
+                  tabLabel(view, fit.icons),
                   () => (current() ? theme().text.base : theme().text.muted),
                   current()
                 ),
-                span(` ${model.counts()[view]}`, () => theme().text.muted)
+                ...(fit.counts ? [span(` ${model.counts()[view]}`, () => theme().text.muted)] : [])
               ];
             }
           });
         })
       }),
       // With the preview open, `esc` moves to the top right of the preview column.
-      closeHint(() => !wide())
+      jsx('box', {
+        flexShrink: 0,
+        paddingLeft: ESC_GAP,
+        get visible() {
+          return !wide();
+        },
+        children: closeHint()
+      })
     ]
   });
 
@@ -850,15 +894,15 @@ export default function SessionBrowser(props: PageProps) {
     flexGrow: 1,
     flexShrink: 1,
     minWidth: 0,
-    paddingLeft: LIST_PADDING,
-    paddingRight: LIST_PADDING,
+    paddingLeft: 1,
+    paddingRight: 1,
     ref: (value: BoxRenderable) => {
       listBox = value;
     },
     onSizeChange: () => {
       setListHeight(listBox?.height ?? 0);
       // Without the list's own padding.
-      setListWidth(Math.max(0, (listBox?.width ?? 0) - 2 * LIST_PADDING));
+      setListWidth(Math.max(0, (listBox?.width ?? 0) - 2));
     },
     onMouseScroll: (event: MouseEvent) => {
       const direction = event.scroll?.direction;
@@ -897,7 +941,7 @@ export default function SessionBrowser(props: PageProps) {
   // (routes/session/index.tsx `verticalScrollbarOptions`), shown under the same setting.
   let slider: SliderRenderable | undefined;
   const listBar = jsx('box', {
-    width: LIST_BAR_WIDTH,
+    width: 1,
     flexShrink: 0,
     // Only while the list overflows: with nothing to scroll the slider is one solid column.
     get visible() {
@@ -923,36 +967,13 @@ export default function SessionBrowser(props: PageProps) {
     slider.value = memory.scroll;
   });
 
-  // The view's sessions, not the search results, so typing never moves the columns. Loaded titles,
-  // not the host's live copies: a rename reloads the lists anyway, and streaming updates to the
-  // live copies would otherwise re-measure on every event.
-  const widestTitle = createMemo(() =>
-    rowsOf(model.viewGroups()).reduce(
-      (widest, session) => Math.max(widest, cells(session.title || UNTITLED)),
-      0
-    )
-  );
   /**
-   * Cells of the list column besides the title. The scrollbar's column counts even while hidden:
-   * it comes and goes as a search changes the number of lines.
+   * The preview's share of the panel; the list column takes the rest. A fixed split, so the
+   * columns stay put whatever sessions the list holds.
    */
-  const rowChrome = () =>
-    2 * LIST_PADDING +
-    LIST_BAR_WIDTH +
-    titleChrome(ageColumn(WIDEST_AGE, memory.view === 'archived' ? WIDEST_AGE : undefined));
-  /**
-   * The preview's share of the panel, or 'auto' to size the list from its titles.
-   * `previewWidth` cannot be left unset yet: the schema fills in 0.4 when the user omits it, so a
-   * number cannot tell an explicit split from the default. Becomes `props.options.previewWidth`
-   * once the schema accepts 'auto' and defaults to it.
-   */
-  const split = (): number | 'auto' => 'auto';
-  const previewWidth = createMemo(() => {
-    const panel = panelWidth();
-    const share = split();
-    if (share !== 'auto') return Math.floor(panel * share);
-    return panel - listColumnWidth(panel, widestTitle() + rowChrome());
-  });
+  const split = (): number => props.options.previewWidth;
+  /** Cells of the preview column, its blank first cell included. */
+  const previewWidth = () => Math.floor(panelWidth() * split());
   const pane = createComponent(Preview, {
     context,
     options: props.options,
@@ -998,7 +1019,7 @@ export default function SessionBrowser(props: PageProps) {
         flexShrink: 0,
         justifyContent: 'flex-end',
         paddingRight: 2,
-        children: closeHint(() => true)
+        children: closeHint()
       }),
       jsx('box', {
         flexDirection: 'row',
@@ -1220,22 +1241,10 @@ export function PeekBanner(props: PeekBannerProps) {
   });
 }
 
-/** A title line's age column: the age, or the archive and update ages in the Archived view. */
-function ageColumn(updated: string, archived: string | undefined): string {
-  // Padded to the widest age, so labels before it line up down the list.
-  if (archived === undefined) return updated.padStart(cells(WIDEST_AGE));
-  return `archived ${archived} · updated ${updated}`;
-}
-
-/**
- * Cells of the list column for the widest row it holds, kept between the column's minimum and
- * maximum share of the panel. The preview takes the rest.
- */
-function listColumnWidth(panel: number, widest: number): number {
-  return Math.min(
-    Math.floor(panel * LIST_MAX_SHARE),
-    Math.max(Math.ceil(panel * LIST_MIN_SHARE), widest)
-  );
+/** A view tab's name, after its icon when `icons` is set. Active has no icon. */
+function tabLabel(view: PageView, icons: boolean): string {
+  const icon = view === 'done' ? ICONS.done : view === 'archived' ? ICONS.archived : undefined;
+  return icons && icon ? `${icon} ${VIEW_LABELS[view]}` : VIEW_LABELS[view];
 }
 
 /** Why a search listed the session, for the muted note on its title line. */
