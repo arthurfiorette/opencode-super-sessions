@@ -161,6 +161,8 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
     ],
     // Unchanged: no commits beyond the default branch.
     ['unchanged', { cleanupUnchanged: true }, {}, 'remove:unchanged'],
+    // A worktree created moments ago has no commits and no session yet.
+    ['unchanged, no session uses it', { cleanupUnchanged: true }, { sessions: [] }, 'keep'],
     ['one commit ahead', { cleanupUnchanged: true }, { ahead: 1 }, 'keep'],
     ['ahead unknown', { cleanupUnchanged: true }, { ahead: undefined }, 'keep']
   ];

@@ -150,7 +150,8 @@ export function decideWorktree(
       return remove('inactive', `inactive for ${days(inactiveDays)}`);
     }
   }
-  if (settings.cleanupUnchanged && facts.ahead === 0 && settled) {
+  // A session must exist: a worktree created a moment ago has no commits and no session yet.
+  if (settings.cleanupUnchanged && facts.ahead === 0 && sessions.length > 0 && settled) {
     return remove('unchanged', 'no commits beyond the default branch');
   }
 
