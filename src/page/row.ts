@@ -84,7 +84,8 @@ export function findRef(view: SessionRefView | undefined, key: string): Ref | un
  *
  * - `pr`: the main PR with its title, a matched ref that is shown nowhere else, and `+N`.
  * - `status`: review and CI parts of the main PR worth acting on.
- * - `issues`: one piece per tracked issue, fitted to the width when drawn; `extra` is the `+N`
+ * - `issues`: one piece per tracked issue (with its title when it is the only one), fitted to
+ *   the width when drawn; `extra` is the `+N`
  *   the issues line carries when there is no PR line.
  */
 export interface RowDetails {
@@ -174,7 +175,8 @@ export function rowDetails(input: RefsInput): RowDetails {
   return {
     pr,
     status: open ? statusSegments(mainState?.review, input.theme) : [],
-    issues: issues.map((ref) => piece(ref, false)),
+    // A lone issue has the room for its title, like the PR line; several read as a number list.
+    issues: issues.map((ref) => piece(ref, issues.length === 1)),
     extra: pr.length > 0 ? 0 : extra
   };
 }

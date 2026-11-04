@@ -456,7 +456,8 @@ test('rows take a line per detail they have, with no gap between rows and one bl
   const running = row('Mastra build: Rollup to Rspack');
   assert.match(frame[running + 1], /#4930 Migrate build to Rspack/);
   assert.match(frame[running + 2], /changes requested · 2 unresolved · checks failing/);
-  assert.match(frame[running + 3], /#12\s*$/);
+  // A lone issue shows its title, like the PR line.
+  assert.match(frame[running + 3], /#12 Rspack build\s*$/);
   const indent = (index) => frame[index].search(/\S/);
   assert.equal(indent(running + 2), indent(running + 1));
   assert.equal(indent(running + 3), indent(running + 1));
