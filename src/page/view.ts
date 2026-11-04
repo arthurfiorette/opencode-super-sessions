@@ -387,6 +387,16 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Next view',
       run: () => setView(VIEWS[(VIEWS.indexOf(memory.view) + 1) % VIEWS.length] ?? 'active')
     },
+    // The host binds shift+tab to agent.cycle; this layer's mode is on top while the browser is
+    // open, so the key cycles views here and agents everywhere else.
+    {
+      bind: 'shift+tab',
+      title: 'Previous view',
+      run: () =>
+        setView(
+          VIEWS[(VIEWS.indexOf(memory.view) + VIEWS.length - 1) % VIEWS.length] ?? 'active'
+        )
+    },
     {
       bind: 'ctrl+a',
       title: 'Toggle all projects',
@@ -877,7 +887,7 @@ export default function SessionBrowser(props: PageProps) {
       [memory.view === 'archived' ? 'restore' : 'archive', 'ctrl+s'],
       // Before the session actions: on narrow terminals the hints that do not fit are dropped,
       // and switching views is how the Done and Archived views are found at all.
-      ['view', 'tab'],
+      ['view', 'tab/shift+tab'],
       ['rename', shortcut('session.rename', 'ctrl+r')],
       ['retitle', shortcut('super-sessions.retitle', 'ctrl+t')],
       [
