@@ -111,6 +111,39 @@ export const refStateSchema = z.strictObject({
     .optional()
 });
 
+/**
+ * One CI check of a pull request's head commit: a GitHub check run or status, or a GitLab job.
+ * `url` opens its page.
+ */
+export const pullCheckSchema = z.strictObject({
+  name: z.string(),
+  status: z.enum([
+    'failure',
+    'cancelled',
+    'action_required',
+    'pending',
+    'success',
+    'neutral',
+    'skipped'
+  ]),
+  url: z.string().optional()
+});
+
+/**
+ * What the Pull requests view's preview shows beyond the snapshot, fetched for the selected pull
+ * request only. `checksTruncated` says more checks ran than the first page holds.
+ */
+export const pullDetailsSchema = z.strictObject({
+  author: z.string().optional(),
+  head: z.string().optional(),
+  base: z.string().optional(),
+  body: z.string(),
+  checks: z.array(pullCheckSchema),
+  checksTruncated: z.boolean().optional()
+});
+
+export type PullCheck = z.output<typeof pullCheckSchema>;
+export type PullDetails = z.output<typeof pullDetailsSchema>;
 export type ProviderId = z.output<typeof providerIdSchema>;
 export type RefKind = z.output<typeof refKindSchema>;
 export type Ref = z.output<typeof refSchema>;

@@ -1,5 +1,5 @@
 import type { ForgeError, ForgeProvider, RefCandidate } from './providers/provider.js';
-import { type Ref, type RefState, type RefStatus, refKey } from './refs/ref.js';
+import { type PullDetails, type Ref, type RefState, type RefStatus, refKey } from './refs/ref.js';
 
 /** Last known answer for one candidate: its live state, or why it could not be fetched. */
 export type Snapshot = { ref: Ref; state: RefState } | ForgeError;
@@ -39,6 +39,58 @@ const TTL: Record<RefStatus, number> = {
   not_planned: Number.POSITIVE_INFINITY
 };
 const ERROR_TTL = 30_000;
+
+/** How long a pull request's details stay fresh: as long as its snapshot would. */
+export function detailsTtl(status: RefStatus | undefined): number {
+  return TTL[status ?? 'open'];
+}
+
+/** Last details answer per pull request key; see {@link createDetailsCache}. */
+export interface DetailsCache {
+  /**
+   * The cached details of `key`, or `load()`'s answer when they expired. Concurrent calls share
+   * one load. `status` is the pull request's state, which sets the lifetime like a snapshot's.
+   */
+  get(
+    key: string,
+    status: RefStatus | undefined,
+    load: () => Promise<PullDetails | ForgeError>
+  ): Promise<PullDetails | ForgeError>;
+}
+
+// The preview asks for one pull request at a time; this bounds what a long session keeps.
+const DETAILS_LIMIT = 100;
+
+/**
+ * Creates the cache of the Pull requests view's details. Errors are kept for 30 seconds, or until
+ * a rate limit's `retryAt`, so moving through the list does not hammer a forge that failed.
+ */
+export function createDetailsCache(options: { now?: () => number } = {}): DetailsCache {
+  const now = options.now ?? Date.now;
+  const entries = new Map<
+    string,
+    { value: Promise<PullDetails | ForgeError>; expiresAt: number }
+  >();
+  return {
+    get(key, status, load) {
+      const cached = entries.get(key);
+      if (cached && cached.expiresAt > now()) return cached.value;
+      const entry = { value: load(), expiresAt: Number.POSITIVE_INFINITY };
+      entries.delete(key);
+      entries.set(key, entry);
+      // Map order is insertion order, so the first key is the least recently fetched.
+      if (entries.size > DETAILS_LIMIT) entries.delete(entries.keys().next().value ?? '');
+      entry.value.then(
+        (value) => {
+          entry.expiresAt =
+            'reason' in value ? (value.retryAt ?? now() + ERROR_TTL) : now() + detailsTtl(status);
+        },
+        () => entries.delete(key)
+      );
+      return entry.value;
+    }
+  };
+}
 
 /**
  * Cache key for a candidate. Equals {@link refKey} when the kind is known; bare `#N` candidates

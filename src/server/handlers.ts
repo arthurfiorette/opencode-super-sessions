@@ -4,6 +4,7 @@ import { refKey } from '../refs/ref.js';
 import { dismissLink, mergeLinks, setDone } from '../refs/store.js';
 import type { SuperSessions } from '../rpc.js';
 import { linksOf, parseReference, resolveCandidates, resolveRepo } from './links.js';
+import { pullDetailsHandler } from './pull-details.js';
 import type { Runtime } from './runtime.js';
 import type { SettingsPatch } from './settings.js';
 import { maintenanceHandlers } from './sweep.js';
@@ -75,6 +76,8 @@ export function rpcHandlers(
       );
       return {};
     },
+
+    'pull.details': pullDetailsHandler(runtime),
 
     ...settingsHandlers(runtime, context),
     ...maintenanceHandlers(runtime)

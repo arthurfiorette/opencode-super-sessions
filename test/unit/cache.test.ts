@@ -26,6 +26,7 @@ function fakeProvider(answer: (item: RefCandidate) => Snapshot | Promise<Snapsho
     definition: {} as ForgeProvider['definition'],
     available: async () => 'ok' as const,
     branchPullRequests: async () => [],
+    details: async () => ({ reason: 'failed' as const }),
     snapshot: async (items: RefCandidate[]) => {
       calls.push(items.map((item) => item.number));
       return Promise.all(items.map(answer));

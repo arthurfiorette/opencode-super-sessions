@@ -1,4 +1,4 @@
-import type { ProviderId, Ref, RefKind, RefState } from '../refs/ref.js';
+import type { ProviderId, PullDetails, Ref, RefKind, RefState } from '../refs/ref.js';
 
 /** A repository on a forge, as derived from a git remote. */
 export interface RepoRef {
@@ -80,4 +80,6 @@ export interface ForgeProvider {
    * Batched; one missing number fails only its own entry with `not-found`.
    */
   snapshot(candidates: RefCandidate[]): Promise<Array<{ ref: Ref; state: RefState } | ForgeError>>;
+  /** Author, branches, description and every CI check of one pull request. One request. */
+  details(ref: Ref): Promise<PullDetails | ForgeError>;
 }

@@ -152,6 +152,53 @@ function counts(runs, statuses) {
   };
 }
 
+/** A finished check run of the GitHub Actions workflow `workflow`. */
+function run(workflow, name, conclusion) {
+  return {
+    __typename: 'CheckRun',
+    name,
+    status: conclusion ? 'COMPLETED' : 'IN_PROGRESS',
+    conclusion,
+    detailsUrl: `https://github.com/acme/widgets/actions/runs/1/job/${name.length}`,
+    startedAt: '2026-11-03T16:00:00Z',
+    completedAt: conclusion ? '2026-11-03T16:10:00Z' : null,
+    checkSuite: { workflowRun: { workflow: { name: workflow } } }
+  };
+}
+
+// What the Pull requests view's preview asks for one pull request.
+const details = {
+  'acme/widgets#90': {
+    author: { login: 'octo-dev' },
+    headRefName: 'group-search',
+    baseRefName: 'main',
+    body: '## Summary\n\nGroups search results by **day**, like the session list.\n\n- Running first\n- Then `Today` and dated groups\n\nFixes #61.',
+    checks: [
+      run('CI', 'Lint', 'FAILURE'),
+      run('CI', 'Unit tests (node 24)', 'SUCCESS'),
+      run('CI', 'Unit tests (node 22)', 'SUCCESS'),
+      // A re-run of the same check: the preview keeps the newest.
+      { ...run('CI', 'E2E', 'FAILURE'), completedAt: '2026-11-03T16:05:00Z' },
+      run('CI', 'E2E', 'FAILURE'),
+      run('Docs', 'Build docs', 'SKIPPED'),
+      {
+        __typename: 'StatusContext',
+        context: 'Vercel – widgets-preview',
+        state: 'SUCCESS',
+        targetUrl: 'https://vercel.com/acme/widgets',
+        createdAt: '2026-11-03T16:02:00Z'
+      }
+    ]
+  },
+  'acme/widgets#34': {
+    author: { login: 'octo-dev' },
+    headRefName: 'fix-titles',
+    baseRefName: 'main',
+    body: 'Shows the **full** session title in the list instead of cutting it at 40 cells.\n\nCloses #56.',
+    checks: [run('CI', 'Lint', 'SUCCESS'), run('CI', 'Unit tests', null), run('CI', 'Build', null)]
+  }
+};
+
 // Head branch of each pull request above, for `pullRequests(headRefName:)` lookups.
 const branches = { 'acme/widgets@fix-titles': [34], 'acme/widgets@group-search': [90] };
 
@@ -191,6 +238,32 @@ function snapshot(query, variables) {
   reply(errors.length ? { data, errors } : { data });
 }
 
+/** Answers the details lookup of one pull request. */
+function pullDetails(variables) {
+  const found = details[`${variables.owner}/${variables.name}#${variables.number}`.toLowerCase()];
+  const rateLimit = { remaining: 4999, resetAt: '2099-01-01T00:00:00Z' };
+  if (!found) {
+    reply({
+      data: { rateLimit, repository: { pullRequest: null } },
+      errors: [{ type: 'NOT_FOUND', path: ['repository', 'pullRequest'], message: 'Not found' }]
+    });
+    return;
+  }
+  const { checks, ...rest } = found;
+  const contexts = { pageInfo: { hasNextPage: false }, nodes: checks };
+  reply({
+    data: {
+      rateLimit,
+      repository: {
+        pullRequest: {
+          ...rest,
+          commits: { nodes: [{ commit: { statusCheckRollup: { contexts } } }] }
+        }
+      }
+    }
+  });
+}
+
 /** Answers a branch lookup. */
 function branch(variables) {
   const key = `${variables.owner}/${variables.name}@${variables.branch}`.toLowerCase();
@@ -228,6 +301,7 @@ if (args[0] === 'api' && args[1] === 'graphql') {
   process.stdin.on('end', () => {
     const { query, variables } = JSON.parse(input);
     if (query.includes('pullRequests(headRefName')) branch(variables);
+    else if (query.includes('pullRequest(number: $number)')) pullDetails(variables);
     else snapshot(query, variables);
   });
 } else {

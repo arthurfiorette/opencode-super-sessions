@@ -1,6 +1,12 @@
 import { Rpc } from '@opencode/plugin/rpc';
 import { z } from 'zod';
-import { providerIdSchema, refLinkSchema, refSchema, refStateSchema } from './refs/ref.js';
+import {
+  providerIdSchema,
+  pullDetailsSchema,
+  refLinkSchema,
+  refSchema,
+  refStateSchema
+} from './refs/ref.js';
 
 export const availabilitySchema = z.enum(['ok', 'missing-tool', 'unauthenticated']);
 
@@ -134,6 +140,15 @@ export const SuperSessions = Rpc.define({
           provider: providerIdSchema.optional()
         })
       }
+    },
+    /**
+     * Author, branches, description and CI checks of one pull request, for the preview of the
+     * Pull requests view. Cached like its snapshot; `unavailable` says why the forge did not answer.
+     */
+    'pull.details': {
+      input: z.strictObject({ ref: refSchema }),
+      output: pullDetailsSchema,
+      errors: { unavailable: z.strictObject({ reason: z.string() }) }
     },
     /** Removes a link and records the key as dismissed so detection never re-adds it. */
     unlink: {
