@@ -134,14 +134,16 @@ export function checkCounts(review: RefReview | undefined): string | undefined {
  * review verdict, the CI result (see {@link ciLook}) with `passed/total` muted unless every check
  * passed (see {@link checkCounts}) or `counts` is false, an alert in the error color when the
  * branch has merge conflicts, then the unresolved threads in the warning color. A part without
- * data is left out. Each part starts with its separating space, so the number and the state icon
- * stay in the same column on every row, and each glyph keeps a 2-cell slot like the ref icons
- * because a space always follows it (the next part's or the title's).
+ * data is left out, and so is the CI result when `ci` is false. Each part starts with its
+ * separating space, so the number and the state icon stay in the same column on every row, and
+ * each glyph keeps a 2-cell slot like the ref icons because a space always follows it (the next
+ * part's or the title's).
  */
 export function badgeSegments(
   review: RefReview | undefined,
   theme: ResolvedTheme,
-  counts = true
+  counts = true,
+  ci = true
 ): Segment[] {
   if (review === undefined) return [];
   const { feedback, muted } = theme.text;
@@ -153,7 +155,7 @@ export function badgeSegments(
   } else if (review.decision === 'review_required') {
     parts.push({ text: ` ${ICONS.reviewRequired}`, fg: muted });
   }
-  if (review.checks !== undefined) {
+  if (ci && review.checks !== undefined) {
     const [glyph, fg] = ciLook(review.checks, theme);
     parts.push({ text: ` ${glyph}`, fg });
     const text = counts ? checkCounts(review) : undefined;

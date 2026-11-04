@@ -102,7 +102,7 @@ An open or draft pull request shows these Nerd Font icons in this order. On list
 | Conflicts | An alert icon in red when the branch conflicts with its base. Nothing while the forge has not checked yet                                             |
 | Threads   | A comment icon and the number of unresolved review threads, in yellow                                                                                 |
 
-The CI icon is the muted stop when the only checks that did not pass were cancelled: nothing failed and nothing still runs. GitHub's own rollup calls that a failure. Work rows and the sidebar leave `passed/total` out, since the checks that need a look are listed under the icons.
+The CI icon is the muted stop when the only checks that did not pass were cancelled: nothing failed and nothing still runs. GitHub's own rollup calls that a failure. Work rows and the sidebar leave `passed/total` out, since the checks that need a look are listed by name. When one is, the first takes the CI icon's place on the icons' line and its own icon stands for the CI result.
 
 On GitHub, successful, neutral and skipped check runs and successful statuses count as passed. github.com's own list leaves out a check run that a re-run replaced, so the totals here can be higher than there. On GitLab, the counts are the head pipeline's jobs: successful and skipped ones pass, and manual and retried jobs are not counted.
 
@@ -143,7 +143,7 @@ The header holds the title and these sections:
 
 - Context: tokens in the context window and their share of the model's limit, the cost so far, and whether the session is running, idle, interrupted or failed.
 - Session: the project (only when it differs from the browser's), the worktree directory (only when it is not the project root) and the branch (only when it is not the default branch).
-- Work: every tracked pull request and issue, the main pull request first. A pull request's line holds its state icon, number and title. Under an open one, a line shows its [review and CI icons](#review-and-ci-icons) when it has any, followed by each check that failed (red x) or waits for an action (yellow alert), failures first, at most five and then `+N more`; pending and cancelled checks are not listed. A click on a listed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
+- Work: every tracked pull request and issue, the main pull request first. A pull request's line holds its state icon, number and title. Under an open one, a line shows its [review and CI icons](#review-and-ci-icons) when it has any. Each check that failed (red x) or waits for an action (yellow alert) is listed by name, failures first, at most five and then `+N more`; pending and cancelled checks are not listed. The first listed check goes on the icons' line in place of the CI icon, after a two-cell gap, and the others line up under it. A click on a listed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The icons are not a link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
 
 The transcript below draws messages the way OpenCode's session view does and follows your `cli.json` session settings (scrollbar, thinking, markdown, verbosity, grouping). It starts at the latest message; scrolling up loads older ones.
 
@@ -228,7 +228,7 @@ Work rows, checks and failed check lines are links: a click opens them in your w
 
 ## Sidebar
 
-The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests get the same line of [review and CI icons](#review-and-ci-icons) and failed check lines under them as in the preview, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), a click opens it in your web browser, and a ctrl+click copies its URL (see [Copying links](#copying-links)). A session without pull requests, issues or mentions shows nothing there.
+The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests get the same [review and CI icons](#review-and-ci-icons) and failed checks under them as in the preview, the first check on the icons' line, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), a click opens it in your web browser, and a ctrl+click copies its URL (see [Copying links](#copying-links)). A session without pull requests, issues or mentions shows nothing there.
 
 ## Pull request and issue tracking
 

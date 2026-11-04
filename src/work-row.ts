@@ -19,7 +19,7 @@ import { clickLink } from './link.js';
 import { type createMarquee, marqueeText } from './marquee.js';
 import { checkLook, hasListedChecks, listedChecks } from './page/checks.js';
 import { refColor, refIcon } from './page/icons.js';
-import { cells, fitText, stateBadges } from './page/row.js';
+import { badgeSegments, cells, fitText } from './page/row.js';
 import {
   type PullCheck,
   type PullDetails,
@@ -126,13 +126,15 @@ export function createFailedChecks(input: {
 }
 
 /**
- * The lines under an open pull request in a Work section, indented by one icon slot: one line of
- * review, CI and thread icons without words or check counts (see {@link stateBadges}), then the
+ * The lines under an open pull request in a Work section, indented by one icon slot: the review,
+ * conflict and thread icons without words or check counts (see {@link badgeSegments}), then the
  * checks that failed or wait for an action (see {@link listedChecks}), at most five and then
- * `+N more`. Cancelled checks are counted on the rows, never listed. The icons sit here rather
- * than on the pull request's line so a narrow sidebar keeps room for the title. A listed check
- * links to its page and `+N more` to the pull request's checks page; a click opens them and a
- * ctrl+click copies them, and hover makes them bold. Empty for any other ref.
+ * `+N more`. The first check shares the icons' line and the rest line up under it, so the CI
+ * icon shows only while no check is listed, since each check carries its own. Cancelled checks
+ * are counted on the rows, never listed. The icons sit here rather than on the pull request's
+ * line so a narrow sidebar keeps room for the title. A listed check links to its page and
+ * `+N more` to the pull request's checks page; a click opens them and a ctrl+click copies them,
+ * and hover makes them bold. The icons are not a link. Empty for any other ref.
  */
 export function workStatus(input: {
   context: Plugin.Context;
@@ -147,19 +149,31 @@ export function workStatus(input: {
   const { context, theme } = input;
   const review = () => openReview(input.state());
   const room = () => Math.floor(input.width()) - ICON;
-  // Each badge starts with its separating space, which the line's first one does not need.
-  const icons = () =>
-    stateBadges(input.state(), theme(), false).map((segment, index) =>
+  const failed = () => (hasListedChecks(review()) ? listedChecks(input.details()?.checks) : []);
+  // Each badge starts with its separating space, which the line's first one does not need. A gap
+  // of two cells parts the icons from a first check on their line.
+  const icons = () => {
+    const listed = failed().length > 0;
+    const badges = badgeSegments(review(), theme(), false, !listed).map((segment, index) =>
       index === 0 ? { ...segment, text: segment.text.trimStart() } : segment
     );
-  const failed = () => (hasListedChecks(review()) ? listedChecks(input.details()?.checks) : []);
+    return listed && badges.length > 0
+      ? [...badges, { text: '  ', fg: theme().text.muted }]
+      : badges;
+  };
+  // Cells before each check's icon, so every check lines up under the first one.
+  const indent = () => icons().reduce((sum, segment) => sum + cells(segment.text), 0);
 
-  /** Segments in their colors, cut together to the room. */
-  const fitted = (segments: Array<{ text: string; fg: string | RGBA }>, bold = false) => {
-    let left = room();
+  /** Segments in their colors, cut together to `left` cells, the room by default. */
+  const fitted = (
+    segments: Array<{ text: string; fg: string | RGBA }>,
+    bold = false,
+    left = room()
+  ) => {
+    let rest = left;
     return segments.map((segment) => {
-      const text = fitText(segment.text, left);
-      left -= cells(text);
+      const text = fitText(segment.text, rest);
+      rest -= cells(text);
       return jsx('span', { style: { fg: segment.fg, bold }, children: text });
     });
   };
@@ -178,51 +192,63 @@ export function workStatus(input: {
         clickLink(context, url(), event);
       },
       get children() {
-        return fitted(segments(), hovered());
+        return fitted(segments(), hovered(), room() - indent());
       }
     });
   };
 
+  // The icons and a column of checks side by side: the first check sits on the icons' line and
+  // the column keeps the others under it.
   return jsx('box', {
-    flexDirection: 'column',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     flexShrink: 0,
     paddingLeft: ICON,
     get visible() {
-      return icons().length > 0;
+      return icons().length > 0 || failed().length > 0;
     },
     children: [
       jsx('text', {
         flexShrink: 0,
         wrapMode: 'none',
+        get visible() {
+          return icons().length > 0;
+        },
         get children() {
           return fitted(icons());
         }
       }),
-      createComponent(For, {
-        get each() {
-          return failed().slice(0, FAILED_SHOWN);
-        },
-        children: (check: PullCheck) =>
-          link(
-            () => check.url,
-            () => {
-              const [glyph, fg] = checkLook(check.status, theme());
-              return [
-                { text: `${glyph} `, fg },
-                { text: check.name, fg: theme().text.base }
-              ];
-            }
-          )
-      }),
       jsx('box', {
+        flexDirection: 'column',
         flexShrink: 0,
-        get visible() {
-          return failed().length > FAILED_SHOWN;
-        },
-        children: link(
-          () => checksPage(input.ref(), input.state()),
-          () => [{ text: `+${failed().length - FAILED_SHOWN} more`, fg: theme().text.muted }]
-        )
+        children: [
+          createComponent(For, {
+            get each() {
+              return failed().slice(0, FAILED_SHOWN);
+            },
+            children: (check: PullCheck) =>
+              link(
+                () => check.url,
+                () => {
+                  const [glyph, fg] = checkLook(check.status, theme());
+                  return [
+                    { text: `${glyph} `, fg },
+                    { text: check.name, fg: theme().text.base }
+                  ];
+                }
+              )
+          }),
+          jsx('box', {
+            flexShrink: 0,
+            get visible() {
+              return failed().length > FAILED_SHOWN;
+            },
+            children: link(
+              () => checksPage(input.ref(), input.state()),
+              () => [{ text: `+${failed().length - FAILED_SHOWN} more`, fg: theme().text.muted }]
+            )
+          })
+        ]
       })
     ]
   });
