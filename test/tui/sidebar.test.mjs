@@ -19,6 +19,7 @@ mock.module('node:child_process', () => ({
 }));
 const { installSidebar } = await import('../../dist/sidebar.js');
 
+/** A mastra-ai/mastra pull request or issue. */
 const ref = (kind, number) => ({
   provider: 'github',
   host: 'github.com',
@@ -26,8 +27,10 @@ const ref = (kind, number) => ({
   kind,
   number
 });
+/** The `refKey` format the server uses for `states`. */
 const key = (value) =>
   `${value.provider}:${value.host}/${value.repo}/${value.kind}/${value.number}`.toLowerCase();
+/** A forge snapshot with the ref's real GitHub URL. */
 const state = (value, status, title) => ({
   status,
   title,

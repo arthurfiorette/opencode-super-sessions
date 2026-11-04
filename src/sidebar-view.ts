@@ -35,8 +35,10 @@ export default function Sidebar(props: SidebarProps) {
   let box: BoxRenderable | undefined;
 
   const rpc = context.client.rpc(SuperSessions);
-  // The session's own Location answers for it, like the page does; the TUI's Location is only
-  // a fallback for a session this client has not synced yet.
+  /**
+   * RPC options for a session. Its own Location answers for it, like on the page; the TUI's
+   * Location is only a fallback for a session this client has not synced yet.
+   */
   const rpcOptions = (sessionID: string) => {
     const location =
       context.data.session.get(sessionID)?.location ??
@@ -71,6 +73,7 @@ export default function Sidebar(props: SidebarProps) {
       .map((status) => `${counts.get(status)} ${STATE_WORDS[status]}`)
       .join(', ');
   });
+  /** Flips the persisted expanded state; every open TUI follows the shared store. */
   const toggle = () =>
     void setPrefs((draft) => {
       draft.expanded = !draft.expanded;
