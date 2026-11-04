@@ -39,6 +39,7 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "check": "pnpm lint-ci && pnpm build && pnpm test-types && pnpm test && pnpm test:integration && pnpm test:contract && pnpm test:tui && pnpm test:package",
+    "demo": "pnpm build && node demo/start.mjs",
     "format": "biome format --write .",
     "lint": "biome check .",
     "lint-ci": "biome ci .",
