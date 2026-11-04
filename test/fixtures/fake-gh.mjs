@@ -96,6 +96,13 @@ if (args[0] === 'auth' && args[1] === 'status') {
   process.exit(0);
 }
 
+// Run from a user `!` command through the `gh` shim on PATH. Real gh prints the new PR's URL last.
+if (args[0] === 'pr' && args[1] === 'create') {
+  console.log('Creating pull request for fix-titles into main in acme/widgets\n');
+  console.log('https://github.com/acme/widgets/pull/34');
+  process.exit(0);
+}
+
 if (args[0] === 'api' && args[1] === 'graphql') {
   let input = '';
   process.stdin.setEncoding('utf8');

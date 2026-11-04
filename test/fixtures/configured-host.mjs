@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { mock } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -22,6 +22,17 @@ function spawn(command, args, options) {
 mock.module('node:child_process', {
   exports: { ...namedExports, spawn, default: { ...defaultExport, spawn } }
 });
+
+// User `!` commands run in a real shell, out of reach of the spawn mock, so `gh` there resolves
+// through PATH to this shim.
+const bin = path.join(directory, 'bin');
+await mkdir(bin);
+await writeFile(
+  path.join(bin, 'gh'),
+  `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeGh)} "$@"\n`,
+  { mode: 0o755 }
+);
+process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
 
 const { OpenCode } = await import('@opencode/sdk');
 const { SuperSessions } = await import('opencode-super-sessions/rpc');
@@ -217,6 +228,20 @@ try {
     bodyHits.map((hit) => [hit.sessionID, hit.match]),
     [[sessionID, 'body']]
   );
+  // A `!` command reaches the plugin only as `session.shell.ended`, never through the tool hook.
+  await host.sessions.shell({ sessionID, command: 'gh pr create --fill' });
+  const shelled = await until(stored, (metadata) =>
+    metadata['super-sessions'].links.some((link) => link.source === 'created')
+  );
+  assert.deepEqual(
+    shelled['super-sessions'].links.map((link) => [link.ref.number, link.source]),
+    [
+      [12, 'manual'],
+      [56, 'prompt'],
+      [34, 'created']
+    ]
+  );
+
   // The index lives under the isolated data home, never the developer's.
   assert.ok(
     existsSync(

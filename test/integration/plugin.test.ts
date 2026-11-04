@@ -9,7 +9,7 @@ test('loads in a real OpenCode host with default options and serves refs in each
   assert.match(result.stdout, /OpenCode integration passed/);
 });
 
-test('links, unlinks, refreshes, searches and detects prompt refs against a fake gh', {
+test('links, unlinks, refreshes, searches and detects prompt and ! shell refs against a fake gh', {
   timeout: 90_000
 }, async () => {
   const result = await runHostFixture('configured-host.mjs', ['--experimental-test-module-mocks']);
