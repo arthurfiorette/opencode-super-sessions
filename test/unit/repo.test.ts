@@ -4,17 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import type { ForgeDefinition } from '../../src/providers/provider.js';
+import { definitions } from '../../src/providers/registry.js';
 import { createRepoResolver, type RepoInfo } from '../../src/repo.js';
-
-// Stand-in for the real GitHub definition: recognizes github.com HTTPS and scp-style remotes only.
-const github = {
-  id: 'github',
-  recognizeRemote(url: string) {
-    const match = /^(?:https:\/\/|git@)github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/.exec(url);
-    return match?.[1] ? { provider: 'github', host: 'github.com', repo: match[1] } : undefined;
-  }
-} as ForgeDefinition;
 
 /** Runs git in `directory` with hooks and signing off, so the user's global config cannot interfere. */
 function git(directory: string, ...args: string[]) {
@@ -52,7 +43,7 @@ test('resolve picks the forge remote and reads default branch, branch and upstre
       'fork checkout: upstream names the repo, origin the fork the branch was pushed to; local and foreign remotes are skipped',
       (directory) => {
         git(directory, 'remote', 'add', 'aaa', join(tmpdir(), 'elsewhere'));
-        git(directory, 'remote', 'add', 'gitlab', 'https://gitlab.com/acme/app.git');
+        git(directory, 'remote', 'add', 'bitbucket', 'https://bitbucket.org/acme/app.git');
         git(directory, 'remote', 'add', 'origin', 'git@github.com:me/app.git');
         git(directory, 'remote', 'add', 'upstream', 'https://github.com/acme/app.git');
         git(directory, 'update-ref', 'refs/remotes/upstream/trunk', 'HEAD');
@@ -95,7 +86,7 @@ test('resolve picks the forge remote and reads default branch, branch and upstre
     ]
   ];
 
-  const resolver = createRepoResolver({ definitions: [github] });
+  const resolver = createRepoResolver({ definitions });
   for (const [name, setup, expected] of cases) {
     const directory = await repository(setup);
     t.after(() => rm(directory, { recursive: true, force: true }));

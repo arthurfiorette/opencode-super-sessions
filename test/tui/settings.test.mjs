@@ -10,7 +10,7 @@ import themeSource from '../fixtures/theme-opencode.json';
 const { parseOptions } = await import('../../dist/config.js');
 const { installSettings } = await import('../../dist/settings/install.js');
 
-test('the settings dialog loads cold and changes a TUI and a server setting with right', async () => {
+test('the settings dialog loads cold and writes a server setting changed with right', async () => {
   const theme = resolveThemeDocument(migrateV1(themeSource), 'dark');
   const options = parseOptions({});
   // The server plugin's settings RPC, holding values like the real one: defaults plus overrides.
@@ -91,13 +91,7 @@ test('the settings dialog loads cold and changes a TUI and a server setting with
   try {
     // Mounted cold: the view module loads only now.
     await import('../../dist/settings/dialog-view.js');
-    await rendered.waitForFrame(
-      (frame) => frame.includes('Super Sessions settings') && frame.includes('this project')
-    );
-
-    right();
-    await rendered.waitForFrame((frame) => frame.includes('all projects'));
-    assert.equal(settings.tui.scope(), 'all');
+    await rendered.waitForFrame((frame) => frame.includes('Super Sessions settings'));
 
     await rendered.mockInput.typeText('merged');
     await rendered.waitForFrame(

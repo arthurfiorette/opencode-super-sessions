@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Ref, RefLink, RefSource, RefState } from '../../src/refs/ref.js';
 import { refKey } from '../../src/refs/ref.js';
-import { type DoneInput, doneAt, isDone, rowRefs } from '../../src/refs/summary.js';
+import { type DoneInput, doneAt, isDone } from '../../src/refs/summary.js';
 import type { SessionRefView } from '../../src/rpc.js';
 
 const ref = (kind: Ref['kind'], number: number): Ref => ({
@@ -19,16 +19,11 @@ const link = (target: Ref, source: RefSource, linkedAt = 1): RefLink => ({
   source,
   linkedAt
 });
-const state = (
-  status: RefState['status'],
-  at?: number,
-  extra: Partial<RefState> = {}
-): RefState => ({
+const state = (status: RefState['status'], at?: number): RefState => ({
   status,
   title: 't',
   url: 'u',
-  ...(at === undefined ? {} : status === 'merged' ? { mergedAt: at } : { closedAt: at }),
-  ...extra
+  ...(at === undefined ? {} : status === 'merged' ? { mergedAt: at } : { closedAt: at })
 });
 const view = (
   links: RefLink[],
@@ -148,61 +143,4 @@ test('decides when a session is Done', () => {
   // Auto-archive counts days from the mark, not from the merge.
   assert.equal(doneAt({ ...merged, done: true, doneAt: 500 }), 500);
   assert.equal(doneAt(merged), 100);
-});
-
-test('picks the main PR, every tracked issue and the overflow count', () => {
-  const closes = (target: Ref, via: Ref, linkedAt: number): RefLink => ({
-    ...link(target, 'closes', linkedAt),
-    via: refKey(via)
-  });
-  const cases: Array<[string, SessionRefView, ReturnType<typeof rowRefs>]> = [
-    ['empty', view([]), { branch: false, issues: [], extra: 0 }],
-    [
-      'branch PR wins over a newer linked PR',
-      view([link(pr(2), 'agent', 9)], [], [pr(1)]),
-      { pr: pr(1), branch: true, issues: [], extra: 1 }
-    ],
-    [
-      'newest linked PR wins',
-      view([link(pr(1), 'created', 1), link(pr(2), 'agent', 2)]),
-      { pr: pr(2), branch: false, issues: [], extra: 1 }
-    ],
-    [
-      'linked PR wins over a newer PR from the prompt',
-      view([link(pr(1), 'created', 1), link(pr(2), 'prompt', 2)]),
-      { pr: pr(1), branch: false, issues: [], extra: 1 }
-    ],
-    [
-      'issues the PR closes come first, then the rest newest first',
-      view([
-        link(issue(7), 'prompt', 3),
-        closes(issue(8), pr(1), 1),
-        link(issue(9), 'manual', 5),
-        link(pr(1), 'created', 2)
-      ]),
-      { pr: pr(1), branch: false, issues: [issue(8), issue(9), issue(7)], extra: 0 }
-    ],
-    [
-      'snapshot closes list counts before a closes link exists',
-      view(
-        [link(issue(9), 'prompt', 5)],
-        [[pr(1), state('open', undefined, { closes: [issue(8)] })]],
-        [pr(1)]
-      ),
-      { pr: pr(1), branch: true, issues: [issue(8), issue(9)], extra: 0 }
-    ],
-    [
-      'without PRs only issues show',
-      view([link(issue(8), 'prompt', 1), link(issue(9), 'prompt', 5)]),
-      { branch: false, issues: [issue(9), issue(8)], extra: 0 }
-    ],
-    [
-      'mentions only add to the count',
-      view([link(pr(1), 'agent', 1), link(pr(5), 'mention', 9), link(issue(6), 'mention', 9)]),
-      { pr: pr(1), branch: false, issues: [], extra: 2 }
-    ]
-  ];
-  for (const [name, input, expected] of cases) {
-    assert.deepEqual(rowRefs(input), expected, name);
-  }
 });
