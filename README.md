@@ -12,6 +12,10 @@
 
 A session browser for the OpenCode V2 TUI. It replaces the built-in session list with a larger overlay where you can search sessions by title, pull request, issue or message text, archive and restore them, peek into one and come back, and review finished work in a Done view.
 
+<p align="center">
+  <img src="assets/trailer.gif" alt="The session browser opening over OpenCode: sessions grouped by day, with their pull requests, checks and issues" width="960" />
+</p>
+
 The plugin also follows the pull requests and issues each session works on. It picks them up from your prompts, from the commands the agent runs and from the session's branch, and shows their state, review and CI status from GitHub or GitLab next to the session. Optional rules archive finished sessions and remove worktrees you no longer need.
 
 **Requirements:** OpenCode V2 2.2.5 (see [Compatibility](#compatibility)), a [Nerd Font](https://www.nerdfonts.com/) in the terminal (a Mono variant keeps the columns aligned), `gh` logged in with `gh auth login` for GitHub, and `glab` logged in with `glab auth login` for GitLab. The plugin runs inside OpenCode, so you do not need Node.js. Without `gh` or `glab` the browser still works, without pull requests and issues.
