@@ -66,10 +66,12 @@ The browser remembers the view, selection and scroll position until you quit Ope
 
 | View          | Holds                                                                                         | Grouped by                                                                  |
 | ------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Active        | Sessions that are not archived and not [Done](#done)                                          | Pinned, then Running, then the day of the last update                       |
+| Active        | Sessions that are not archived and not [Done](#done)                                          | Pinned, then Running, then the day of the last activity                     |
 | Done          | Sessions whose pull requests or issues are all merged or closed, and sessions you marked Done | The day of the last merge or close, or of your mark                         |
-| Archived      | Archived sessions                                                                             | The day they were archived, newest update first in a day                    |
+| Archived      | Archived sessions                                                                             | The day they were archived, latest activity first in a day                  |
 | Pull requests | Every pull request a session in scope tracks, archived sessions included                      | The day of its last update on the forge, open and draft ones first in a day |
+
+A session's last activity is when it was created or when the agent last started or finished a run in it, which every prompt starts. Renaming, archiving, `!` commands and what the plugin records in the session (links, unlinks, the Done mark, the history read of [older sessions](#older-sessions)) do not count; a `!` command counts with the next run. OpenCode records run times since 2.2.0, so for a session that has not run since then, sessions migrated from 1.x included, the last activity is its last update before the plugin first wrote to it.
 
 Pinned sessions stay in the Pinned group of Active even when they are Done. `ctrl+a` switches between this project and all projects. The choice is kept across restarts until you change the "Default scope" setting.
 
@@ -77,7 +79,7 @@ Pinned sessions stay in the Pinned group of Active even when they are Done. `ctr
 
 A row is its title line and, when they apply, the lines under it:
 
-- The title line: a marker, the title and the age of the last update. In the Archived view the age reads `archived 3d · updated 5d`.
+- The title line: a marker, the title and the age of the [last activity](#views). In the Archived view the age reads `archived 3d · updated 5d`, where `updated` is the last activity.
 - One line per tracked pull request, in the [pull request order](#pull-request-order), at most three: its icon and number in the state color, its [review and CI icons](#review-and-ci-icons) while it is open or a draft, then its title. A `+N` after the first one counts the session's other pull requests and mentioned refs.
 - One line per tracked issue: its icon and number in the state color, then its title, cut with `…`. The issues a shown pull request closes come first, then the others, newest first in each part. After five issues the rest are counted on a `+N more` line. Without a PR line, the first issue line carries the `+N` for the other refs.
 - With the "Group issues" setting on, one issues line instead: every issue number in its state color, joined as `#1230, #19083 and #8923`, with `+N` for the ones that do not fit. A session that tracks one issue shows its title after the number.
@@ -135,7 +137,7 @@ Typing filters the loaded sessions at once. 150 ms after the last keystroke, the
 
 A number never matches as the start of a longer one, so `12` does not find `#123`. URLs and `owner/repo#123` need the server plugin. Message search covers your prompts and the assistant's replies, in subagent sessions too, and needs at least one word of three or more characters.
 
-Title and ref matches are grouped like the Active view: Running first, then `Today` and one group per earlier day of the last update. Inside a group, title matches come first, then ref number matches and ref title matches, newest first. Sessions found only by their message text go last, newest first, under a muted `In messages` header, so the server's answer adds them below the rows you are looking at. A muted label on the right says why a session matched a pull request or issue, such as `PR #12`, `issue title` or `MR !3`. The pull request or issue that matched is drawn on the row even when the row would not show it otherwise.
+Title and ref matches are grouped like the Active view: Running first, then `Today` and one group per earlier day of the last activity. Inside a group, title matches come first, then ref number matches and ref title matches, newest first. Sessions found only by their message text go last, newest first, under a muted `In messages` header, so the server's answer adds them below the rows you are looking at. A muted label on the right says why a session matched a pull request or issue, such as `PR #12`, `issue title` or `MR !3`. The pull request or issue that matched is drawn on the row even when the row would not show it otherwise.
 
 The Archived view searches archived sessions; Active and Done search the others.
 
@@ -353,7 +355,7 @@ All cleanup rules are off by default. They only touch worktrees OpenCode itself 
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Delete worktrees of deleted sessions | A session in it was deleted while the plugin was running, and no session uses it any more                                               |
 | Delete merged worktrees              | A tracked pull request is merged, none is still open or a draft, and the branch holds nothing the merge left out                        |
-| Delete inactive worktrees            | At least one session uses it, and every session in it was last updated more than this many days ago                                     |
+| Delete inactive worktrees            | At least one session uses it, and the [last activity](#views) of every session in it is more than this many days ago                    |
 | Delete worktrees of Done sessions    | At least one session in it is Done, every session in it is archived or Done, and the Done ones became Done more than this many days ago |
 | Delete unchanged worktrees           | At least one session uses it, every session in it is archived or Done, and the branch has no commits beyond the default branch          |
 

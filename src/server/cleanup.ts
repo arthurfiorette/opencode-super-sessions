@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { gitIn } from '../host/git.js';
+import { type ActivityInfo, activityTime } from '../host/session-api.js';
 import { type Runner, run } from '../process.js';
 import { refKey } from '../refs/ref.js';
 import { trackedRefs } from '../refs/summary.js';
@@ -20,8 +21,12 @@ export interface WorktreeSession {
   done: boolean;
   /** When it became Done, if known. */
   doneAt?: number | undefined;
-  /** Epoch milliseconds of the session's last update. */
-  updated: number;
+  /**
+   * The host's times and metadata of the session, which the inactive rule reads through
+   * `activityTime`. `time.updated` alone would let a metadata write of this plugin hold the
+   * worktree for another N days.
+   */
+  info: ActivityInfo;
   running: boolean;
   /** A permission request or a question waits for the user. */
   pending: boolean;
@@ -158,7 +163,7 @@ export function decideWorktree(
   const inactiveDays = settings.cleanupInactiveDays;
   if (inactiveDays !== null && sessions.length > 0) {
     const cutoff = now - inactiveDays * DAY;
-    if (sessions.every((session) => session.updated <= cutoff)) {
+    if (sessions.every((session) => activityTime(session.info) <= cutoff)) {
       return remove('inactive', `inactive for ${days(inactiveDays)}`);
     }
   }

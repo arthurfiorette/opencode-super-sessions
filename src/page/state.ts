@@ -1,4 +1,5 @@
 import type { SessionInfo } from '@opencode/client';
+import { activityTime } from '../host/session-api.js';
 import { type ProviderId, type Ref, type RefState, refKey } from '../refs/ref.js';
 import { rankSessions } from '../refs/search.js';
 import { doneAt, isDone, trackedRefs } from '../refs/summary.js';
@@ -63,22 +64,27 @@ export function pullRows(
       rows.set(key, row);
     }
   }
-  for (const row of rows.values()) row.sessions.sort((a, b) => b.time.updated - a.time.updated);
+  for (const row of rows.values()) row.sessions.sort(byActivity);
   return [...rows.values()];
 }
 
 /**
  * When a pull request last changed: its `updatedAt` on the forge, else its merge or close, else
- * the newest update of its sessions (states cached before `updatedAt` existed have none).
+ * the latest activity of its sessions (states cached before `updatedAt` existed have none).
  */
 export function pullUpdated(row: PullRow): number {
+  const newest = row.sessions[0];
   return (
     row.state?.updatedAt ??
     row.state?.mergedAt ??
     row.state?.closedAt ??
-    row.sessions[0]?.time.updated ??
-    0
+    (newest === undefined ? 0 : activityTime(newest))
   );
+}
+
+/** Orders sessions by their latest activity, newest first. */
+function byActivity(a: SessionInfo, b: SessionInfo): number {
+  return activityTime(b) - activityTime(a);
 }
 
 /**
@@ -214,25 +220,26 @@ export const RUNNING_GROUP = 'Running';
 /**
  * Groups sessions for a view.
  *
- * - Active: Pinned in pin order, then Running, then one group per day of `time.updated`. Done
- *   sessions are left out, except pinned ones: a pin is an explicit choice to keep it in sight.
+ * - Active: Pinned in pin order, then Running, then one group per day of the latest activity
+ *   (`activityTime`). Done sessions are left out, except pinned ones: a pin is an explicit choice
+ *   to keep it in sight.
  * - Done: one group per day of the last merge or close.
- * - Archived: one group per day of `time.archived`, newest update first within a day.
+ * - Archived: one group per day of `time.archived`, latest activity first within a day.
  */
 export function groupSessions(input: GroupInput): Group[] {
   const roots = input.sessions.filter((session) => session.parentID === undefined);
   const done = (session: SessionInfo) =>
     sessionDone(session, input.refs, input.extra, input.running(session.id));
-  const byUpdated = (a: SessionInfo, b: SessionInfo) => b.time.updated - a.time.updated;
   if (input.view === 'archived') {
-    const day = (session: SessionInfo) => startOfDay(session.time.archived ?? session.time.updated);
-    const sorted = [...roots].sort((a, b) => day(b) - day(a) || byUpdated(a, b));
-    return byDay(sorted, (session) => session.time.archived ?? session.time.updated, input.now);
+    const archivedAt = (session: SessionInfo) => session.time.archived ?? activityTime(session);
+    const day = (session: SessionInfo) => startOfDay(archivedAt(session));
+    const sorted = [...roots].sort((a, b) => day(b) - day(a) || byActivity(a, b));
+    return byDay(sorted, archivedAt, input.now);
   }
   if (input.view === 'done') {
     const at = (session: SessionInfo) => {
       const view = input.refs[session.id];
-      return (view === undefined ? undefined : doneAt(view)) ?? session.time.updated;
+      return (view === undefined ? undefined : doneAt(view)) ?? activityTime(session);
     };
     const sorted = roots.filter(done).sort((a, b) => at(b) - at(a));
     return byDay(sorted, at, input.now);
@@ -241,12 +248,12 @@ export function groupSessions(input: GroupInput): Group[] {
   const pinned = input.pins.flatMap((id) => byID.get(id) ?? []);
   const pinnedIDs = new Set(pinned.map((session) => session.id));
   const rest = roots.filter((session) => !pinnedIDs.has(session.id) && !done(session));
-  const running = rest.filter((session) => input.running(session.id)).sort(byUpdated);
-  const idle = rest.filter((session) => !input.running(session.id)).sort(byUpdated);
+  const running = rest.filter((session) => input.running(session.id)).sort(byActivity);
+  const idle = rest.filter((session) => !input.running(session.id)).sort(byActivity);
   return [
     ...(pinned.length > 0 ? [{ title: 'Pinned', sessions: pinned }] : []),
     ...(running.length > 0 ? [{ title: RUNNING_GROUP, sessions: running }] : []),
-    ...byDay(idle, (session) => session.time.updated, input.now)
+    ...byDay(idle, activityTime, input.now)
   ];
 }
 
@@ -262,9 +269,9 @@ const MATCH_TIER: Record<SearchMatch, number> = {
 };
 
 /**
- * Groups search results like the Active list: Running first, then one group per day of
- * `time.updated`, with pins left in place. Within a group, title matches come first, then ref
- * numbers and ref titles, newest update first within a tier. Message hits, running or not, go
+ * Groups search results like the Active list: Running first, then one group per day of the
+ * latest activity, with pins left in place. Within a group, title matches come first, then ref
+ * numbers and ref titles, latest activity first within a tier. Message hits, running or not, go
  * last in an {@link MESSAGES_GROUP} group, newest first, so they never push the stronger matches
  * around when the server answers after the local filter.
  */
@@ -275,19 +282,18 @@ export function groupSearch(
   now: number
 ): Group[] {
   const match = (session: SessionInfo) => reasons[session.id]?.match ?? 'body';
-  const byUpdated = (a: SessionInfo, b: SessionInfo) => b.time.updated - a.time.updated;
-  const messages = sessions.filter((session) => match(session) === 'body').sort(byUpdated);
+  const messages = sessions.filter((session) => match(session) === 'body').sort(byActivity);
   const matched = sessions.filter((session) => match(session) !== 'body');
   const tier = (session: SessionInfo) => MATCH_TIER[match(session)];
-  const ranked = (a: SessionInfo, b: SessionInfo) => tier(a) - tier(b) || byUpdated(a, b);
+  const ranked = (a: SessionInfo, b: SessionInfo) => tier(a) - tier(b) || byActivity(a, b);
   const active = matched.filter((session) => running(session.id)).sort(ranked);
-  const day = (session: SessionInfo) => startOfDay(session.time.updated);
+  const day = (session: SessionInfo) => startOfDay(activityTime(session));
   const idle = matched
     .filter((session) => !running(session.id))
     .sort((a, b) => day(b) - day(a) || ranked(a, b));
   return [
     ...(active.length > 0 ? [{ title: RUNNING_GROUP, sessions: active }] : []),
-    ...byDay(idle, (session) => session.time.updated, now),
+    ...byDay(idle, activityTime, now),
     ...(messages.length > 0 ? [{ title: MESSAGES_GROUP, sessions: messages }] : [])
   ];
 }
@@ -485,7 +491,7 @@ export function localSearch(
         return {
           id: session.id,
           title: session.title ?? '',
-          updated: session.time.updated,
+          updated: activityTime(session),
           refs: all.map((ref) => {
             const title = view?.states[refKey(ref)]?.title;
             return title === undefined ? { ref } : { ref, title };

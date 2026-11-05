@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { SessionInfo } from '@opencode/client';
-import { createPageController, type PageData, type PageDeps } from '../../src/page/state.js';
+import {
+  createPageController,
+  groupSessions,
+  type PageData,
+  type PageDeps
+} from '../../src/page/state.js';
 import type { SessionRefView } from '../../src/rpc.js';
 
 const session = (id: string): SessionInfo => ({
@@ -107,6 +112,36 @@ test('a cold load whose refs miss the deadline shows the lists, then the refs as
     { status: 'ready', active: ['slow'], refs: [], extra: [] },
     { status: 'ready', active: ['slow'], refs: ['slow'], extra: [] }
   ]);
+});
+
+// A metadata write of the plugin (the history scan marker on select) moved `time.updated` of a
+// session the user had left, and the list showed it as just used, at the top of Today.
+test('the Active list orders and groups by the last run, not by the last metadata write', () => {
+  const at = (hours: number, minutes = 0) => new Date(2026, 10, 4, hours, minutes).getTime();
+  const ran = (id: string, idle: number, updated: number): SessionInfo => ({
+    ...session(id),
+    time: { created: at(-24), updated, busy: idle - 60_000, idle }
+  });
+  const groups = groupSessions({
+    view: 'active',
+    sessions: [
+      ran('scanned-today', at(20, 35), at(21, 4)),
+      ran('ran-later', at(20, 50), at(20, 50)),
+      ran('ran-yesterday', at(-4), at(21, 3))
+    ],
+    refs: {},
+    extra: {},
+    running: () => false,
+    pins: [],
+    now: at(21, 5)
+  });
+  assert.deepEqual(
+    groups.map((group) => [group.title, group.sessions.map((item) => item.id)]),
+    [
+      ['Today', ['ran-later', 'scanned-today']],
+      [new Date(at(-4)).toDateString(), ['ran-yesterday']]
+    ]
+  );
 });
 
 test('search falls back to the title search when the server plugin does not answer', async () => {

@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type TestContext, test } from 'node:test';
+import type { ActivityInfo } from '../../src/host/session-api.js';
 import { type Ref, type RefLink, type RefStatus, refKey } from '../../src/refs/ref.js';
 import type { SessionRefView } from '../../src/rpc.js';
 import { type ArchiveFacts, isArchiveDue } from '../../src/server/auto-archive.js';
@@ -30,13 +31,18 @@ const OFF: CleanupSettings = {
   cleanupUnchanged: false
 };
 
-/** A settled session: Done four days ago, last touched ten days ago, nothing holding it. */
+/** Host times of a session whose last run ended at `idle`, updated last at `updated`. */
+const ran = (idle: number, updated = idle): ActivityInfo => ({
+  time: { created: NOW - 30 * DAY, updated, busy: idle - 60_000, idle }
+});
+
+/** A settled session: Done four days ago, last run ten days ago, nothing holding it. */
 const session = (patch: Partial<WorktreeSession> = {}): WorktreeSession => ({
   id: 'ses_1',
   archived: false,
   done: true,
   doneAt: NOW - 4 * DAY,
-  updated: NOW - 10 * DAY,
+  info: ran(NOW - 10 * DAY),
   running: false,
   pending: false,
   open: false,
@@ -162,10 +168,46 @@ test('cleanup removes a worktree only under an enabled rule and never against a 
       'remove:inactive'
     ],
     [
-      'one session touched today',
+      'one session ran today',
       { cleanupInactiveDays: 7 },
-      { sessions: [session(), session({ id: 'ses_2', updated: NOW })] },
+      { sessions: [session(), session({ id: 'ses_2', info: ran(NOW) })] },
       'keep'
+    ],
+    // The plugin's own metadata writes (scan marker, pushes, links) move `time.updated`.
+    [
+      'inactive 10 days, metadata written today',
+      { cleanupInactiveDays: 7 },
+      { sessions: [session({ done: false, info: ran(NOW - 10 * DAY, NOW) })] },
+      'remove:inactive'
+    ],
+    // Without run times, only `time.updated` records activity, unless the queue stamped it.
+    [
+      'never ran on a host with run times, updated today',
+      { cleanupInactiveDays: 7 },
+      {
+        sessions: [
+          session({ done: false, info: { time: { created: NOW - 30 * DAY, updated: NOW } } })
+        ]
+      },
+      'keep'
+    ],
+    [
+      'never ran on a host with run times, stamped 10 days ago, metadata written today',
+      { cleanupInactiveDays: 7 },
+      {
+        sessions: [
+          session({
+            done: false,
+            info: {
+              time: { created: NOW - 30 * DAY, updated: NOW },
+              metadata: {
+                'super-sessions': { v: 1, links: [], dismissed: [], activeAt: NOW - 10 * DAY }
+              }
+            }
+          })
+        ]
+      },
+      'remove:inactive'
     ],
     // Unchanged: no commits beyond the default branch.
     ['unchanged', { cleanupUnchanged: true }, {}, 'remove:unchanged'],
