@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RunResult } from '../../src/process.js';
+import { parseDetailsResponse } from '../../src/providers/gitlab/details.js';
 import { parseGraphQLOutput } from '../../src/providers/gitlab/output.js';
 import {
   buildSnapshotQuery,
@@ -28,6 +29,21 @@ function candidate(repo: string, number: number, kind?: 'pr' | 'issue'): RefCand
   return { provider: 'gitlab', host: 'gitlab.com', repo, number, ...(kind ? { kind } : {}) };
 }
 
+test('details link each job to its page on the host and leave manual jobs out', () => {
+  const response = parseGraphQLOutput(asRun(fixture('details.json')), NOW);
+  assert.ok('data' in response);
+  const details = parseDetailsResponse(response, 'gitlab.com');
+  assert.ok('checks' in details);
+  // The manual govulncheck job is not counted, as in the snapshot's job counts.
+  assert.deepEqual(
+    details.checks.map((check) => [check.name, check.url]),
+    [
+      ['lint_commit', 'https://gitlab.com/gitlab-org/cli/-/jobs/17737982341'],
+      ['tests:unit', 'https://gitlab.com/gitlab-org/cli/-/jobs/17737982349']
+    ]
+  );
+});
+
 test('a batch resolves states, kinds and closed issues, and isolates missing refs', () => {
   // Same candidates, in the same order, as the live capture in snapshot.json.
   const candidates = [
@@ -46,7 +62,11 @@ test('a batch resolves states, kinds and closed issues, and isolates missing ref
     candidate('arthurfiorette/does-not-exist-zz', 1, 'issue'),
     candidate('GitLab-Org/CLI', 4275, 'pr'),
     // Open, changes requested, five unresolved discussions and a failed head pipeline.
-    candidate('gitlab-org/cli', 4268, 'pr')
+    candidate('gitlab-org/cli', 4268, 'pr'),
+    // Open, approved without satisfying the rules, and a passing head pipeline with a manual job.
+    candidate('gitlab-org/cli', 4156, 'pr'),
+    // Draft with conflicts: `detailedMergeStatus` names only the draft, `conflicts` says it.
+    candidate('gitlab-org/cli', 4282, 'pr')
   ];
   // One capture per batch: a batch over the anonymous complexity limit could not be captured.
   const { batches: outputs } = fixture<{ batches: CapturedOutput[] }>('snapshot.json');
@@ -81,20 +101,41 @@ test('a batch resolves states, kinds and closed issues, and isolates missing ref
       'pr 1 merged',
       'not-found',
       'pr 4275 merged',
-      'pr 4268 open'
+      'pr 4268 open',
+      'pr 4156 open',
+      'pr 4282 draft'
     ]
   );
 
   const [merged, issue] = entries;
-  const reviewed = entries.at(-1);
+  const failing = entries.at(-3);
+  const reviewed = entries.at(-2);
+  const conflicting = entries.at(-1);
   assert.ok(merged && 'ref' in merged && issue && 'ref' in issue);
-  assert.ok(reviewed && 'ref' in reviewed);
-  assert.deepEqual(reviewed.state.review, {
+  assert.ok(failing && 'ref' in failing && reviewed && 'ref' in reviewed);
+  assert.ok(conflicting && 'ref' in conflicting);
+  assert.deepEqual(failing.state.review, {
     decision: 'changes_requested',
     threads: 5,
     unresolved: 5,
-    checks: 'failing'
+    checks: 'failing',
+    checksPassed: 14,
+    checksTotal: 15,
+    conflicts: false
   });
+  // The manual job waits for a person, so it counts neither way: 16 of 16, not 16 of 17.
+  assert.deepEqual(reviewed.state.review, {
+    decision: 'review_required',
+    threads: 2,
+    unresolved: 2,
+    checks: 'passing',
+    checksPassed: 16,
+    checksTotal: 16,
+    conflicts: false
+  });
+  assert.equal(conflicting.state.review?.conflicts, true);
+  // The Pull requests view groups by this.
+  assert.equal(reviewed.state.updatedAt, Date.UTC(2026, 10, 4, 13, 58, 8));
   // Merged snapshots are never refetched, so they must not carry a review that would go stale.
   assert.equal(merged.state.review, undefined);
   // Worktree cleanup compares local branches with this commit after squash merges.
@@ -105,20 +146,22 @@ test('a batch resolves states, kinds and closed issues, and isolates missing ref
 });
 
 test('branch lookups keep only merge requests from the checkout own project', () => {
-  const cases: Array<[string, number[] | string, string?]> = [
+  // Each found merge request carries when it was opened, which decides whether it counts for a
+  // session.
+  const cases: Array<[string, Array<[number, string]> | string, string?]> = [
     // The branch lives in a community fork, so the upstream checkout has no merge request...
     ['gitlab-org/cli@8703-preserve-release-notes-on-update', []],
     // ...while the fork checkout gets it, numbered in the upstream project.
     [
       'gitlab-org/cli@8703-preserve-release-notes-on-update',
-      [4270],
+      [[4270, '2026-10-31T19:03:32Z']],
       'gitlab-community/gitlab-org/cli'
     ],
-    ['gitlab-org/cli@claude-transcript-incomplete-line', [4300]],
+    ['gitlab-org/cli@claude-transcript-incomplete-line', [[4300, '2026-11-03T02:24:56Z']]],
     // Newest open one among many merged ones from the same fork.
     [
       'gitlab-org/cli@renovate/gitlab.com-gitlab-org-api-client-go-v3-3.x',
-      [4312],
+      [[4312, '2026-11-03T22:09:04Z']],
       'gitlab-renovate-forks/cli'
     ],
     ['arthurfiorette/does-not-exist-zz@x', 'not-found']
@@ -136,8 +179,12 @@ test('branch lookups keep only merge requests from the checkout own project', ()
 
     const result = parseBranchResponse(repo, response, headRepo);
     assert.deepEqual(
-      Array.isArray(result) ? result.map((ref) => `${ref.repo}!${ref.number}`) : result.reason,
-      Array.isArray(expected) ? expected.map((number) => `${repoName}!${number}`) : expected,
+      Array.isArray(result)
+        ? result.map((pull) => [`${pull.ref.repo}!${pull.ref.number}`, pull.createdAt])
+        : result.reason,
+      Array.isArray(expected)
+        ? expected.map(([number, opened]) => [`${repoName}!${number}`, Date.parse(opened)])
+        : expected,
       `${name} ${head ?? ''}`
     );
   }

@@ -12,3 +12,4 @@ coverage
 .serena
 docs/tmp
 .worktrees
+demo/.state

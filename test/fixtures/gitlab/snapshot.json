@@ -1,5 +1,5 @@
 {
-  "source": "Live: anonymous POSTs to https://gitlab.com/api/graphql on 2026-11-04, one per batch snapshotBatches makes for the candidates in gitlab.test.ts, each with the document buildSnapshotQuery builds for it (scored 153, 168 and 39 of 200). Bodies and rate limit headers are verbatim; the status line, exit code and stderr follow glab's api command source (exit 0 when the body has no errors).",
+  "source": "Live: anonymous POSTs to https://gitlab.com/api/graphql on 2026-11-04, one per batch snapshotBatches makes for the candidates in gitlab.test.ts, each with the document buildSnapshotQuery builds for it (scored 144, 163, 146 and 94 of 200). Bodies and rate limit headers are verbatim; the status line, exit code and stderr follow glab's api command source (exit 0 when the body has no errors). Header names are canonicalized the way glab prints them. !4156's head pipeline had 17 jobs, one of them manual. Recaptured the same day to add `conflicts`; draft !4282 conflicts while `detailedMergeStatus` names the draft.",
   "batches": [
     {
       "code": 0,
@@ -7,9 +7,9 @@
       "headers": {
         "Ratelimit-Limit": "500",
         "Ratelimit-Name": "throttle_unauthenticated_api",
-        "Ratelimit-Observed": "2",
-        "Ratelimit-Remaining": "498",
-        "Ratelimit-Reset": "1793765040"
+        "Ratelimit-Observed": "1",
+        "Ratelimit-Remaining": "499",
+        "Ratelimit-Reset": "1793806260"
       },
       "stderr": "",
       "body": {
@@ -23,6 +23,7 @@
               "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4275",
               "mergedAt": "2026-11-02T05:41:35Z",
               "closedAt": null,
+              "updatedAt": "2026-11-02T05:41:35Z",
               "diffHeadSha": "9ec13dc75a12438c938dda136485254b379f0c61",
               "workItemRelations": {
                 "nodes": [
@@ -32,9 +33,14 @@
               "approved": true,
               "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
               "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": false,
               "resolvableDiscussionsCount": 1,
               "resolvedDiscussionsCount": 1,
-              "headPipeline": { "status": "SUCCESS" }
+              "headPipeline": {
+                "status": "SUCCESS",
+                "total": { "count": 21 },
+                "passed": { "count": 21 }
+              }
             },
             "m1": {
               "state": "opened",
@@ -43,14 +49,20 @@
               "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4310",
               "mergedAt": null,
               "closedAt": null,
-              "diffHeadSha": "c1125b2467854f77166a07e22d5f56858d476f59",
+              "updatedAt": "2026-11-04T13:42:14Z",
+              "diffHeadSha": "3e0d9ec6023c331bb3a7bf3839285c15aa79fcb3",
               "workItemRelations": { "nodes": [] },
               "approved": false,
               "approvedBy": { "nodes": [] },
               "detailedMergeStatus": "DRAFT_STATUS",
+              "conflicts": false,
               "resolvableDiscussionsCount": 3,
               "resolvedDiscussionsCount": 0,
-              "headPipeline": { "status": "SUCCESS" }
+              "headPipeline": {
+                "status": "SUCCESS",
+                "total": { "count": 15 },
+                "passed": { "count": 15 }
+              }
             },
             "m2": {
               "state": "closed",
@@ -59,27 +71,102 @@
               "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4308",
               "mergedAt": null,
               "closedAt": "2026-11-03T15:14:04Z",
+              "updatedAt": "2026-11-03T15:14:04Z",
               "diffHeadSha": "0a957e78688ad1ba2984bfd4a8d5319499f9f1dc",
               "workItemRelations": { "nodes": [] },
               "approved": false,
               "approvedBy": { "nodes": [] },
               "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": false,
               "resolvableDiscussionsCount": 4,
               "resolvedDiscussionsCount": 0,
-              "headPipeline": { "status": "SUCCESS" }
+              "headPipeline": {
+                "status": "SUCCESS",
+                "total": { "count": 15 },
+                "passed": { "count": 15 }
+              }
             },
-            "m3": null,
             "i0": {
               "state": "closed",
               "title": "docs: Recommend glab as the Git credential helper on OAuth-only instances",
               "webUrl": "https://gitlab.com/gitlab-org/cli/-/work_items/8701",
               "closedAt": "2026-11-02T05:41:36Z"
+            }
+          }
+        }
+      }
+    },
+    {
+      "code": 0,
+      "status": "HTTP/2.0 200 OK",
+      "headers": {
+        "Ratelimit-Limit": "500",
+        "Ratelimit-Name": "throttle_unauthenticated_api",
+        "Ratelimit-Observed": "2",
+        "Ratelimit-Remaining": "498",
+        "Ratelimit-Reset": "1793806260"
+      },
+      "stderr": "",
+      "body": {
+        "data": {
+          "metadata": null,
+          "p0": {
+            "m0": null,
+            "m1": {
+              "state": "merged",
+              "draft": false,
+              "title": "fix(govern): don't skip a Claude Code transcript entry still being written",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4300",
+              "mergedAt": "2026-11-03T05:18:01Z",
+              "closedAt": null,
+              "updatedAt": "2026-11-03T05:18:01Z",
+              "diffHeadSha": "190801a65334c36d45e5717c459ea4ef8ec85a3d",
+              "workItemRelations": { "nodes": [] },
+              "approved": true,
+              "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
+              "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": false,
+              "resolvableDiscussionsCount": 1,
+              "resolvedDiscussionsCount": 1,
+              "headPipeline": {
+                "status": "SUCCESS",
+                "total": { "count": 21 },
+                "passed": { "count": 21 }
+              }
             },
-            "i1": {
+            "i0": {
               "state": "opened",
               "title": "Add a --manual policy to glab ci status for manual jobs",
               "webUrl": "https://gitlab.com/gitlab-org/cli/-/work_items/8713",
               "closedAt": null
+            },
+            "i1": null,
+            "i2": null
+          },
+          "p1": {
+            "m0": {
+              "state": "merged",
+              "draft": false,
+              "title": "Enhance the LDAP group synchronization",
+              "webUrl": "https://gitlab.com/gitlab-org/gitlab/-/merge_requests/1",
+              "mergedAt": null,
+              "closedAt": null,
+              "updatedAt": "2026-10-20T22:13:22Z",
+              "diffHeadSha": "0e91c7eb0fd77e56b7cfdd4fd0be0fce9e1c8a6c",
+              "workItemRelations": { "nodes": [] },
+              "approved": true,
+              "approvedBy": { "nodes": [] },
+              "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": false,
+              "resolvableDiscussionsCount": 3,
+              "resolvedDiscussionsCount": 1,
+              "headPipeline": null
+            },
+            "i0": {
+              "state": "closed",
+              "title": "500 error on MR approvers edit page",
+              "webUrl": "https://gitlab.com/gitlab-org/gitlab/-/work_items/1",
+              "closedAt": "2018-02-15T17:37:22Z"
             }
           }
         }
@@ -93,7 +180,7 @@
         "Ratelimit-Name": "throttle_unauthenticated_api",
         "Ratelimit-Observed": "3",
         "Ratelimit-Remaining": "497",
-        "Ratelimit-Reset": "1793765040"
+        "Ratelimit-Reset": "1793806260"
       },
       "stderr": "",
       "body": {
@@ -103,26 +190,32 @@
             "m0": {
               "state": "merged",
               "draft": false,
-              "title": "fix(govern): don't skip a Claude Code transcript entry still being written",
-              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4300",
-              "mergedAt": "2026-11-03T05:18:01Z",
+              "title": "First release v0.1.0",
+              "webUrl": "https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/1",
+              "mergedAt": "2015-07-31T12:17:36Z",
               "closedAt": null,
-              "diffHeadSha": "190801a65334c36d45e5717c459ea4ef8ec85a3d",
+              "updatedAt": "2026-08-26T08:26:22Z",
+              "diffHeadSha": "dc25ceb530bd36e7fd9658a24adcb131ac1bbb6a",
               "workItemRelations": { "nodes": [] },
               "approved": true,
-              "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
+              "approvedBy": { "nodes": [] },
               "detailedMergeStatus": "NOT_OPEN",
-              "resolvableDiscussionsCount": 1,
-              "resolvedDiscussionsCount": 1,
-              "headPipeline": { "status": "SUCCESS" }
-            },
-            "m1": {
+              "conflicts": true,
+              "resolvableDiscussionsCount": 0,
+              "resolvedDiscussionsCount": 0,
+              "headPipeline": null
+            }
+          },
+          "p1": null,
+          "p2": {
+            "m0": {
               "state": "merged",
               "draft": false,
               "title": "docs(auth): correct OAuth client ID requirements for the Git credential helper",
               "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4275",
               "mergedAt": "2026-11-02T05:41:35Z",
               "closedAt": null,
+              "updatedAt": "2026-11-02T05:41:35Z",
               "diffHeadSha": "9ec13dc75a12438c938dda136485254b379f0c61",
               "workItemRelations": {
                 "nodes": [
@@ -132,56 +225,42 @@
               "approved": true,
               "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
               "detailedMergeStatus": "NOT_OPEN",
+              "conflicts": false,
               "resolvableDiscussionsCount": 1,
               "resolvedDiscussionsCount": 1,
-              "headPipeline": { "status": "SUCCESS" }
+              "headPipeline": {
+                "status": "SUCCESS",
+                "total": { "count": 21 },
+                "passed": { "count": 21 }
+              }
             },
-            "i0": null,
-            "i1": null
-          },
-          "p1": {
-            "m0": {
-              "state": "merged",
+            "m1": {
+              "state": "opened",
               "draft": false,
-              "title": "Enhance the LDAP group synchronization",
-              "webUrl": "https://gitlab.com/gitlab-org/gitlab/-/merge_requests/1",
+              "title": "fix: clarify deploy-token help text",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4268",
               "mergedAt": null,
               "closedAt": null,
-              "diffHeadSha": "0e91c7eb0fd77e56b7cfdd4fd0be0fce9e1c8a6c",
-              "workItemRelations": { "nodes": [] },
-              "approved": true,
+              "updatedAt": "2026-11-04T11:28:08Z",
+              "diffHeadSha": "63f00ebcb6745644de768bcda081bedc1cb7238d",
+              "workItemRelations": {
+                "nodes": [
+                  { "workItem": { "iid": "8705", "namespace": { "fullPath": "gitlab-org/cli" } } }
+                ]
+              },
+              "approved": false,
               "approvedBy": { "nodes": [] },
-              "detailedMergeStatus": "NOT_OPEN",
-              "resolvableDiscussionsCount": 3,
-              "resolvedDiscussionsCount": 1,
-              "headPipeline": null
-            },
-            "i0": {
-              "state": "closed",
-              "title": "500 error on MR approvers edit page",
-              "webUrl": "https://gitlab.com/gitlab-org/gitlab/-/work_items/1",
-              "closedAt": "2018-02-15T17:37:22Z"
-            }
-          },
-          "p2": {
-            "m0": {
-              "state": "merged",
-              "draft": false,
-              "title": "First release v0.1.0",
-              "webUrl": "https://gitlab.com/gitlab-org/api/client-go/-/merge_requests/1",
-              "mergedAt": "2015-07-31T12:17:36Z",
-              "closedAt": null,
-              "diffHeadSha": "dc25ceb530bd36e7fd9658a24adcb131ac1bbb6a",
-              "workItemRelations": { "nodes": [] },
-              "approved": true,
-              "approvedBy": { "nodes": [] },
-              "detailedMergeStatus": "NOT_OPEN",
-              "resolvableDiscussionsCount": 0,
+              "detailedMergeStatus": "REQUESTED_CHANGES",
+              "conflicts": false,
+              "resolvableDiscussionsCount": 5,
               "resolvedDiscussionsCount": 0,
-              "headPipeline": null
+              "headPipeline": {
+                "status": "FAILED",
+                "total": { "count": 15 },
+                "passed": { "count": 14 }
+              }
             }
-          },
-          "p3": null
+          }
         }
       }
     },
@@ -193,7 +272,7 @@
         "Ratelimit-Name": "throttle_unauthenticated_api",
         "Ratelimit-Observed": "1",
         "Ratelimit-Remaining": "499",
-        "Ratelimit-Reset": "1793765040"
+        "Ratelimit-Reset": "1793806260"
       },
       "stderr": "",
       "body": {
@@ -203,22 +282,46 @@
             "m0": {
               "state": "opened",
               "draft": false,
-              "title": "fix: clarify deploy-token help text",
-              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4268",
+              "title": "feat(df): reach registries through the package manager's own proxy",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4156",
               "mergedAt": null,
               "closedAt": null,
-              "diffHeadSha": "63f00ebcb6745644de768bcda081bedc1cb7238d",
-              "workItemRelations": {
-                "nodes": [
-                  { "workItem": { "iid": "8705", "namespace": { "fullPath": "gitlab-org/cli" } } }
-                ]
-              },
+              "updatedAt": "2026-11-04T13:58:08Z",
+              "diffHeadSha": "7b6ff1d59a57f200e313a667e4ca946c90b967c6",
+              "workItemRelations": { "nodes": [] },
               "approved": false,
-              "approvedBy": { "nodes": [] },
-              "detailedMergeStatus": "REQUESTED_CHANGES",
-              "resolvableDiscussionsCount": 5,
+              "approvedBy": { "nodes": [{ "id": "gid://gitlab/User/21826781" }] },
+              "detailedMergeStatus": "DISCUSSIONS_NOT_RESOLVED",
+              "conflicts": false,
+              "resolvableDiscussionsCount": 2,
               "resolvedDiscussionsCount": 0,
-              "headPipeline": { "status": "FAILED" }
+              "headPipeline": {
+                "status": "SUCCESS",
+                "total": { "count": 16 },
+                "passed": { "count": 16 }
+              }
+            },
+            "m1": {
+              "state": "opened",
+              "draft": true,
+              "title": "Draft: feat(df): reach registries through proxies set in package-manager config",
+              "webUrl": "https://gitlab.com/gitlab-org/cli/-/merge_requests/4282",
+              "mergedAt": null,
+              "closedAt": null,
+              "updatedAt": "2026-11-03T09:53:58Z",
+              "diffHeadSha": "5ceb547638c3aeca8a86f609a070f038eef5ae09",
+              "workItemRelations": { "nodes": [] },
+              "approved": true,
+              "approvedBy": { "nodes": [] },
+              "detailedMergeStatus": "DRAFT_STATUS",
+              "conflicts": true,
+              "resolvableDiscussionsCount": 0,
+              "resolvedDiscussionsCount": 0,
+              "headPipeline": {
+                "status": "SUCCESS",
+                "total": { "count": 16 },
+                "passed": { "count": 16 }
+              }
             }
           }
         }

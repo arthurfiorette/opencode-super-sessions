@@ -24,6 +24,7 @@ function fakeGitLab(failure: 'missing-tool' | 'failed'): ForgeProvider {
     definition: gitlab,
     available: async () => 'ok',
     branchPullRequests: async () => [],
+    details: async () => ({ reason: failure }),
     snapshot: async (candidates: RefCandidate[]) =>
       candidates.map((candidate) =>
         candidate.number === 5
@@ -40,7 +41,7 @@ function fakeGitLab(failure: 'missing-tool' | 'failed'): ForgeProvider {
 function setup(provider: ForgeProvider, hosts = createForgeHosts({ gitlab: { hosts: [] } })) {
   let metadata: Record<string, unknown> = {};
   const session = {
-    get: async () => ({ metadata }),
+    get: async () => ({ metadata, time: { created: 0, updated: 0, idle: 0 } }),
     update: async (input: { metadata?: Record<string, unknown> }) => {
       metadata = input.metadata ?? {};
     }
@@ -82,6 +83,7 @@ test('gh is asked only about hosts the user works with, and other refs are store
     definition: github,
     available: async () => 'ok',
     branchPullRequests: async () => [],
+    details: async () => ({ reason: 'failed' }),
     snapshot: async (candidates) => {
       asked.push(...candidates.map((candidate) => `${candidate.host} ${candidate.number}`));
       return candidates.map((candidate) => ({

@@ -16,7 +16,7 @@ import type { Options } from '../config.js';
 import { type HistoryScanner, listSessions } from '../history-scan.js';
 import { isUserPrompt } from '../host/events.js';
 import { BASE_MODE, CLASSIC_LIST, DIALOG_MODE, OVER_PROMPT, SESSION_LIST } from '../host/keymap.js';
-import { listFilters, projectScope } from '../host/session-api.js';
+import { listFilters } from '../host/session-api.js';
 import { editorHasText, SLOTS } from '../host/tui.js';
 import type { Pins } from '../pins.js';
 import { tuiSettingsFor } from '../settings/store.js';
@@ -118,6 +118,7 @@ export function installBrowser(
     endPeek();
     if (target !== undefined) model.remember({ selected: target });
     if (origin() !== undefined) return;
+    if (target === undefined) model.clearSearch();
     const route = copyRoute(router.current());
     model.setOrigin(route);
     setOrigin(route);
@@ -288,8 +289,7 @@ export function installBrowser(
       // "This project" is the project under the browser, which follows the route while it is
       // closed, as when the next open would set it.
       if (origin() === undefined) model.setOrigin(copyRoute(router.current()));
-      const filters =
-        scope === 'all' ? {} : listFilters(projectScope(await model.resolveLocation()));
+      const filters = scope === 'all' ? {} : listFilters(await model.resolveScope());
       return { scope, sessions: await listSessions(context.client, filters) };
     },
     dispose: () => {

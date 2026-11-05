@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
-import { type ChildProcess, spawn } from 'node:child_process';
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import path from 'node:path';
 import { test } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { ANSWER, directory, modelConfig, root, startScriptedModel } from './harness.js';
+import {
+  ANSWER,
+  directory,
+  modelConfig,
+  OPENCODE_BIN,
+  root,
+  startScriptedModel
+} from './harness.js';
 
 // The repository root resolves to both plugin entries through package.json `exports`, so the
 // host loads the built `dist/` the same way it loads an installed package.
@@ -17,56 +24,60 @@ const BROWSER = 'Search sessions, #numbers';
 // One launch covers every TUI assumption, because starting the real host is the slow part.
 test('the real TUI hands session.list, the peek arrows and its dialogs to the plugin', {
   timeout: 120_000
-}, async () => {
+}, async (t) => {
+  // `after` hooks also run when the test fails or times out. A server or child left open keeps
+  // this file's process alive, and `node --test` then waits on it forever.
   const model = await startScriptedModel();
+  t.after(() => model.close());
   const tui = await launch(model.baseURL);
-  try {
-    await tui.waitFor('Ask anything');
-    await send(tui, 'alpha task');
-    await tui.leader('n');
-    await send(tui, 'beta task');
+  t.after(() => tui.close());
 
-    // `<leader>l` is the host's `session.list` keybind; the browser only opens when the plugin's
-    // priority layer wins the command over the built-in dialog.
-    await tui.leader('l');
-    await tui.waitFor(BROWSER);
-    // The placeholder draws at mount, while the first list load is still in flight and nothing is
-    // selected, so space has nothing to peek. The count comes from the same rows as the
-    // selection, which is set in the same update.
-    await tui.waitFor(/Active 2\s/);
+  // The composer draws and takes typing before the Location's agents and models load, and an
+  // Enter in that window does nothing: submit returns false while `local.agent.current()` is
+  // undefined (packages/tui/src/component/prompt/index.tsx). The footer shows the agent only
+  // once both lists are loaded, the same state submit reads.
+  await tui.waitFor(/Build · scripted contract/);
+  await send(tui, 'alpha task');
+  await tui.leader('n');
+  await send(tui, 'beta task');
 
-    // The banner renders in the `session.composer.top` slot of the peeked session.
-    await tui.press(' ');
-    await tui.waitFor('Peeking 1 of 2');
-    // With an empty prompt, the priority 2 peek layer must beat the prompt history layers.
-    await tui.press('arrow_down');
-    await tui.waitFor('Peeking 2 of 2');
-    await tui.press('arrow_up');
-    await tui.waitFor('Peeking 1 of 2');
-    await tui.press('escape');
-    const back = await tui.waitFor(BROWSER);
-    assert.doesNotMatch(back, /Peeking/);
+  // `<leader>l` is the host's `session.list` keybind; the browser only opens when the plugin's
+  // priority layer wins the command over the built-in dialog.
+  await tui.leader('l');
+  await tui.waitFor(BROWSER);
+  // The placeholder draws at mount, while the first list load is still in flight and nothing is
+  // selected, so space has nothing to peek. The count comes from the same rows as the
+  // selection, which is set in the same update.
+  await tui.waitFor(/Active 2\s/);
 
-    // A host dialog must draw above the `app` slot overlay and take the typed keys.
-    await tui.press('r', { ctrl: true });
-    await tui.waitFor('Rename session');
-    await tui.type(' renamed');
-    await tui.call('ui.enter');
-    await tui.waitFor('Scripted title renamed');
+  // The banner renders in the `session.composer.top` slot of the peeked session.
+  await tui.press(' ');
+  await tui.waitFor('Peeking 1 of 2');
+  // With an empty prompt, the priority 2 peek layer must beat the prompt history layers.
+  await tui.press('arrow_down');
+  await tui.waitFor('Peeking 2 of 2');
+  await tui.press('arrow_up');
+  await tui.waitFor('Peeking 1 of 2');
+  await tui.press('escape');
+  const back = await tui.waitFor(BROWSER);
+  assert.doesNotMatch(back, /Peeking/);
 
-    // ctrl+p dispatches the host's palette command (COMMAND_PALETTE) from the browser's mode;
-    // esc closes the palette and hands the keys back to the browser.
-    // The palette's title row; the browser footer only says "commands" in lower case.
-    const palette = /Commands\s+esc/;
-    await tui.press('p', { ctrl: true });
-    await tui.waitFor(palette);
-    await tui.press('escape');
-    const after = await tui.waitFor(BROWSER);
-    assert.doesNotMatch(after, palette);
-  } finally {
-    await tui.close();
-    await model.close();
-  }
+  // A host dialog must draw above the `app` slot overlay and take the typed keys.
+  await tui.press('r', { ctrl: true });
+  await tui.waitFor('Rename session');
+  await tui.type(' renamed');
+  await tui.call('ui.enter');
+  await tui.waitFor('Scripted title renamed');
+
+  // ctrl+p dispatches the host's palette command (COMMAND_PALETTE) from the browser's mode;
+  // esc closes the palette and hands the keys back to the browser.
+  // The palette's title row; the browser footer only says "commands" in lower case.
+  const palette = /Commands\s+esc/;
+  await tui.press('p', { ctrl: true });
+  await tui.waitFor(palette);
+  await tui.press('escape');
+  const after = await tui.waitFor(BROWSER);
+  assert.doesNotMatch(after, palette);
 });
 
 /** Sends a prompt from the composer and waits for the scripted answer. */
@@ -82,7 +93,7 @@ interface Tui {
   type(text: string): Promise<unknown>;
   /** Presses a key: a character or an OpenTUI `KeyCodes` name such as `escape`. */
   press(key: string, modifiers?: { ctrl?: boolean }): Promise<unknown>;
-  /** Presses ctrl+x, the host's default leader, then `key`. */
+  /** Presses ctrl+x, the host's default leader, then `key`, in one host task. */
   leader(key: string): Promise<unknown>;
   /** Polls the screen until it contains `text` and returns it, or fails with the last screen. */
   waitFor(text: string | RegExp): Promise<string>;
@@ -109,7 +120,7 @@ async function launch(baseURL: string): Promise<Tui> {
       viewport: { cols: 140, rows: 40 }
     })
   );
-  const child = spawn(process.env.OPENCODE_BIN ?? 'opencode', ['--standalone'], {
+  const child = spawn(OPENCODE_BIN, ['--standalone'], {
     cwd: directory('tui-project'),
     env: {
       ...process.env,
@@ -133,7 +144,17 @@ async function launch(baseURL: string): Promise<Tui> {
   child.stderr?.on('data', (chunk) => {
     stderr += chunk;
   });
-  const socket = await connect(`ws://127.0.0.1:${port}`, child, () => stderr);
+  // A binary that cannot start emits `error` (ENOENT and the like) and never sets `exitCode`.
+  child.once('error', (error) => {
+    stderr += `\n${OPENCODE_BIN}: ${error.message}`;
+  });
+  let socket: WebSocket;
+  try {
+    socket = await connect(`ws://127.0.0.1:${port}`, child, () => stderr);
+  } catch (error) {
+    stop(child);
+    throw error;
+  }
   let next = 1;
   const pending = new Map<
     number,
@@ -164,10 +185,13 @@ async function launch(baseURL: string): Promise<Tui> {
     call,
     type: (text) => call('ui.type', { text }),
     press,
-    leader: async (key) => {
-      await press('x', { ctrl: true });
-      return press(key);
-    },
+    // Two `ui.press` calls are two host tasks, and an update landing between them can drop the
+    // leader: the session route rebuilds its keymap layers whenever its queued prompts change
+    // (packages/tui/src/routes/session/index.tsx), and OpenTUI's keymap clears the whole pending
+    // sequence when a layer holding part of it unregisters (@opentui/keymap
+    // src/services/layers.ts). Right after a turn ends that happens within milliseconds, and
+    // `key` then lands in the prompt. `ui.type` writes both bytes in one loop; 0x18 is ctrl+x.
+    leader: (key) => call('ui.type', { text: `\x18${key}` }),
     async waitFor(text) {
       const deadline = Date.now() + 30_000;
       let last = '';
@@ -184,10 +208,22 @@ async function launch(baseURL: string): Promise<Tui> {
       socket.close();
       if (child.exitCode !== null || child.signalCode !== null) return;
       const exited = new Promise((resolve) => child.once('exit', resolve));
-      child.kill();
+      stop(child);
       await exited;
     }
   };
+}
+
+/**
+ * Stops the TUI and the `opencode serve` child it starts. Windows has no SIGTERM: `kill()` ends
+ * only the TUI process, and the server child keeps files in the test root open.
+ */
+function stop(child: ChildProcess) {
+  if (process.platform === 'win32' && child.pid !== undefined) {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore' });
+  } else {
+    child.kill();
+  }
 }
 
 /** Opens the Drive socket, retrying while the TUI starts, and fails early if the TUI exits. */

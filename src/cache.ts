@@ -1,5 +1,5 @@
 import type { ForgeError, ForgeProvider, RefCandidate } from './providers/provider.js';
-import { type Ref, type RefState, type RefStatus, refKey } from './refs/ref.js';
+import { type PullDetails, type Ref, type RefState, type RefStatus, refKey } from './refs/ref.js';
 
 /** Last known answer for one candidate: its live state, or why it could not be fetched. */
 export type Snapshot = { ref: Ref; state: RefState } | ForgeError;
@@ -9,6 +9,11 @@ export interface SnapshotCache {
   get(key: string): Snapshot | undefined;
   /** Keys whose value is missing or expired and that are not backing off after an error. */
   stale(keys: string[]): string[];
+  /**
+   * Why the last fetch of `key` failed, when it did. `not-found` is an answer, not a failure.
+   * The last known state stays in {@link get} meanwhile.
+   */
+  failure(key: string): ForgeError | undefined;
   /**
    * Fetches missing and expired candidates (all of them with `force`) and returns every
    * candidate's value by {@link candidateKey}. Concurrent calls share in-flight fetches, and an
@@ -26,6 +31,8 @@ interface Entry {
   expiresAt: number;
   /** Set after a rate limit; no fetch happens before it, forced or not. */
   retryAt?: number;
+  /** The last fetch's error, other than `not-found`. */
+  failure?: ForgeError;
 }
 
 const MINUTE = 60_000;
@@ -40,6 +47,77 @@ const TTL: Record<RefStatus, number> = {
 };
 const ERROR_TTL = 30_000;
 
+/** How long a pull request's details stay fresh: as long as its snapshot would. */
+export function detailsTtl(status: RefStatus | undefined): number {
+  return TTL[status ?? 'open'];
+}
+
+/** Last details answer per pull request key; see {@link createDetailsCache}. */
+export interface DetailsCache {
+  /**
+   * The cached details of `key`, or `load()`'s answer when they expired, or always with `force`
+   * unless a rate limit's `retryAt` has not passed. Concurrent calls share one load. `status` is
+   * the pull request's state, which sets the lifetime like a snapshot's.
+   */
+  get(
+    key: string,
+    status: RefStatus | undefined,
+    load: () => Promise<PullDetails | ForgeError>,
+    options?: { force?: boolean }
+  ): Promise<PullDetails | ForgeError>;
+}
+
+// The preview asks for one pull request at a time; this bounds what a long session keeps.
+const DETAILS_LIMIT = 100;
+
+interface DetailsEntry {
+  value: Promise<PullDetails | ForgeError>;
+  expiresAt: number;
+  settled: boolean;
+  /** A rate limit's end; no load happens before it, forced or not. */
+  retryAt?: number;
+}
+
+/**
+ * Creates the cache of the Pull requests view's details. Errors are kept for 30 seconds, or until
+ * a rate limit's `retryAt`, so moving through the list does not hammer a forge that failed.
+ */
+export function createDetailsCache(options: { now?: () => number } = {}): DetailsCache {
+  const now = options.now ?? Date.now;
+  const entries = new Map<string, DetailsEntry>();
+  /** Whether a cached entry answers: fresh, or with `force` still loading or backing off. */
+  const usable = (cached: DetailsEntry, force: boolean) => {
+    const at = now();
+    if (!force) return cached.expiresAt > at;
+    return !cached.settled || (cached.retryAt !== undefined && cached.retryAt > at);
+  };
+  return {
+    get(key, status, load, getOptions = {}) {
+      const cached = entries.get(key);
+      if (cached && usable(cached, getOptions.force === true)) return cached.value;
+      const entry: DetailsEntry = {
+        value: load(),
+        expiresAt: Number.POSITIVE_INFINITY,
+        settled: false
+      };
+      entries.delete(key);
+      entries.set(key, entry);
+      // Map order is insertion order, so the first key is the least recently fetched.
+      if (entries.size > DETAILS_LIMIT) entries.delete(entries.keys().next().value ?? '');
+      entry.value.then(
+        (value) => {
+          entry.settled = true;
+          entry.expiresAt =
+            'reason' in value ? (value.retryAt ?? now() + ERROR_TTL) : now() + detailsTtl(status);
+          if ('reason' in value && value.retryAt !== undefined) entry.retryAt = value.retryAt;
+        },
+        () => entries.delete(key)
+      );
+      return entry.value;
+    }
+  };
+}
+
 /**
  * Cache key for a candidate. Equals {@link refKey} when the kind is known; bare `#N` candidates
  * get a kind-less key until the forge says whether they are a PR or an issue.
@@ -47,6 +125,25 @@ const ERROR_TTL = 30_000;
 export function candidateKey(candidate: RefCandidate): string {
   if (candidate.kind) return refKey({ ...candidate, kind: candidate.kind });
   return `${candidate.provider}:${candidate.host}/${candidate.repo}/?/${candidate.number}`.toLowerCase();
+}
+
+/**
+ * Fills an open pull request's unknown `conflicts` with the previous answer, following t3code:
+ * forges compute mergeability lazily and answer "unknown" for a while after the base branch
+ * moves, which would make the icon blink. Only while `updatedAt` is unchanged: a push to the pull
+ * request bumps it and may have resolved the conflict.
+ */
+function withKnownConflicts(
+  previous: Snapshot | undefined,
+  next: { ref: Ref; state: RefState }
+): { ref: Ref; state: RefState } {
+  const { state } = next;
+  const open = (status: RefStatus) => status === 'open' || status === 'draft';
+  if (!open(state.status) || state.review?.conflicts !== undefined) return next;
+  if (previous === undefined || !('ref' in previous) || !open(previous.state.status)) return next;
+  const known = previous.state.review?.conflicts;
+  if (known === undefined || previous.state.updatedAt !== state.updatedAt) return next;
+  return { ...next, state: { ...state, review: { ...state.review, conflicts: known } } };
 }
 
 /**
@@ -78,7 +175,8 @@ export function createSnapshotCache(options: { now?: () => number } = {}): Snaps
         aliases.set(key, resolved);
         entries.delete(key);
       }
-      entries.set(resolved, { value, expiresAt: at + TTL[value.state.status] });
+      const kept = withKnownConflicts(entries.get(resolved)?.value, value);
+      entries.set(resolved, { value: kept, expiresAt: at + TTL[kept.state.status] });
       return;
     }
     const resolved = aliases.get(key) ?? key;
@@ -90,7 +188,8 @@ export function createSnapshotCache(options: { now?: () => number } = {}): Snaps
     entries.set(resolved, {
       value: kept,
       expiresAt,
-      ...(value.retryAt === undefined ? {} : { retryAt: value.retryAt })
+      ...(value.retryAt === undefined ? {} : { retryAt: value.retryAt }),
+      ...(value.reason === 'not-found' ? {} : { failure: value })
     });
   };
 
@@ -127,6 +226,8 @@ export function createSnapshotCache(options: { now?: () => number } = {}): Snaps
       const at = now();
       return keys.filter((key) => due(lookup(key), false, at));
     },
+
+    failure: (key) => lookup(key)?.failure,
 
     async ensure(provider, candidates, ensureOptions = {}) {
       const at = now();

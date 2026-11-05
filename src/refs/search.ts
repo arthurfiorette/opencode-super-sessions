@@ -16,6 +16,7 @@ export interface NormalizedQuery {
 export interface SearchSession {
   id: string;
   title: string;
+  /** The session's latest activity (`activityTime`), which orders ties. */
   updated: number;
   refs: Array<{ ref: Ref; title?: string }>;
 }

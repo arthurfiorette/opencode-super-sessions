@@ -1,15 +1,19 @@
 import type { SessionRefView } from '../rpc.js';
 import { type Ref, type RefLink, type RefSource, refKey, TRACKED_SOURCES } from './ref.js';
 
-/** Refs drawn on a session row: the main PR, every tracked issue, and how many others exist. */
+/**
+ * Refs drawn on a session row: the first {@link ROW_PRS} pull requests in {@link pullRequests}
+ * order, every tracked issue, and how many others exist.
+ */
 export interface RowRefs {
-  pr?: Ref;
-  /** The main PR is the one whose head is the session's branch. */
-  branch: boolean;
+  prs: Ref[];
   issues: Ref[];
-  /** Other pull requests and mentions. */
+  /** Pull requests past {@link ROW_PRS}, and mentions. */
   extra: number;
 }
+
+/** Pull request lines a row draws before the rest count in its `+N`. */
+export const ROW_PRS = 3;
 
 /** Input of {@link isDone}. */
 export interface DoneInput {
@@ -28,13 +32,6 @@ export interface DoneInput {
 const EXPLICIT_PR_SOURCES: ReadonlySet<RefSource> = new Set(['agent', 'created', 'manual']);
 const CLOSED_STATUSES = new Set(['merged', 'closed', 'completed', 'not_planned']);
 
-/** The link with the highest `linkedAt`, or undefined for an empty list. */
-function newest(links: RefLink[]): RefLink | undefined {
-  let best: RefLink | undefined;
-  for (const link of links) if (best === undefined || link.linkedAt > best.linkedAt) best = link;
-  return best;
-}
-
 /** Links whose source counts toward Done and the row. */
 function trackedLinks(view: SessionRefView): RefLink[] {
   return view.links.filter((link) => TRACKED_SOURCES.has(link.source));
@@ -51,58 +48,75 @@ export function trackedRefs(view: SessionRefView): Ref[] {
 }
 
 /**
- * The session's main pull request: the branch PR, else the newest PR the agent or user linked,
- * else the newest PR from a prompt.
+ * Where a pull request's state puts it: open, draft and not yet fetched first, then merged, then
+ * closed. A PR without a snapshot is nearly always one just created or linked, so it sorts with
+ * the open ones and keeps its place when its state arrives; a failed fetch never sinks it either.
  */
-export function mainPullRequest(view: SessionRefView): { pr?: Ref; branch: boolean } {
-  const branchPR = view.branchRefs[0];
-  if (branchPR !== undefined) return { pr: branchPR, branch: true };
-  const prs = trackedLinks(view).filter((link) => link.ref.kind === 'pr');
-  const pr =
-    newest(prs.filter((link) => EXPLICIT_PR_SOURCES.has(link.source)))?.ref ?? newest(prs)?.ref;
-  return pr === undefined ? { branch: false } : { pr, branch: false };
+function stateRank(view: SessionRefView, ref: Ref): number {
+  const status = view.states[refKey(ref)]?.status;
+  return status === 'merged' ? 1 : status === 'closed' ? 2 : 0;
 }
 
 /**
- * Picks what a session row shows: the main PR (see {@link mainPullRequest}) and every tracked
- * issue, the ones the main PR closes first, newest link first within each part. The PR snapshot
- * knows its closing issues before a `closes` link is stored, so those count as tracked too.
+ * The session's tracked pull requests (branch PRs and tracked links, no mentions) in display
+ * order: by state (see {@link stateRank}), then the branch's PRs in the server's order, then
+ * PRs the agent or user linked or created, then PRs from prompts, newest link first. A PR
+ * linked more than once takes its best place.
+ */
+export function pullRequests(view: SessionRefView): Ref[] {
+  const places = new Map<string, { ref: Ref; source: number; at: number }>();
+  view.branchRefs.forEach((ref, index) => {
+    // Newest first sorts `at` descending, so a negated index keeps the server's order.
+    if (!places.has(refKey(ref))) places.set(refKey(ref), { ref, source: 0, at: -index });
+  });
+  for (const link of trackedLinks(view)) {
+    if (link.ref.kind !== 'pr') continue;
+    const key = refKey(link.ref);
+    const source = EXPLICIT_PR_SOURCES.has(link.source) ? 1 : 2;
+    const place = places.get(key);
+    if (place && (place.source < source || (place.source === source && place.at >= link.linkedAt)))
+      continue;
+    places.set(key, { ref: link.ref, source, at: link.linkedAt });
+  }
+  return [...places.values()]
+    .sort(
+      (a, b) =>
+        stateRank(view, a.ref) - stateRank(view, b.ref) || a.source - b.source || b.at - a.at
+    )
+    .map((place) => place.ref);
+}
+
+/**
+ * Picks what a session row shows: the first {@link ROW_PRS} of {@link pullRequests} and every
+ * tracked issue, the ones a shown PR closes first, newest link first within each part. Only
+ * stored links count: the server stores a `closes` link for each issue in the PR's snapshot
+ * before it answers, so an issue the snapshot lists without a link is one the user unlinked.
  * `extra` counts the other pull requests and the mentions.
  */
 export function rowRefs(view: SessionRefView): RowRefs {
-  const main = mainPullRequest(view);
-  const mainKey = main.pr === undefined ? undefined : refKey(main.pr);
-  const closedByMain = new Set(
-    (mainKey === undefined ? undefined : view.states[mainKey]?.closes)?.map(refKey)
+  const prs = pullRequests(view).slice(0, ROW_PRS);
+  const prKeys = new Set(prs.map(refKey));
+  const closedByShown = new Set(
+    prs.flatMap((pr) => view.states[refKey(pr)]?.closes ?? []).map(refKey)
   );
   const issueLinks = trackedLinks(view)
     .filter((link) => link.ref.kind === 'issue')
     .sort((a, b) => b.linkedAt - a.linkedAt);
-  const closesMain = (ref: Ref, via?: string) =>
-    (mainKey !== undefined && via === mainKey) || closedByMain.has(refKey(ref));
+  const closesShown = (link: RefLink) =>
+    (link.via !== undefined && prKeys.has(link.via)) || closedByShown.has(refKey(link.ref));
   const issues = new Map<string, Ref>();
-  for (const link of issueLinks.filter((item) => closesMain(item.ref, item.via))) {
-    issues.set(refKey(link.ref), link.ref);
-  }
-  for (const ref of mainKey === undefined ? [] : (view.states[mainKey]?.closes ?? [])) {
-    if (!issues.has(refKey(ref))) issues.set(refKey(ref), ref);
-  }
+  for (const link of issueLinks.filter(closesShown)) issues.set(refKey(link.ref), link.ref);
   for (const link of issueLinks) {
     if (!issues.has(refKey(link.ref))) issues.set(refKey(link.ref), link.ref);
   }
 
-  const shown = new Set([mainKey, ...issues.keys()]);
+  const shown = new Set([...prKeys, ...issues.keys()]);
   const others = new Set(
     [...view.branchRefs, ...view.links.map((link) => link.ref)]
       .map(refKey)
       .filter((key) => !shown.has(key))
   );
-  return {
-    ...(main.pr === undefined ? {} : { pr: main.pr }),
-    branch: main.branch,
-    issues: [...issues.values()],
-    extra: others.size
-  };
+  return { prs, issues: [...issues.values()], extra: others.size };
 }
 
 /** Refs listed in the session sidebar, in display order, and how many mentions were left out. */
@@ -112,17 +126,16 @@ export interface SidebarRefs {
 }
 
 /**
- * Orders a session's tracked refs for the sidebar: branch pull requests, then pull requests the
- * agent or user linked, then other pull requests, then issues, newest link first within each
- * group. Mentions are only counted.
+ * Orders a session's tracked refs for the sidebar: pull requests in {@link pullRequests} order,
+ * then issues, newest link first. Mentions are only counted.
  */
 export function sidebarRefs(view: SessionRefView): SidebarRefs {
-  const rank = (link: RefLink) =>
-    link.ref.kind === 'issue' ? 2 : EXPLICIT_PR_SOURCES.has(link.source) ? 0 : 1;
-  const links = trackedLinks(view).sort((a, b) => rank(a) - rank(b) || b.linkedAt - a.linkedAt);
+  const issues = trackedLinks(view)
+    .filter((link) => link.ref.kind === 'issue')
+    .sort((a, b) => b.linkedAt - a.linkedAt);
   const refs = new Map<string, Ref>();
-  // A ref linked twice keeps its first, highest-ranked place.
-  for (const ref of [...view.branchRefs, ...links.map((link) => link.ref)]) {
+  // An issue linked twice keeps its newest place.
+  for (const ref of [...pullRequests(view), ...issues.map((link) => link.ref)]) {
     const key = refKey(ref);
     if (!refs.has(key)) refs.set(key, ref);
   }

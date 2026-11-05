@@ -1,4 +1,4 @@
-import type { ProviderId, Ref, RefKind, RefState } from '../refs/ref.js';
+import type { ProviderId, PullDetails, Ref, RefKind, RefState } from '../refs/ref.js';
 
 /** A repository on a forge, as derived from a git remote. */
 export interface RepoRef {
@@ -62,6 +62,16 @@ export interface ForgeError {
 
 export type Availability = 'ok' | 'missing-tool' | 'unauthenticated';
 
+/**
+ * A pull request found for a branch. `createdAt` is when it was opened, in epoch milliseconds,
+ * which decides whether it counts for a session that did not push to the branch; undefined when
+ * the forge did not say.
+ */
+export interface BranchPull {
+  ref: Ref;
+  createdAt?: number;
+}
+
 /** Runtime half of a forge. Only the server plugin constructs these because they spawn CLIs. */
 export interface ForgeProvider {
   definition: ForgeDefinition;
@@ -74,10 +84,12 @@ export interface ForgeProvider {
     repo: RepoRef,
     branch: string,
     headRepo?: RepoRef
-  ): Promise<Ref[] | ForgeError>;
+  ): Promise<BranchPull[] | ForgeError>;
   /**
    * Resolves candidates (filling in `kind`) and returns their live state in input order.
    * Batched; one missing number fails only its own entry with `not-found`.
    */
   snapshot(candidates: RefCandidate[]): Promise<Array<{ ref: Ref; state: RefState } | ForgeError>>;
+  /** Author, branches, description and every CI check of one pull request. One request. */
+  details(ref: Ref): Promise<PullDetails | ForgeError>;
 }

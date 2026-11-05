@@ -27,9 +27,18 @@ import { openUrl, refUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
 import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
 import { rpcError } from '../host/rpc.js';
-import { isUnread, regenerateTitle, setArchived } from '../host/session-api.js';
+import {
+  activityTime,
+  forkSession,
+  isUnread,
+  type Prompt,
+  regenerateTitle,
+  sessionPrompts,
+  setArchived
+} from '../host/session-api.js';
 import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.js';
-import { type Ref, refKey, refNumber } from '../refs/ref.js';
+import { copyLink } from '../link.js';
+import { type ProviderId, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
 import { excludeFromAutoArchive } from '../settings/maintenance.js';
 import { tuiSettingsFor } from '../settings/store.js';
@@ -37,6 +46,7 @@ import { ICONS, titleGradient } from './icons.js';
 import { guardActions, type PageProps, type PeekBannerProps, routeKey } from './page.js';
 import { Preview } from './preview.js';
 import { workLines } from './preview-header.js';
+import { PullPreview } from './pull-preview.js';
 import {
   cells,
   detailKinds,
@@ -44,6 +54,9 @@ import {
   findRef,
   formatAge,
   NO_DETAILS,
+  type PullRowModel,
+  pullLead,
+  pullLine,
   type RowDetails,
   type RowModel,
   rowDetails,
@@ -58,8 +71,12 @@ import {
   keepSelection,
   type Line,
   layoutLines,
+  layoutPulls,
+  MESSAGES_GROUP,
   moveSelection,
   type PageView,
+  type PullRow,
+  RUNNING_GROUP,
   rowsOf,
   type SearchReason,
   scrollFor,
@@ -75,12 +92,14 @@ const SCOPE_DELAY = 200;
 const VIEW_LABELS: Record<PageView, string> = {
   active: 'Active',
   done: 'Done',
-  archived: 'Archived'
+  archived: 'Archived',
+  pulls: 'Pull requests'
 };
 const EMPTY: Record<PageView, string> = {
   active: 'No sessions',
   done: 'No Done sessions',
-  archived: 'No archived sessions'
+  archived: 'No archived sessions',
+  pulls: 'No pull requests'
 };
 // Header row layout, shared by the boxes and the measure that decides which pieces fit. The title
 // never drops; the pieces after it do.
@@ -96,6 +115,20 @@ const HINT_GAP = 2;
 // Free in the host's default keymap and in the search input's own bindings: ctrl+e and ctrl+k
 // edit the line there, ctrl+n moves through host dialogs, ctrl+x is the host's leader.
 const DONE_KEY = 'ctrl+q';
+// Letters type into the search and ctrl+f is the host's pin. ctrl+b is only the search input's
+// cursor-left here (OpenTUI's input bindings), which `left` also does; the host's ctrl+b,
+// `session.background` (packages/tui/src/config/keybind.ts:129), sits in the session view's
+// base-mode layer (packages/tui/src/routes/session/index.tsx:1457), which the browser's mode
+// turns off.
+const FORK_KEY = 'ctrl+b';
+// ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e and ctrl+k edit the search, ctrl+h is backspace in
+// many terminals; the host binds nothing to f5.
+const RELOAD_KEY = 'f5';
+// A reload that answers sooner than this shows no "Reloading…" toast, which would only flash.
+const RELOAD_TOAST_DELAY = 300;
+// Two left clicks on one row within this many milliseconds open it.
+const DOUBLE_CLICK = 400;
+const FORGE_NAMES: Record<ProviderId, string> = { github: 'GitHub', gitlab: 'GitLab' };
 
 /** Which optional pieces the header row shows. */
 interface HeaderFit {
@@ -158,7 +191,7 @@ export default function SessionBrowser(props: PageProps) {
     const fallback = view?.defaultBranch ?? vcs?.default;
     return current && current !== fallback ? current : undefined;
   };
-  // The "PR and issue line" setting turns the PR, status and issues lines off together.
+  // The "PR and issue line" setting turns the PR and issues lines off together.
   const detailsOf = (session: SessionInfo): RowDetails =>
     settings.refLine()
       ? rowDetails({
@@ -166,21 +199,26 @@ export default function SessionBrowser(props: PageProps) {
           theme: theme(),
           mode: context.themeMode,
           refs: data.refs[session.id],
-          matched: reason(session)?.ref
+          matched: reason(session)?.ref,
+          groupIssues: settings.groupIssues()
         })
       : NO_DETAILS;
-  /** The age, or the archive and update ages in the Archived view, on the title line. */
+  /**
+   * The age of the latest activity, or the archive and activity ages in the Archived view, on the
+   * title line.
+   */
   const rightOf = (session: SessionInfo) => {
     const info = live(session);
     const now = model.now();
+    const age = formatAge(now - activityTime(info));
     const archivedAt =
       memory.view === 'archived' && !data.search
         ? (session.time.archived ?? info.time.archived)
         : undefined;
     return archivedAt === undefined
       ? // Padded to the widest age (`11mo`), so labels before it line up down the list.
-        formatAge(now - info.time.updated).padStart(4)
-      : `archived ${formatAge(now - archivedAt)} · updated ${formatAge(now - info.time.updated)}`;
+        age.padStart(4)
+      : `archived ${formatAge(now - archivedAt)} · updated ${age}`;
   };
   /**
    * A row's title wrapped at its column. It reads no selection, hover or delete state, so moving
@@ -195,33 +233,71 @@ export default function SessionBrowser(props: PageProps) {
     });
     return wrapTitle(live(session).title || 'Untitled session', room);
   };
+  const pullView = () => memory.view === 'pulls';
+  /** Rows of the Pull requests view in display order. */
+  const pulls = createMemo(() => model.pullGroups().flatMap((group) => group.pulls));
+  const selectedPull = () => pulls().find((pull) => pull.key === memory.pull);
   const lines = createMemo(() =>
-    layoutLines(
-      model.groups(),
-      (session) => detailKinds(detailsOf(session)),
-      (session) => titleOf(session).length
-    )
+    pullView()
+      ? layoutPulls(model.pullGroups())
+      : layoutLines(
+          model.groups(),
+          (session) => detailKinds(detailsOf(session)),
+          (session) => titleOf(session).length
+        )
   );
   const visible = createMemo(() => lines().slice(memory.scroll, memory.scroll + listHeight()));
 
-  // Rows change under the cursor when sessions are archived, deleted or classified as Done.
+  // Rows change under the cursor when sessions are archived, deleted or classified as Done. The
+  // selection is a source too: typing or switching views clears it, and when the rows stay the
+  // same (a keystroke that matches the same sessions) only this brings the first row back.
   createEffect(
-    on(rows, (next, previous) => {
+    on([rows, () => memory.selected], ([next, selected], previous) => {
       // An empty list means "still loading" as often as "nothing left"; keeping the id lets a
       // selection restored from memory survive until the sessions arrive.
       if (next.length === 0) return;
-      const keep = keepSelection(
-        previous ?? [],
-        next,
-        untrack(() => memory.selected)
-      );
-      if (keep !== untrack(() => memory.selected)) remember({ selected: keep });
+      const keep = keepSelection(previous?.[0] ?? [], next, selected);
+      if (keep !== selected) remember({ selected: keep });
     })
+  );
+  /**
+   * Selects a pull request, and its newest session as the selected session, which `enter`,
+   * `space` and the peek keys act on.
+   */
+  const selectPull = (key: string | undefined) => {
+    const pull = pulls().find((item) => item.key === key);
+    remember({ pull: pull?.key, selected: pull?.sessions[0]?.id });
+  };
+  // Like the session rows: a pull request that left the list hands the selection to the row
+  // that took its place.
+  createEffect(
+    on(pulls, (next, previous) => {
+      if (next.length === 0) return;
+      const current = untrack(() => memory.pull);
+      const kept = next.find((pull) => pull.key === current);
+      if (kept !== undefined) {
+        if (kept.sessions[0]?.id !== untrack(() => memory.selected)) selectPull(kept.key);
+        return;
+      }
+      const index = (previous ?? []).findIndex((pull) => pull.key === current);
+      selectPull(next[index === -1 ? 0 : Math.min(index, next.length - 1)]?.key);
+    })
+  );
+  // Coming back from a peek selects the session the peek ended on; its pull request follows.
+  createEffect(
+    on(
+      () => memory.selected,
+      (id) => {
+        if (!untrack(pullView) || untrack(selectedPull)?.sessions[0]?.id === id) return;
+        const owner = untrack(pulls).find((pull) => pull.sessions[0]?.id === id);
+        if (owner !== undefined) remember({ pull: owner.key });
+      }
+    )
   );
   createEffect(() => {
     const scroll = scrollFor(
       lines(),
-      memory.selected,
+      pullView() ? memory.pull : memory.selected,
       untrack(() => memory.scroll),
       listHeight()
     );
@@ -246,16 +322,39 @@ export default function SessionBrowser(props: PageProps) {
     void context.data.location.vcs.sync({ directory }).catch(() => {});
   });
 
-  const visibleIDs = () =>
-    untrack(() => visible().flatMap((line) => (line.kind === 'title' ? [line.session.id] : [])));
-  // Cached lists draw at once; a reload, when due, and the forge refresh run behind them.
-  const refreshVisible = () => void controller.refresh(visibleIDs());
-  const sync = () => {
-    const pending = model.sync();
-    if (pending === undefined) refreshVisible();
-    else void pending.then(refreshVisible);
+  // A pull request's state refreshes through its newest session.
+  const idsOf = (lines: readonly Line[]) =>
+    lines.flatMap((line) =>
+      line.kind === 'title'
+        ? [line.session.id]
+        : line.kind === 'pull'
+          ? line.pull.sessions.slice(0, 1).map((session) => session.id)
+          : []
+    );
+  const visibleIDs = () => untrack(() => idsOf(visible()));
+  // Sessions this open already asked the forge about. The server fetches only refs without a
+  // fresh snapshot, so asking once per row on screen costs one RPC per batch of new rows; the
+  // interval below asks again for rows that stay.
+  const requested = new Set<string>();
+  const refreshNew = (ids: string[]) => {
+    const fresh = ids.filter((id) => !requested.has(id));
+    for (const id of fresh) requested.add(id);
+    void controller.refresh(fresh);
   };
+  // Cached lists draw at once; a reload, when due, and the forge refresh run behind them.
+  const refreshVisible = () => refreshNew(visibleIDs());
+  const sync = () => void model.sync().then(refreshVisible);
   sync();
+  // Switching views, toggling the scope, searching and scrolling put rows on screen the open-time
+  // refresh never saw; their refs would otherwise show a bare `#N` until the next interval tick.
+  // A listed row waits for its cached read: a cold load shows the lists before a slow `refs`
+  // answer, which would land over the fresher one. Search hits outside the lists get no read, so
+  // they go at once.
+  createEffect(() => {
+    const listed = new Set([...data.active, ...data.archived].map((session) => session.id));
+    const ids = idsOf(visible()).filter((id) => data.refs[id] !== undefined || !listed.has(id));
+    untrack(() => refreshNew(ids));
+  });
   // Pressing ctrl+a several times in a row loads only the scope it stops on, instead of one
   // reload, refs call and refresh per press.
   let scopeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -270,7 +369,10 @@ export default function SessionBrowser(props: PageProps) {
     )
   );
   onCleanup(() => clearTimeout(scopeTimer));
-  createEffect(() => controller.search(memory.query, memory.view === 'archived', scope()));
+  // The Pull requests view filters its own rows; session search stays off there.
+  createEffect(() =>
+    controller.search(pullView() ? '' : memory.query, memory.view === 'archived', scope())
+  );
   onMount(() => {
     input?.focus();
     // Closing a host dialog refocuses what it took focus from one tick later, which can land
@@ -280,12 +382,12 @@ export default function SessionBrowser(props: PageProps) {
     }, 10);
     onCleanup(() => clearTimeout(refocus));
     void model
-      .resolveLocation()
+      .resolveProject()
       .then((info) => {
-        setProjectID(info.project.id);
-        const project = context.data.project.get(info.project.id);
-        const root = project?.canonical ?? info.project.directory;
-        setProjectLabel(info.project.id === 'global' ? '' : project?.name || path.basename(root));
+        setProjectID(info.id);
+        const project = context.data.project.get(info.id);
+        const root = project?.canonical ?? info.directory;
+        setProjectLabel(info.id === 'global' ? '' : project?.name || path.basename(root));
       })
       .catch(() => {});
   });
@@ -293,7 +395,8 @@ export default function SessionBrowser(props: PageProps) {
   const timers = [
     setInterval(() => {
       model.setNow(Date.now());
-      refreshVisible();
+      // Every row on screen, asked again: the server's TTLs decide which refs it refetches.
+      void controller.refresh(visibleIDs());
     }, REFRESH_INTERVAL),
     setInterval(() => {
       if (!untrack(() => cli.animations)) return;
@@ -317,9 +420,22 @@ export default function SessionBrowser(props: PageProps) {
       draft.scroll = 0;
     });
   const select = (sessionID: string | undefined) => remember({ selected: sessionID });
-  const move = (delta: number) => select(moveSelection(rows(), memory.selected, delta));
+  /** Moves the selection by `delta` rows, clamped to the list: sessions, or pull requests. */
+  const move = (delta: number) => {
+    if (!pullView()) return select(moveSelection(rows(), memory.selected, delta));
+    const list = pulls();
+    const index = list.findIndex((pull) => pull.key === memory.pull);
+    const to = Math.min(list.length - 1, Math.max(0, (index === -1 ? 0 : index) + delta));
+    selectPull(list[to]?.key);
+  };
+  /** Rows in the list, for `home` and `end`. */
+  const rowCount = () => (pullView() ? pulls().length : rows().length);
   // Rows on screen now, from the real line heights, so a page jump never skips past one.
-  const pageRows = () => Math.max(1, visible().filter((line) => line.kind === 'title').length - 1);
+  const pageRows = () =>
+    Math.max(
+      1,
+      visible().filter((line) => line.kind === 'title' || line.kind === 'pull').length - 1
+    );
   const open = (sessionID = memory.selected) => {
     if (sessionID === undefined) return;
     props.close();
@@ -419,6 +535,46 @@ export default function SessionBrowser(props: PageProps) {
       toast(linkError(error), 'error');
     }
   };
+  /**
+   * Forks the selected session like the host's /fork: the user picks the whole session or a
+   * prompt to fork before, newest first, and the browser opens the new session. Failures leave
+   * the browser open.
+   */
+  const fork = async () => {
+    const session = selected();
+    if (!session) return;
+    let prompts: Prompt[];
+    try {
+      prompts = await sessionPrompts(client, session.id);
+    } catch {
+      toast("Could not read the session's messages.", 'error');
+      return;
+    }
+    // `null` stands for the whole session: the dialog resolves `undefined` when dismissed.
+    const picked = context.ui.dialog.select<string | null>({
+      title: 'Fork session',
+      options: [
+        { title: 'Full session', value: null },
+        ...prompts.map((prompt) => ({
+          title: prompt.text.replace(/\n/g, ' '),
+          value: prompt.id,
+          // The host's Locale.time (packages/tui/src/util/locale.ts:7).
+          footer: new Date(prompt.created).toLocaleTimeString(undefined, { timeStyle: 'short' })
+        }))
+      ]
+    });
+    // The host's fork dialog is large; the select above is already the active dialog.
+    context.ui.dialog.set({ size: 'large' });
+    const before = await picked;
+    if (before === undefined) return;
+    try {
+      const forked = await forkSession(client, session.id, before ?? undefined);
+      open(forked.id);
+      toast('Forked session', 'success');
+    } catch {
+      toast('Could not fork the session.', 'error');
+    }
+  };
   /** Archives every Done session after the user confirms. */
   const archiveDone = async () => {
     const done = rowsOf(model.doneGroups());
@@ -461,16 +617,87 @@ export default function SessionBrowser(props: PageProps) {
     void controller.refresh([session.id]);
   };
   const openRef = () => {
+    const pull = pullView() ? selectedPull() : undefined;
+    if (pull !== undefined) {
+      if (!openUrl(refUrl(pull.ref, pull.state))) toast('Could not open the browser.', 'error');
+      return;
+    }
     const session = selected();
     const view = session ? data.refs[session.id] : undefined;
     const summary = view ? rowRefs(view) : undefined;
-    const primary = summary?.pr ?? summary?.issues[0];
+    // The row's first line: an open PR whenever the session has one.
+    const primary = summary?.prs[0] ?? summary?.issues[0];
     if (!view || !primary) {
       toast('No pull request or issue on this session.');
       return;
     }
     if (!openUrl(refUrl(primary, view.states[refKey(primary)])))
       toast('Could not open the browser.', 'error');
+  };
+
+  /** The forge the selected row's refs live on, for the reload's title and messages. */
+  const selectedForge = (): ProviderId | undefined => {
+    if (pullView()) return selectedPull()?.ref.provider;
+    const session = selected();
+    const view = session ? data.refs[session.id] : undefined;
+    return view
+      ? [...view.branchRefs, ...view.links.map((link) => link.ref)][0]?.provider
+      : undefined;
+  };
+  /** The keys dialog's name for `f5`, with the selected row's forge when it has refs. */
+  const reloadTitle = () => {
+    const forge = selectedForge();
+    return `Reload from ${forge ? FORGE_NAMES[forge] : 'GitHub/GitLab'}`;
+  };
+  /** Fresh details of the Pull requests view's selection, handed to its preview after `f5`. */
+  const [reloadedDetails, setReloadedDetails] = createSignal<
+    { key: string; details: PullDetails } | undefined
+  >();
+  /** Waits for `task`, with a "Reloading…" toast when it takes longer than a moment. */
+  const withReloadToast = async <T>(task: Promise<T>): Promise<T> => {
+    const timer = setTimeout(() => toast('Reloading…'), RELOAD_TOAST_DELAY);
+    try {
+      return await task;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  /**
+   * `f5`: refetches the selected session's refs, branch pull requests and git checkout, or in
+   * the Pull requests view the selected pull request's snapshot and details. A rate limit still
+   * holds on the server.
+   */
+  const reload = async () => {
+    if (pullView()) {
+      const pull = selectedPull();
+      if (!pull) return;
+      const forge = FORGE_NAMES[pull.ref.provider];
+      try {
+        const details = await withReloadToast(
+          Promise.resolve().then(() =>
+            model.rpc()['pull.details']({ ref: pull.ref, force: true }, model.rpcOptions())
+          )
+        );
+        setReloadedDetails({ key: pull.key, details });
+      } catch {
+        toast(`Could not reload from ${forge}.`, 'error');
+        return;
+      }
+      // The sessions' views carry the pull request's state to the row.
+      void controller.refresh(pull.sessions.map((session) => session.id));
+      return;
+    }
+    const session = selected();
+    if (!session) return;
+    try {
+      const failed = await withReloadToast(controller.reload(session.id));
+      if (failed.length > 0) {
+        const names = failed.map((provider) => FORGE_NAMES[provider]).join(' and ');
+        toast(`Could not reload from ${names}.`, 'error');
+      }
+    } catch {
+      toast('Could not reload. Is the opencode-super-sessions server plugin enabled?', 'error');
+    }
   };
 
   // The arrow keys drive the list, or the preview's Work rows after `right`. The search input
@@ -488,35 +715,82 @@ export default function SessionBrowser(props: PageProps) {
     return workLines(view).flatMap((line) => (line.kind === 'ref' ? [line.ref] : []));
   });
   /** The Work row the keyboard selected, while the Work rows have the keys. */
-  const workRef = () => (focus() === 'work' ? workRefs()[workIndex()] : undefined);
-  // The Work rows belong to the selected session; another session or search hands the keys back.
-  createEffect(on(() => [memory.selected, memory.query], focusList, { defer: true }));
+  const workRef = () => (focus() === 'work' && !pullView() ? workRefs()[workIndex()] : undefined);
+  /**
+   * Rows `right` moves the arrow keys to: the preview's Work rows, or in the Pull requests view
+   * the sessions that worked on the selected pull request.
+   */
+  const workCount = () => (pullView() ? (selectedPull()?.sessions.length ?? 0) : workRefs().length);
+  // The Work rows belong to the selected row; another row or search hands the keys back.
+  createEffect(
+    on(() => [memory.selected, memory.pull, memory.query, memory.view], focusList, {
+      defer: true
+    })
+  );
   // A refresh can drop rows under the cursor.
   createEffect(() => {
-    const count = workRefs().length;
+    const count = workCount();
     if (count === 0) focusList();
     else if (untrack(workIndex) >= count) setWorkIndex(count - 1);
   });
   /** Moves the Work selection by `delta`, clamped to the rows. */
   const moveWork = (delta: number) => {
-    setWorkIndex((index) => Math.min(workRefs().length - 1, Math.max(0, index + delta)));
+    setWorkIndex((index) => Math.min(workCount() - 1, Math.max(0, index + delta)));
   };
   /** `right`: into the Work rows, unless the search cursor still has text to move over. */
   const focusWork = () => {
     if (focus() === 'work') return;
     if (input && input.cursorOffset < cells(input.value)) return false;
     // The preview is hidden on narrow terminals, and a session without refs has no rows.
-    if (!wide() || workRefs().length === 0) return;
+    if (!wide() || workCount() === 0) return;
     setWorkIndex(0);
     setFocus('work');
   };
-  /** `enter` in the Work rows: opens the selected ref's page, like a click on the row. */
+  /**
+   * `enter` in the Work rows: opens the selected ref's page, like a click on the row, or in the
+   * Pull requests view the selected session.
+   */
   const openWork = () => {
+    if (pullView()) {
+      const session = selectedPull()?.sessions[workIndex()];
+      if (session) open(session.id);
+      return;
+    }
     const ref = workRef();
     const session = selected();
     if (!ref || !session) return;
     if (!openUrl(refUrl(ref, data.refs[session.id]?.states[refKey(ref)])))
       toast('Could not open the browser.', 'error');
+  };
+  /** `c` in the Work rows: copies the selected ref's URL. */
+  const copyWork = () => {
+    const ref = workRef();
+    const session = selected();
+    if (ref && session) copyLink(context, refUrl(ref, data.refs[session.id]?.states[refKey(ref)]));
+  };
+  /**
+   * `d` in the Work rows: unlinks the selected ref. No confirmation, since `ctrl+l` links it
+   * again. The server records the dismissal, which keeps detection and the branch lookup from
+   * bringing the ref back. The Work selection keeps its index, so it lands on the row that took
+   * the ref's place.
+   */
+  const unlinkWork = async () => {
+    const ref = workRef();
+    const session = selected();
+    if (!ref || !session) return;
+    const label = `${refKind(ref)} ${refNumber(ref)}`;
+    try {
+      await model.rpc().unlink({ sessionID: session.id, key: refKey(ref) }, model.rpcOptions());
+    } catch {
+      toast(`Could not unlink ${label}.`, 'error');
+      return;
+    }
+    toast(
+      `Unlinked ${label}. ${shortcut('super-sessions.link', 'ctrl+l')} links it again.`,
+      'success'
+    );
+    // The cached read, not a forge refresh, so the row and the preview drop the ref at once.
+    await controller.reread([session.id]);
   };
 
   const nextView = (step: number) =>
@@ -535,6 +809,7 @@ export default function SessionBrowser(props: PageProps) {
    * the Done view, are left out.
    */
   const keyActions = (): Array<{ title: string; key: string; run: () => unknown }> => {
+    if (pullView()) return pullKeyActions();
     const current = selected();
     return [
       { title: 'Open session', key: 'enter', run: () => open() },
@@ -576,6 +851,11 @@ export default function SessionBrowser(props: PageProps) {
         key: shortcut(HOST_COMMANDS.delete, 'ctrl+d'),
         run: remove
       },
+      {
+        title: 'Fork session',
+        key: shortcut('super-sessions.fork', FORK_KEY),
+        run: fork
+      },
       ...(memory.view === 'done' && !data.search
         ? [
             {
@@ -595,8 +875,15 @@ export default function SessionBrowser(props: PageProps) {
         key: shortcut('super-sessions.open.ref', 'ctrl+g'),
         run: openRef
       },
+      { title: reloadTitle(), key: RELOAD_KEY, run: reload },
       ...(wide() && workRefs().length > 0
         ? [{ title: 'Focus the preview links', key: 'right', run: focusWork }]
+        : []),
+      ...(workRef() !== undefined
+        ? [
+            { title: 'Copy the selected link', key: 'c', run: copyWork },
+            { title: 'Unlink pull request or issue', key: 'd', run: unlinkWork }
+          ]
         : []),
       {
         title: 'Show command palette',
@@ -611,6 +898,41 @@ export default function SessionBrowser(props: PageProps) {
       { title: 'Close', key: 'esc', run: props.close }
     ];
   };
+  /**
+   * The keys of the Pull requests view, where a row is a pull request: the session keys act on
+   * its newest session, and the actions that edit one session are left out.
+   */
+  const pullKeyActions = (): Array<{ title: string; key: string; run: () => unknown }> => [
+    { title: 'Open newest session', key: 'enter', run: () => open() },
+    { title: 'Peek newest session', key: 'space', run: peek },
+    {
+      title: 'Open pull request in browser',
+      key: shortcut('super-sessions.open.ref', 'ctrl+g'),
+      run: openRef
+    },
+    { title: reloadTitle(), key: RELOAD_KEY, run: reload },
+    ...(wide() && workCount() > 0
+      ? [{ title: 'Focus the sessions in the preview', key: 'right', run: focusWork }]
+      : []),
+    { title: 'Next view', key: 'tab', run: () => nextView(1) },
+    { title: 'Previous view', key: 'shift+tab', run: () => nextView(-1) },
+    {
+      title: scope() === 'project' ? 'Show all projects' : 'Show this project',
+      key: 'ctrl+a',
+      run: () => model.toggleScope().catch(() => {})
+    },
+    {
+      title: 'Show command palette',
+      key: 'ctrl+p',
+      run: () => context.keymap.dispatch(COMMAND_PALETTE)
+    },
+    {
+      title: 'Super Sessions settings',
+      key: 'ctrl+o',
+      run: () => context.keymap.dispatch('super-sessions.settings')
+    },
+    { title: 'Close', key: 'esc', run: props.close }
+  ];
   /**
    * The keys dialog: the browser's actions in the host's select dialog, key on the right like the
    * command palette. Picking one closes the dialog and runs it on the selected session.
@@ -634,6 +956,8 @@ export default function SessionBrowser(props: PageProps) {
     void actions[index]?.run();
   };
 
+  /** Whether the list rows are sessions, which the session-editing keys need. */
+  const sessionRows = () => !pullView();
   // Host dialogs push the "modal" mode above this one, which turns this layer off while a rename
   // prompt or confirm is open and back on when it closes. Created inside the component, so the
   // layer goes away with the browser.
@@ -657,10 +981,25 @@ export default function SessionBrowser(props: PageProps) {
       enabled: () => focus() === 'work',
       run: focusList
     },
+    // Only while the Work links have the arrow keys; otherwise `c` types into the search.
+    {
+      bind: 'c',
+      title: 'Copy the selected link',
+      enabled: () => workRef() !== undefined,
+      run: copyWork
+    },
+    // Same rule as `c`. Not backspace: it edits the search, and a press meant for the query
+    // would unlink the selected ref.
+    ...['d', 'delete'].map((bind) => ({
+      bind,
+      title: 'Unlink pull request or issue',
+      enabled: () => workRef() !== undefined,
+      run: () => void unlinkWork()
+    })),
     { bind: 'pageup', title: 'Page up', run: () => move(-pageRows()) },
     { bind: 'pagedown', title: 'Page down', run: () => move(pageRows()) },
-    { bind: 'home', title: 'First session', run: () => move(-rows().length) },
-    { bind: 'end', title: 'Last session', run: () => move(rows().length) },
+    { bind: 'home', title: 'First session', run: () => move(-rowCount()) },
+    { bind: 'end', title: 'Last session', run: () => move(rowCount()) },
     {
       bind: 'return',
       title: 'Open session',
@@ -719,26 +1058,57 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Toggle all projects',
       run: () => void model.toggleScope().catch(() => {})
     },
-    { bind: 'ctrl+s', title: 'Archive or restore', run: () => void archive() },
-    { bind: DONE_KEY, title: 'Mark Done or not Done', run: () => void toggleDone() },
-    { id: HOST_COMMANDS.rename, title: 'Rename session', run: () => void rename() },
-    { id: HOST_COMMANDS.delete, title: 'Delete session', run: () => void remove() },
+    // A Pull requests view row is a pull request, so the keys that change one session are off.
+    {
+      bind: 'ctrl+s',
+      title: 'Archive or restore',
+      enabled: sessionRows,
+      run: () => void archive()
+    },
+    {
+      bind: DONE_KEY,
+      title: 'Mark Done or not Done',
+      enabled: sessionRows,
+      run: () => void toggleDone()
+    },
+    {
+      id: HOST_COMMANDS.rename,
+      title: 'Rename session',
+      enabled: sessionRows,
+      run: () => void rename()
+    },
+    {
+      id: HOST_COMMANDS.delete,
+      title: 'Delete session',
+      enabled: sessionRows,
+      run: () => void remove()
+    },
     {
       id: HOST_COMMANDS.pin,
       title: 'Pin or unpin session',
+      enabled: sessionRows,
       run: togglePin
     },
     {
       id: 'super-sessions.retitle',
       title: 'Regenerate title',
       bind: 'ctrl+t',
+      enabled: sessionRows,
       run: () => void retitle()
     },
     {
       id: 'super-sessions.link',
       title: 'Link pull request or issue',
       bind: 'ctrl+l',
+      enabled: sessionRows,
       run: () => void link()
+    },
+    {
+      id: 'super-sessions.fork',
+      title: 'Fork session',
+      bind: FORK_KEY,
+      enabled: sessionRows,
+      run: () => void fork()
     },
     {
       id: 'super-sessions.archive.done',
@@ -753,6 +1123,7 @@ export default function SessionBrowser(props: PageProps) {
       bind: 'ctrl+g',
       run: openRef
     },
+    { bind: RELOAD_KEY, title: 'Reload from the forge', run: () => void reload() },
     // Last on purpose: the specific bindings above win on keys shared with app.exit (ctrl+d).
     // Like the host's dialogs, the exit keys clear the search first and close on the next press;
     // quitting OpenCode from a list is never what the user meant.
@@ -788,10 +1159,34 @@ export default function SessionBrowser(props: PageProps) {
     }, 1);
   });
 
-  const hover = (session: SessionInfo) => select(session.id);
-  const leave = () => {};
+  // Hover only tints the row under the pointer: selecting on hover made the preview jump while
+  // the pointer crossed the list on its way to the preview.
+  const [hoveredRow, setHoveredRow] = createSignal<string>();
+  /** The row hover handlers for the row with `id`, a session id or a pull request key. */
+  const pointer = (id: () => string) => ({
+    hover: () => setHoveredRow(id()),
+    // Moving between two lines of a row, or onto the next row, may report the new hover first.
+    leave: () => setHoveredRow((current) => (current === id() ? undefined : current))
+  });
+  // A scroll or a view switch moves other rows under a pointer that reports nothing new.
+  createEffect(
+    on([() => memory.scroll, () => memory.view], () => setHoveredRow(undefined), { defer: true })
+  );
+  let lastClick: { id: string; at: number } | undefined;
+  /**
+   * A left click on a row selects it; a second click on the same row within
+   * {@link DOUBLE_CLICK} ms opens it. OpenTUI reports no double clicks, so the view times them.
+   */
+  const clickRow = (id: string, choose: () => void, activate: () => void) => {
+    const at = Date.now();
+    const double =
+      lastClick !== undefined && lastClick.id === id && at - lastClick.at <= DOUBLE_CLICK;
+    lastClick = double ? undefined : { id, at };
+    if (double) activate();
+    else choose();
+  };
 
-  const markerOf = (session: SessionInfo): Segment | undefined => {
+  const markerOf = (session: SessionInfo): Segment => {
     const slot = slots().get(session.id);
     if (slot !== undefined) return { text: String(slot), fg: theme().hue.accent[200] };
     const permission = context.data.session.permission.list(session.id)?.length ?? 0;
@@ -809,25 +1204,9 @@ export default function SessionBrowser(props: PageProps) {
       const text = cli.animations ? (SPINNER[frame() % SPINNER.length] ?? '') : '⋯';
       return { text, fg: runningColor(theme()) };
     }
-    return isUnread(live(session)) ? { text: '●', fg: theme().text.feedback.info.base } : undefined;
-  };
-
-  // Zebra rows: every second session of a group, all of its lines, on the session view's
-  // background, the others on the panel's. Each group starts over, so a day reads the same
-  // whatever came before it. When a theme gives both the same color, the stripe goes one step
-  // darker than the panel instead.
-  const stripes = createMemo(
-    () =>
-      new Map(
-        model
-          .groups()
-          .flatMap((group) => group.sessions.map((session, index) => [session.id, index]))
-      )
-  );
-  const stripe = () => {
-    const shade = sessionBackground(context.theme);
-    const panel = theme().background.base;
-    return shade.equals(panel) ? theme().decrease(panel) : shade;
+    if (isUnread(live(session))) return { text: '●', fg: theme().text.feedback.info.base };
+    // Every title line starts with a mark, so each session's start shows at a glance.
+    return { text: '-', fg: theme().text.muted };
   };
 
   /** The row's title lines; a delete confirmation takes the first and blanks the rest. */
@@ -847,11 +1226,54 @@ export default function SessionBrowser(props: PageProps) {
     width: listWidth() - 2,
     details: detailsOf(session),
     selected: memory.selected === session.id,
-    // Pinned rows show their slot instead of the spinner, but their title still says it runs.
-    running: model.running(session.id),
     deleting: deleting() === session.id,
-    stripe: (stripes().get(session.id) ?? 0) % 2 === 1 ? stripe() : undefined
+    hovered: hoveredRow() === session.id
   });
+
+  /** Everything a Pull requests view row draws. */
+  const pullModel = (pull: PullRow): PullRowModel => {
+    const count = pull.sessions.length;
+    return {
+      lead: pullLead(pull.ref, pull.state, {
+        options: props.options,
+        theme: theme(),
+        mode: context.themeMode
+      }),
+      title: pull.state?.title ?? '',
+      right: `${count} ${count === 1 ? 'session' : 'sessions'}`,
+      // The row box pads one cell on each side.
+      width: listWidth() - 2,
+      selected: memory.pull === pull.key,
+      deleting: false,
+      hovered: hoveredRow() === pull.key
+    };
+  };
+  /** A Pull requests view line; `enter` and a click open its newest session. */
+  const renderPull = (line: () => Line, initial: PullRow) => {
+    const pull = () => {
+      const current = line();
+      return current.kind === 'pull' ? current.pull : initial;
+    };
+    let last = pullModel(initial);
+    const row = createMemo(() => {
+      try {
+        last = pullModel(pull());
+      } catch (error) {
+        props.fail(error);
+      }
+      return last;
+    });
+    return pullLine(theme, row, {
+      ...pointer(() => pull().key),
+      click: () =>
+        clickRow(
+          pull().key,
+          () => selectPull(pull().key),
+          () => open(pull().sessions[0]?.id)
+        ),
+      copy: () => copyLink(context, refUrl(pull().ref, pull().state))
+    });
+  };
 
   /** One list line. The node is rebuilt only when the line changes kind or session. */
   const renderLine = (line: () => Line) => {
@@ -861,14 +1283,17 @@ export default function SessionBrowser(props: PageProps) {
         ? `h:${value.title}`
         : value.kind === 'blank'
           ? 'b'
-          : value.kind === 'wrap'
-            ? `w${value.index}:${value.session.id}`
-            : `${value.kind}:${value.session.id}`;
+          : value.kind === 'pull'
+            ? `p:${value.pull.key}`
+            : value.kind === 'wrap' || value.kind === 'issue' || value.kind === 'pr'
+              ? `${value.kind}${value.index}:${value.session.id}`
+              : `${value.kind}:${value.session.id}`;
     });
     return createMemo(() => {
       key();
       return untrack(() => {
         const value = line();
+        if (value.kind === 'pull') return renderPull(line, value.pull);
         // A text node, because an empty box in this column collapses to zero height.
         if (value.kind === 'blank') return jsx('text', { height: 1, flexShrink: 0, children: ' ' });
         if (value.kind === 'header') {
@@ -878,8 +1303,12 @@ export default function SessionBrowser(props: PageProps) {
             paddingLeft: 1,
             children: jsx('text', {
               attributes: TextAttributes.BOLD,
-              // The token the host uses for its select dialog's category headers.
+              // The token the host uses for its select dialog's category headers; the Running
+              // group takes the spinner's color instead of every running title, and the search's
+              // message hits are muted below the stronger matches.
               get fg() {
+                if (value.title === RUNNING_GROUP) return runningColor(theme());
+                if (value.title === MESSAGES_GROUP) return theme().text.muted;
                 return theme().hue.accent[200];
               },
               children: value.title
@@ -890,7 +1319,9 @@ export default function SessionBrowser(props: PageProps) {
         // Reads the latest line, but tolerates the moment before the key memo rebuilds this node.
         const session = () => {
           const current = line();
-          return current.kind === 'blank' || current.kind === 'header' ? initial : current.session;
+          return current.kind === 'blank' || current.kind === 'header' || current.kind === 'pull'
+            ? initial
+            : current.session;
         };
         // A failed memo reads as undefined, and the row's render effects would throw on it again
         // after the crash fallback, outside any boundary. So the first model is read here, where
@@ -905,18 +1336,31 @@ export default function SessionBrowser(props: PageProps) {
           return last;
         });
         const events = {
-          hover: () => hover(session()),
-          leave,
-          open: () => open(session().id)
+          ...pointer(() => session().id),
+          click: () =>
+            clickRow(
+              session().id,
+              () => select(session().id),
+              () => open(session().id)
+            )
         };
         if (value.kind === 'title') return titleLine(theme, row, events);
         if (value.kind === 'wrap') return wrapLine(value.index, theme, row, events);
-        return detailsLine(value.kind, theme, row, events);
+        return detailsLine(value, theme, row, events);
       });
     });
   };
 
   const listMessage = createMemo(() => {
+    if (pullView()) {
+      if (data.status === 'loading') return { text: 'Loading sessions…', error: false };
+      if (data.status === 'error') return { text: 'Could not load sessions.', error: true };
+      if (pulls().length > 0) return undefined;
+      return {
+        text: memory.query.trim() ? 'No pull requests found' : EMPTY.pulls,
+        error: false
+      };
+    }
     if (data.search) {
       if (data.search.sessions.length > 0) return undefined;
       if (data.search.status === 'error')
@@ -1071,7 +1515,11 @@ export default function SessionBrowser(props: PageProps) {
       jsx('input', {
         flexGrow: 1,
         value: memory.query,
-        placeholder: 'Search sessions, #numbers, PR and issue titles',
+        get placeholder() {
+          return pullView()
+            ? 'Search pull requests by #number or title'
+            : 'Search sessions, #numbers, PR and issue titles';
+        },
         // The host's search field tokens, so the field reads as the same control.
         get textColor() {
           return theme().text.formfield.focused;
@@ -1199,10 +1647,24 @@ export default function SessionBrowser(props: PageProps) {
   const split = (): number => settings.previewWidth();
   /** Cells of the preview column, its blank first cell included. */
   const previewWidth = () => Math.floor(panelWidth() * split());
+  // Only one pane loads at a time: the session preview stays empty in the Pull requests view.
+  const pullPane = createComponent(PullPreview, {
+    context,
+    options: props.options,
+    pull: () => (wide() && pullView() ? selectedPull() : undefined),
+    refs: (sessionID) => data.refs[sessionID],
+    details: (ref) => model.rpc()['pull.details']({ ref }, model.rpcOptions()),
+    reloaded: reloadedDetails,
+    selectedSession: () => (focus() === 'work' && pullView() ? workIndex() : undefined),
+    open: (sessionID) => open(sessionID),
+    now: model.now,
+    width: () => previewWidth() - 3,
+    theme: () => context.theme
+  });
   const pane = createComponent(Preview, {
     context,
     options: props.options,
-    selected: () => (wide() ? memory.selected : undefined),
+    selected: () => (wide() && !pullView() ? memory.selected : undefined),
     // The column's blank first cell plus the pane's padding on each side.
     width: () => previewWidth() - 3,
     session: (sessionID) => {
@@ -1219,7 +1681,8 @@ export default function SessionBrowser(props: PageProps) {
     },
     // The session view's surface, not the dialog's, so the transcript looks as it does there.
     theme: () => context.theme,
-    onLoaded: (sessionID, page) => props.history.preview(sessionID, page)
+    onLoaded: (sessionID, page) => props.history.preview(sessionID, page),
+    pullDetails: (ref) => model.rpc()['pull.details']({ ref }, model.rpcOptions())
   });
   // A full-height column beside the list, with `esc` on the line of the browser's header.
   const preview = jsx('box', {
@@ -1252,7 +1715,7 @@ export default function SessionBrowser(props: PageProps) {
         flexGrow: 1,
         flexShrink: 1,
         minHeight: 0,
-        children: pane
+        children: [pane, pullPane]
       })
     ]
   });
@@ -1263,7 +1726,21 @@ export default function SessionBrowser(props: PageProps) {
     if (focus() === 'work')
       return [
         ['open', 'enter'],
+        ...(pullView()
+          ? []
+          : ([
+              ['copy', 'c'],
+              ['unlink', 'd']
+            ] as Array<[string, string]>)),
         ['back', 'left']
+      ];
+    // A row is a pull request here: enter and space act on its newest session.
+    if (pullView())
+      return [
+        ['open', 'enter'],
+        ['peek', 'space'],
+        ['open PR', shortcut('super-sessions.open.ref', 'ctrl+g')],
+        ['keys', 'ctrl+/']
       ];
     // The same hints in the same places whatever the state, so the eye learns where each key is;
     // the rest of the actions live in the keys dialog.
@@ -1493,14 +1970,21 @@ export function PeekBanner(props: PeekBannerProps) {
 
 /** A view tab's name, after its icon when `icons` is set. Active has no icon. */
 function tabLabel(view: PageView, icons: boolean): string {
-  const icon = view === 'done' ? ICONS.done : view === 'archived' ? ICONS.archived : undefined;
+  const icon =
+    view === 'done'
+      ? ICONS.done
+      : view === 'archived'
+        ? ICONS.archived
+        : view === 'pulls'
+          ? ICONS.prOpen
+          : undefined;
   return icons && icon ? `${icon} ${VIEW_LABELS[view]}` : VIEW_LABELS[view];
 }
 
 /** Why a search listed the session, for the muted note on its title line. */
 function matchLabel(reason: SearchReason | undefined, refs: Parameters<typeof findRef>[0]): string {
-  if (reason === undefined || reason.match === 'title') return '';
-  if (reason.match === 'body') return 'in messages';
+  // Body hits sit under the "In messages" header, which already says why they matched.
+  if (reason === undefined || reason.match === 'title' || reason.match === 'body') return '';
   const ref = reason.ref === undefined ? undefined : findRef(refs, reason.ref);
   const kind = ref === undefined ? 'ref' : refKind(ref);
   if (reason.match === 'ref-title') return `${kind} title`;
@@ -1529,7 +2013,8 @@ function linkError(error: unknown): string {
   if (type === 'unavailable') {
     const provider =
       typeof data === 'object' && data !== null && 'provider' in data ? data.provider : undefined;
-    const forge = provider === 'gitlab' ? 'GitLab' : provider === 'github' ? 'GitHub' : 'The forge';
+    const forge =
+      provider === 'gitlab' || provider === 'github' ? FORGE_NAMES[provider] : 'The forge';
     return `${forge} is unavailable. Run /super-sessions status for details.`;
   }
   return 'Could not link. Enable the opencode-super-sessions server plugin.';

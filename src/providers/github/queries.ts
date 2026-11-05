@@ -1,6 +1,6 @@
 import type { Ref, RefReview, RefState, RefStatus } from '../../refs/ref.js';
 import { commitSha } from '../include.js';
-import type { ForgeError, RefCandidate, RepoRef } from '../provider.js';
+import type { BranchPull, ForgeError, RefCandidate, RepoRef } from '../provider.js';
 import type { GraphQLError, GraphQLResponse } from './output.js';
 
 /** Most candidates one document may carry. Keeps each request well under GitHub's node limits. */
@@ -18,14 +18,17 @@ export interface SnapshotDocument {
 
 // `rateLimit` is free to query and tells the provider when the quota runs out before a request fails.
 // GitHub has no count of unresolved threads, so threads are read as nodes; 100 is the page
-// maximum. At 25 refs the document measured 3,375 nodes (limit 500,000) and cost 1 point.
+// maximum. At 25 refs the document measured 3,375 nodes (limit 500,000) and cost 1 point. The
+// check counts come from `contexts(first: 0)`, which reads no context node.
 const SNAPSHOT_FRAGMENTS = `
 fragment PullRequestFields on PullRequest {
-  state isDraft title url mergedAt closedAt reviewDecision headRefOid
+  state isDraft title url mergedAt closedAt updatedAt reviewDecision headRefOid mergeable
   closingIssuesReferences(first: 10) { nodes { number repository { nameWithOwner } } }
   latestReviews(first: 20) { nodes { state } }
   reviewThreads(first: 100) { totalCount nodes { isResolved } }
-  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 0) {
+    checkRunCountsByState { state count } statusContextCountsByState { state count }
+  } } } } }
 }
 fragment IssueFields on Issue {
   state stateReason title url closedAt
@@ -155,13 +158,83 @@ function decisionOf(node: Record<string, unknown>): RefReview['decision'] {
   return summary;
 }
 
-/** Reads `commits(last: 1)`'s rollup state; null when the head commit has no checks or statuses. */
-function headRollup(commits: unknown): string | undefined {
+/** Reads `commits(last: 1)`'s rollup; null when the head commit has no checks or statuses. */
+function headRollup(commits: unknown): Record<string, unknown> | undefined {
   const nodes = isRecord(commits) ? commits.nodes : undefined;
   const last = Array.isArray(nodes) ? nodes[0] : undefined;
   const commit = isRecord(last) ? last.commit : undefined;
   const rollup = isRecord(commit) ? commit.statusCheckRollup : undefined;
-  return isRecord(rollup) && typeof rollup.state === 'string' ? rollup.state : undefined;
+  return isRecord(rollup) ? rollup : undefined;
+}
+
+type Outcome = 'passed' | 'skipped' | 'cancelled' | 'pending' | 'failed';
+
+// What github.com's pull request list counts as passed in its `92/95 checks passing` (compared
+// live on 2026-11-04): successful, neutral and skipped check runs, and successful statuses.
+// Skipped runs are passed too, but counted apart for the preview's summary. A stale run, or one
+// that completed without a conclusion, ended without telling anything: it counts with the
+// cancelled ones, which are counted but never listed. States not named here failed.
+const RUN_OUTCOMES: Record<string, Outcome> = {
+  SUCCESS: 'passed',
+  NEUTRAL: 'passed',
+  SKIPPED: 'skipped',
+  CANCELLED: 'cancelled',
+  STALE: 'cancelled',
+  COMPLETED: 'cancelled',
+  IN_PROGRESS: 'pending',
+  PENDING: 'pending',
+  QUEUED: 'pending',
+  WAITING: 'pending'
+};
+const STATUS_OUTCOMES: Record<string, Outcome> = {
+  SUCCESS: 'passed',
+  PENDING: 'pending',
+  EXPECTED: 'pending'
+};
+
+/** Adds a `{ state count }` list into `tally` by outcome; false when it is not such a list. */
+function countStates(
+  value: unknown,
+  outcomes: Record<string, Outcome>,
+  tally: Record<Outcome, number>
+): boolean {
+  if (!Array.isArray(value)) return false;
+  for (const entry of value) {
+    if (!isRecord(entry) || typeof entry.state !== 'string') continue;
+    const count = Number.isSafeInteger(entry.count) ? (entry.count as number) : 0;
+    tally[outcomes[entry.state] ?? 'failed'] += count;
+  }
+  return true;
+}
+
+/**
+ * The rollup's checks by outcome, from per-state counts that read no context. GitHub's own list
+ * leaves out runs a re-run of the same check replaced, which these counts include, so the
+ * numbers can be higher than github.com's.
+ */
+function checkCounts(rollup: Record<string, unknown> | undefined): RefReview | undefined {
+  const contexts = rollup?.contexts;
+  if (!isRecord(contexts)) return undefined;
+  const tally: Record<Outcome, number> = {
+    passed: 0,
+    skipped: 0,
+    cancelled: 0,
+    pending: 0,
+    failed: 0
+  };
+  const runs = countStates(contexts.checkRunCountsByState, RUN_OUTCOMES, tally);
+  const statuses = countStates(contexts.statusContextCountsByState, STATUS_OUTCOMES, tally);
+  if (!runs && !statuses) return undefined;
+  const total = Object.values(tally).reduce((sum, count) => sum + count, 0);
+  if (total === 0) return undefined;
+  return {
+    checksPassed: tally.passed + tally.skipped,
+    checksTotal: total,
+    checksSkipped: tally.skipped,
+    checksCancelled: tally.cancelled,
+    checksPending: tally.pending,
+    checksFailed: tally.failed
+  };
 }
 
 /**
@@ -181,8 +254,23 @@ function reviewOf(node: Record<string, unknown>, status: RefStatus): RefReview |
       (thread) => isRecord(thread) && thread.isResolved === false
     ).length;
   }
-  const checks = CHECKS[headRollup(node.commits) ?? ''];
+  const rollup = headRollup(node.commits);
+  const checks = typeof rollup?.state === 'string' ? CHECKS[rollup.state] : undefined;
   if (checks) review.checks = checks;
+  Object.assign(review, checkCounts(rollup));
+  // The rollup says FAILURE when runs were only cancelled (mastra-ai/mastra#29169 on
+  // 2026-11-04), which drew a red x with no failed check to show.
+  if (
+    review.checks === 'failing' &&
+    review.checksFailed === 0 &&
+    review.checksPending === 0 &&
+    (review.checksCancelled ?? 0) > 0
+  ) {
+    review.checks = 'cancelled';
+  }
+  // GitHub computes mergeability lazily and answers UNKNOWN until it has, which stays undefined.
+  if (node.mergeable === 'CONFLICTING') review.conflicts = true;
+  else if (node.mergeable === 'MERGEABLE') review.conflicts = false;
   return Object.keys(review).length > 0 ? review : undefined;
 }
 
@@ -234,6 +322,7 @@ export function parseSnapshotResponse(
     };
     const mergedAt = epoch(node.mergedAt);
     const closedAt = epoch(node.closedAt);
+    const updatedAt = isPullRequest ? epoch(node.updatedAt) : undefined;
     const review = isPullRequest ? reviewOf(node, status) : undefined;
     const headSha = isPullRequest ? commitSha(node.headRefOid) : undefined;
     const state: RefState = {
@@ -242,6 +331,7 @@ export function parseSnapshotResponse(
       url: node.url,
       ...(mergedAt === undefined ? {} : { mergedAt }),
       ...(closedAt === undefined ? {} : { closedAt }),
+      ...(updatedAt === undefined ? {} : { updatedAt }),
       ...(isPullRequest
         ? { closes: linkedRefs(node.closingIssuesReferences, candidate.host, 'issue') }
         : { closedBy: linkedRefs(node.closedByPullRequestsReferences, candidate.host, 'pr') }),
@@ -274,7 +364,7 @@ export function buildBranchQuery(
   rateLimit { remaining resetAt }
   repository(owner: $owner, name: $name) {
     pullRequests(headRefName: $branch, states: [OPEN, MERGED, CLOSED], first: 20, orderBy: { field: CREATED_AT, direction: DESC }) {
-      nodes { number state headRepository { nameWithOwner } }
+      nodes { number state createdAt headRepository { nameWithOwner } }
     }
   }
 }`;
@@ -286,13 +376,13 @@ export function buildBranchQuery(
  * newest of any state. Only PRs whose head lives in `headRepo` count (the user's fork when the
  * branch was pushed there, else `repo` itself); GitHub also returns PRs from other forks that
  * happen to use the same branch name, and a deleted fork reports no head repository. Returns at
- * most one ref, always numbered in `repo`, where the pull request lives.
+ * most one pull request, always numbered in `repo`, where it lives, with when it was opened.
  */
 export function parseBranchResponse(
   repo: RepoRef,
   response: GraphQLResponse,
   headRepo: RepoRef = repo
-): Ref[] | ForgeError {
+): BranchPull[] | ForgeError {
   const repository = response.data.repository;
   if (!isRecord(repository)) return reasonOf(response.errors[0]);
   // A fork on another host can never be the head of a PR here.
@@ -305,12 +395,17 @@ export function parseBranchResponse(
     }
     const head = node.headRepository.nameWithOwner;
     if (typeof head !== 'string' || head.toLowerCase() !== headRepo.repo.toLowerCase()) return [];
-    return [{ number: node.number, open: node.state === 'OPEN' }];
+    return [{ number: node.number, open: node.state === 'OPEN', createdAt: epoch(node.createdAt) }];
   });
   // Nodes arrive newest first, so the first match in each pass is the newest.
   const chosen = own.find((node) => node.open) ?? own[0];
   if (!chosen) return [];
-  return [
-    { provider: 'github', host: repo.host, repo: repo.repo, kind: 'pr', number: chosen.number }
-  ];
+  const ref: Ref = {
+    provider: 'github',
+    host: repo.host,
+    repo: repo.repo,
+    kind: 'pr',
+    number: chosen.number
+  };
+  return [chosen.createdAt === undefined ? { ref } : { ref, createdAt: chosen.createdAt }];
 }

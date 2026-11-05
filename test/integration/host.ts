@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -10,7 +11,10 @@ import { promisify } from 'node:util';
  * throwaway home, config and data directory instead of the developer's real OpenCode state.
  */
 export async function runHostFixture(name: string, flags: string[] = [], args: string[] = []) {
-  const directory = await mkdtemp(path.join(tmpdir(), 'opencode-super-sessions-integration-'));
+  // Long and resolved, like the paths the host reports (see test/contract/harness.ts).
+  const directory = await mkdtemp(
+    path.join(realpathSync.native(tmpdir()), 'opencode-super-sessions-integration-')
+  );
   try {
     return await promisify(execFile)(
       process.execPath,

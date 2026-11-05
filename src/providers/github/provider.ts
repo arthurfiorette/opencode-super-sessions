@@ -6,6 +6,7 @@ import type {
   RefCandidate
 } from '../provider.js';
 import { createGitHubClient } from './client.js';
+import { buildDetailsQuery, parseDetailsResponse } from './details.js';
 import type { GraphQLResponse } from './output.js';
 import {
   buildBranchQuery,
@@ -127,6 +128,12 @@ export function createGitHubProvider(options: {
         })
       );
       return results;
+    },
+
+    async details(ref) {
+      const document = buildDetailsQuery(ref);
+      const response = await query(ref.host.toLowerCase(), document.query, document.variables);
+      return 'data' in response ? parseDetailsResponse(response) : response;
     }
   };
 }

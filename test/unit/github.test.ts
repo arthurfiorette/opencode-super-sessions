@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RunResult } from '../../src/process.js';
+import { parseDetailsResponse } from '../../src/providers/github/details.js';
 import { parseGraphQLOutput } from '../../src/providers/github/output.js';
 import {
   buildSnapshotQuery,
@@ -37,7 +38,11 @@ test('a batch with a missing number and a missing repository still resolves ever
     candidate('arthurfiorette/does-not-exist-zz', 1),
     candidate('CLI/CLI', 14815),
     // Open draft with nine unresolved review threads and a failing head commit.
-    candidate('cli/cli', 14921, 'pr')
+    candidate('cli/cli', 14921, 'pr'),
+    // Neutral and skipped check runs and three statuses, one of them successful.
+    candidate('mastra-ai/mastra', 29382, 'pr'),
+    // Open, no checks, and `mergeable: CONFLICTING`.
+    candidate('cli/cli', 10423, 'pr')
   ];
   const response = parseGraphQLOutput(asRun(fixture('snapshot.json')), NOW);
   assert.ok('data' in response, 'a non-zero exit with data must not fail the whole document');
@@ -59,20 +64,47 @@ test('a batch with a missing number and a missing repository still resolves ever
       'not-found',
       'not-found',
       'pr 14815 merged',
-      'pr 14921 draft'
+      'pr 14921 draft',
+      'pr 29382 draft',
+      'pr 10423 open'
     ]
   );
 
   const [merged, issue] = entries;
-  const reviewed = entries.at(-1);
+  const reviewed = entries.at(-3);
+  const counted = entries.at(-2);
+  const conflicting = entries.at(-1);
   assert.ok(merged && 'ref' in merged && issue && 'ref' in issue);
-  assert.ok(reviewed && 'ref' in reviewed);
+  assert.ok(reviewed && 'ref' in reviewed && counted && 'ref' in counted);
+  assert.ok(conflicting && 'ref' in conflicting);
+  // 11 successful and 13 skipped runs pass; the failing one does not.
   assert.deepEqual(reviewed.state.review, {
     decision: 'review_required',
     threads: 9,
     unresolved: 9,
-    checks: 'failing'
+    checks: 'failing',
+    checksPassed: 24,
+    checksTotal: 25,
+    checksSkipped: 13,
+    checksCancelled: 0,
+    checksPending: 0,
+    checksFailed: 1,
+    conflicts: false
   });
+  assert.deepEqual(conflicting.state.review, {
+    decision: 'review_required',
+    threads: 0,
+    unresolved: 0,
+    conflicts: true
+  });
+  // 79 successful, 3 neutral and 10 skipped runs plus 1 successful status, of 93 runs and 3
+  // statuses.
+  assert.deepEqual(
+    [counted.state.review?.checksPassed, counted.state.review?.checksTotal],
+    [93, 96]
+  );
+  // The Pull requests view groups by this.
+  assert.equal(reviewed.state.updatedAt, Date.UTC(2026, 10, 3, 21, 29, 16));
   // Merged snapshots are never refetched, so they must not carry a review that would go stale.
   assert.equal(merged.state.review, undefined);
   // Worktree cleanup compares local branches with this commit after squash merges.
@@ -83,16 +115,41 @@ test('a batch with a missing number and a missing repository still resolves ever
   assert.equal(issue.state.closedAt, Date.UTC(2026, 9, 26, 18, 2, 49));
 });
 
+test('a rollup that failed only through cancelled runs reads as cancelled, not failing', () => {
+  const candidates = [candidate('mastra-ai/mastra', 29169, 'pr')];
+  const response = parseGraphQLOutput(asRun(fixture('snapshot-cancelled.json')), NOW);
+  assert.ok('data' in response);
+  const [entry] = parseSnapshotResponse(buildSnapshotQuery(candidates), candidates, response);
+  assert.ok(entry && 'ref' in entry);
+  const { checks, checksPassed, checksTotal, checksSkipped, checksCancelled, checksPending } =
+    entry.state.review ?? {};
+  // GitHub's rollup state is FAILURE; 23 successful, 2 neutral and 18 skipped runs and 3
+  // successful statuses pass, and the 2 cancelled runs are the rest.
+  assert.deepEqual(
+    { checks, checksPassed, checksTotal, checksSkipped, checksCancelled, checksPending },
+    {
+      checks: 'cancelled',
+      checksPassed: 46,
+      checksTotal: 48,
+      checksSkipped: 18,
+      checksCancelled: 2,
+      checksPending: 0
+    }
+  );
+  assert.equal(entry.state.review?.checksFailed, 0);
+});
+
 test('branch lookups pick the repository own pull request and ignore fork PRs with the same head', () => {
-  const cases: Array<[string, number[] | string, string?]> = [
+  // Each found PR carries when it was opened, which decides whether it counts for a session.
+  const cases: Array<[string, Array<[number, string]> | string, string?]> = [
     // Newer fork PRs and deleted forks (null head repository) come first in the response.
-    ['axios/axios@dev', [4225]],
+    ['axios/axios@dev', [[4225, '2021-10-27T16:00:06Z']]],
     // Every `patch-1` PR comes from a fork, including the open one.
     ['cli/cli@patch-1', []],
     // The same response seen from a fork checkout whose branch was pushed to acoulton/cli: the
     // newer closed PRs from other forks are skipped and the PR is numbered in cli/cli.
-    ['cli/cli@patch-1', [14373], 'acoulton/cli'],
-    ['cli/cli@babakks/auth-status-expired-hint', [14815]],
+    ['cli/cli@patch-1', [[14373, '2026-09-07T10:43:26Z']], 'acoulton/cli'],
+    ['cli/cli@babakks/auth-status-expired-hint', [[14815, '2026-10-24T18:51:08Z']]],
     ['arthurfiorette/does-not-exist-zz@x', 'not-found']
   ];
   const outputs = fixture<Record<string, CapturedOutput>>('branches.json');
@@ -108,8 +165,12 @@ test('branch lookups pick the repository own pull request and ignore fork PRs wi
 
     const result = parseBranchResponse(repo, response, headRepo);
     assert.deepEqual(
-      Array.isArray(result) ? result.map((ref) => `${ref.repo}#${ref.number}`) : result.reason,
-      Array.isArray(expected) ? expected.map((number) => `${repoName}#${number}`) : expected,
+      Array.isArray(result)
+        ? result.map((pull) => [`${pull.ref.repo}#${pull.ref.number}`, pull.createdAt])
+        : result.reason,
+      Array.isArray(expected)
+        ? expected.map(([number, opened]) => [`${repoName}#${number}`, Date.parse(opened)])
+        : expected,
       name
     );
   }
@@ -147,4 +208,25 @@ test('whole-document gh failures map to the forge error the status page and back
   for (const [name, result, expected] of cases) {
     assert.deepEqual(parseGraphQLOutput(result, NOW), expected, name);
   }
+});
+
+test('details link a check run to its details page and a status to its target', () => {
+  const response = parseGraphQLOutput(asRun(fixture('details.json')), NOW);
+  assert.ok('data' in response);
+  const details = parseDetailsResponse(response);
+  assert.ok('checks' in details);
+  assert.deepEqual(
+    details.checks.map((check) => [check.name, check.url]),
+    [
+      [
+        'Check Sizes',
+        'https://github.com/prettier/prettier/actions/runs/41842336048/job/126616881046'
+      ],
+      [
+        'Header rules',
+        'https://app.netlify.com/projects/prettier/deploys/6aeb38fdfdef176ec421c296'
+      ],
+      ['deploy/netlify', 'https://deploy-preview-20438--prettier.netlify.app']
+    ]
+  );
 });

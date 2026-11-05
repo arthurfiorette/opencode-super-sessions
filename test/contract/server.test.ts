@@ -13,13 +13,19 @@ import {
   userPrompt
 } from '../../src/host/events.js';
 import {
+  activityTime,
+  forkSession,
   listFilters,
   projectScope,
   regenerateTitle,
+  sessionPrompts,
+  sessionScope,
   setArchived
 } from '../../src/host/session-api.js';
 import { shellCall } from '../../src/host/tool-hook.js';
 import { projectWorktrees, removeWorktree } from '../../src/host/worktree.js';
+import { markScanned } from '../../src/refs/store.js';
+import { createWriteQueue } from '../../src/server/queue.js';
 import {
   ANSWER,
   createHost,
@@ -249,6 +255,58 @@ test('server plugin session.update replaces metadata and session.get returns it 
   await event('session.metadata.updated', (item) => item.data.sessionID === session.id);
 });
 
+// The list's order, day groups and ages, and the cleanup inactivity rule, read `activityTime`.
+// A metadata write moves `time.updated`; it must not read as the user working in the session.
+test('a plugin metadata write leaves activityTime alone, and a prompt moves it', {
+  timeout: 60_000
+}, async () => {
+  // The run starts a Location, whose setup sets the probe.
+  const ranID = await agentRun('activity-ran', 'some work');
+  assert.ok(probe);
+  const context = probe;
+  const queue = createWriteQueue();
+  const read = (sessionID: string) => context.session.get({ sessionID });
+  /** Writes the history scan marker through the plugin's queue and returns the session before and after. */
+  const scan = async (sessionID: string) => {
+    const before = await read(sessionID);
+    await queue.update(context.session, sessionID, (refs) =>
+      markScanned(refs, Date.now(), undefined)
+    );
+    return { before, after: await read(sessionID) };
+  };
+  /** Prompts and waits until the run moved the activity time past `since`. */
+  const prompt = async (sessionID: string, since: number) => {
+    await host.sessions.prompt({ sessionID, text: 'more work' });
+    await until(
+      async () => activityTime(await read(sessionID)),
+      (at) => at > since
+    );
+  };
+
+  // A session that ran: busy and idle record activity.
+  const ran = await scan(ranID);
+  assert.ok(
+    ran.after.time.updated > ran.before.time.updated,
+    'the write did not move time.updated'
+  );
+  assert.equal(activityTime(ran.after), activityTime(ran.before));
+  await prompt(ranID, activityTime(ran.after));
+
+  // A session without run times, like one that last ran on a host before them: the queue stamps
+  // the activity time the write is about to overwrite.
+  const fresh = await host.sessions.create({
+    location: { directory: directory('activity-fresh') }
+  });
+  const stamped = await scan(fresh.id);
+  assert.equal(stamped.before.time.idle, undefined);
+  assert.ok(
+    stamped.after.time.updated > stamped.before.time.updated,
+    'the write did not move time.updated'
+  );
+  assert.equal(activityTime(stamped.after), stamped.before.time.updated);
+  await prompt(fresh.id, activityTime(stamped.after));
+});
+
 test('deleting a session publishes session.deleted with its id', async () => {
   const session = await host.sessions.create({ location: { directory: directory('deleted') } });
   await host.sessions.remove({ sessionID: session.id });
@@ -289,6 +347,47 @@ test('the HTTP client regenerates a title from an empty one and publishes rename
   await until(
     async () => (await host.sessions.get({ sessionID })).title,
     (title) => title === GENERATED_TITLE
+  );
+});
+
+test('a fork before a prompt leaves it and later messages out, and a full fork copies them all', {
+  timeout: 60_000
+}, async () => {
+  const sessionID = await agentRun('fork', 'first prompt');
+  await host.sessions.prompt({ sessionID, text: 'second\nprompt' });
+  await until(
+    () => messages(sessionID),
+    (all) => all.filter((message) => message.type === 'idle').length === 2
+  );
+  const prompts = await sessionPrompts(host, sessionID);
+  assert.deepEqual(
+    prompts.map((prompt) => prompt.text),
+    ['second\nprompt', 'first prompt']
+  );
+  const userTexts = async (id: string) =>
+    (await messages(id)).flatMap((message) => (message.type === 'user' ? [message.text] : []));
+
+  const before = await forkSession(host, sessionID, prompts[0]?.id);
+  assert.notEqual(before.id, sessionID);
+  // The browser reloads its lists on this event; a fork publishes no `session.created`.
+  await event('session.forked', (item) => item.data.sessionID === before.id);
+  assert.deepEqual(await userTexts(before.id), ['first prompt']);
+  assert.ok(
+    (await messages(before.id)).some((message) => message.type === 'assistant'),
+    'the answer to the first prompt was not copied'
+  );
+  const full = await forkSession(host, sessionID);
+  assert.deepEqual(await userTexts(full.id), ['first prompt', 'second\nprompt']);
+
+  // sessionPrompts asks for `type` again on every page, since the cursor does not carry it.
+  const page = { sessionID, type: 'user', limit: 1 } as const;
+  const first = await host.message.list({ ...page, order: 'desc' });
+  const cursor = first.cursor.next;
+  assert.ok(cursor);
+  const second = await host.message.list({ ...page, cursor });
+  assert.deepEqual(
+    [...first.data, ...second.data].map((message: SessionMessageInfo) => message.id),
+    prompts.map((prompt) => prompt.id)
   );
 });
 
@@ -347,6 +446,29 @@ test('session.list scopes by project subpath, directory, title, root sessions an
   );
 });
 
+// After a restart, the browser can open over a session in a worktree the cleanup removed: its
+// directory no longer resolves, so "this project" comes from the session itself.
+test('a session scopes the list like its directory: root, subdirectory, worktree, no git', async () => {
+  const repo = directory('scope-repo');
+  git(repo, 'init', '-q');
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'scope init');
+  const { project } = await host.location.get({ location: { directory: repo } });
+  const worktree = await host.worktree.create({ projectID: project.id, name: 'scope' });
+  for (const target of [
+    repo,
+    directory('scope-repo', 'pkg'),
+    worktree.directory,
+    directory('scope-loose')
+  ]) {
+    const session = await host.sessions.create({ location: { directory: target } });
+    assert.deepEqual(
+      sessionScope(session),
+      projectScope(await host.location.get({ location: { directory: target } })),
+      target
+    );
+  }
+});
+
 test('worktree list marks the main checkout, and remove without force keeps a dirty worktree', async () => {
   assert.ok(probe);
   const repo = directory('cleanup-repo');
@@ -355,17 +477,18 @@ test('worktree list marks the main checkout, and remove without force keeps a di
   git(repo, 'commit', '-q', '--allow-empty', '-m', 'cleanup init');
   const { project } = await host.location.get({ location: { directory: repo } });
   const created = await host.worktree.create({ projectID: project.id, name: 'contract' });
-  // Temp paths reach the host through symlinks on macOS (/var is /private/var).
+  // Compared resolved, the way cleanup's assignSessions compares them: a path can reach the host
+  // through a symlink (macOS /var) or an 8.3 short name (Windows).
   const listed = async () =>
     (await projectWorktrees(probe as Plugin.Context, project.id)).map((entry) => ({
-      directory: realpathSync(entry.directory),
+      directory: realpathSync.native(entry.directory),
       main: entry.main
     }));
-  const worktree = realpathSync(created.directory);
+  const worktree = realpathSync.native(created.directory);
   assert.deepEqual(
     (await listed()).sort((a, b) => Number(b.main) - Number(a.main)),
     [
-      { directory: realpathSync(repo), main: true },
+      { directory: realpathSync.native(repo), main: true },
       { directory: worktree, main: false }
     ]
   );
@@ -378,7 +501,7 @@ test('worktree list marks the main checkout, and remove without force keeps a di
   await removeWorktree(probe, project.id, created.directory);
   assert.deepEqual(
     (await listed()).map((entry) => entry.directory),
-    [realpathSync(repo)]
+    [realpathSync.native(repo)]
   );
   assert.equal(existsSync(worktree), false);
 });

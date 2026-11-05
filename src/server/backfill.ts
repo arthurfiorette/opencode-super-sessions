@@ -31,7 +31,11 @@ const BATCH_SIZE = 25;
  * recently updated first so recent work becomes searchable soonest, and indexes one session at a
  * time. Each finished session records its `time.updated` as the cursor; a restart skips sessions
  * that have not changed since, and anything newer than the cursor is covered by live indexing or
- * the next run.
+ * the next run. The cursor stays on `time.updated`, not `activityTime`: the host moves it on the
+ * writes that add indexed text (an enqueued prompt, every step's start and end), while
+ * `activityTime` covers them only because 2.2.5 delivers prompts and writes text inside a run. A
+ * plugin metadata write moves it too, which costs one extra `session.context` read of that
+ * session on the next start; a cursor that skipped a changed session would lose its hits for good.
  *
  * Messages come from `session.context`, the only message read a server plugin has. It returns
  * messages after the last compaction, so text before a session's latest compaction is only

@@ -57,13 +57,22 @@ export const sessionRefsSchema = z.strictObject({
   doneAt: z.number().int().nonnegative().optional(),
   // Set when the history scan finished reading the session's stored messages (`history.scan`),
   // so it runs once per session. `lastMessageID` is the newest message it read; live detection
-  // covers the ones after it.
+  // covers the ones after it. `pushes` says the scan also looked for `git push`; a marker
+  // without it is from a version that did not, and earns one more pass for pushes only.
   scanned: z
     .strictObject({
       scannedAt: z.number().int().nonnegative(),
-      lastMessageID: z.string().optional()
+      lastMessageID: z.string().optional(),
+      pushes: z.literal(true).optional()
     })
-    .optional()
+    .optional(),
+  // Branches the session pushed with `git push`, oldest first. A branch pull request opened
+  // before the session counts for it only when its head is one of these.
+  pushed: z.array(z.string().min(1)).optional(),
+  // A session's activity time before the plugin first wrote it, for sessions without run times,
+  // whose only activity record is `time.updated` and which that write moves. The write queue
+  // stamps it; `activityTime` in src/host/session-api.ts reads it.
+  activeAt: z.number().int().nonnegative().optional()
 });
 
 /**
@@ -85,13 +94,30 @@ export const refStatusSchema = z.enum([
  *
  * - `decision`: the forge's review verdict; absent when nobody reviewed and none is required.
  * - `unresolved` / `threads`: resolvable review threads still open, and all of them.
- * - `checks`: the head commit's combined CI result; absent when nothing ran.
+ * - `checks`: the head commit's combined CI result; absent when nothing ran. `cancelled` when
+ *   the only checks that did not pass were cancelled: nothing failed and nothing still runs.
+ * - `checksPassed` / `checksTotal`: how many checks passed out of all of them, drawn as `91/93`
+ *   unless every check passed.
+ *   GitHub counts successful, neutral and skipped check runs and successful statuses as passed;
+ *   GitLab counts successful and skipped jobs of the head pipeline, without retried or manual ones.
+ * - `checksSkipped` / `checksCancelled` / `checksPending` / `checksFailed`: the rest of the
+ *   breakdown (see `tallyOf` in `src/page/checks.ts`); skipped checks are part of
+ *   `checksPassed`. GitHub only, where the counts cost nothing; GitLab's come from the details.
+ * - `conflicts`: whether the branch conflicts with its base; absent while the forge has not
+ *   computed it, which the snapshot cache then fills with the last known answer.
  */
 export const refReviewSchema = z.strictObject({
   decision: z.enum(['approved', 'changes_requested', 'review_required']).optional(),
   unresolved: z.number().int().nonnegative().optional(),
   threads: z.number().int().nonnegative().optional(),
-  checks: z.enum(['passing', 'failing', 'pending']).optional()
+  checks: z.enum(['passing', 'failing', 'pending', 'cancelled']).optional(),
+  checksPassed: z.number().int().nonnegative().optional(),
+  checksTotal: z.number().int().nonnegative().optional(),
+  checksSkipped: z.number().int().nonnegative().optional(),
+  checksCancelled: z.number().int().nonnegative().optional(),
+  checksPending: z.number().int().nonnegative().optional(),
+  checksFailed: z.number().int().nonnegative().optional(),
+  conflicts: z.boolean().optional()
 });
 
 export const refStateSchema = z.strictObject({
@@ -100,6 +126,8 @@ export const refStateSchema = z.strictObject({
   url: z.string(),
   mergedAt: z.number().int().optional(),
   closedAt: z.number().int().optional(),
+  // Pull requests only: the last change on the forge, which the Pull requests view groups by.
+  updatedAt: z.number().int().optional(),
   // Pull requests: issues this PR closes when merged.
   closes: z.array(refSchema).optional(),
   // Issues: pull requests that reference this issue as closed by them.
@@ -113,6 +141,39 @@ export const refStateSchema = z.strictObject({
     .optional()
 });
 
+/**
+ * One CI check of a pull request's head commit: a GitHub check run or status, or a GitLab job.
+ * `url` opens its page.
+ */
+export const pullCheckSchema = z.strictObject({
+  name: z.string(),
+  status: z.enum([
+    'failure',
+    'cancelled',
+    'action_required',
+    'pending',
+    'success',
+    'neutral',
+    'skipped'
+  ]),
+  url: z.string().optional()
+});
+
+/**
+ * What the Pull requests view's preview shows beyond the snapshot, fetched for the selected pull
+ * request only. `checksTruncated` says more checks ran than the first page holds.
+ */
+export const pullDetailsSchema = z.strictObject({
+  author: z.string().optional(),
+  head: z.string().optional(),
+  base: z.string().optional(),
+  body: z.string(),
+  checks: z.array(pullCheckSchema),
+  checksTruncated: z.boolean().optional()
+});
+
+export type PullCheck = z.output<typeof pullCheckSchema>;
+export type PullDetails = z.output<typeof pullDetailsSchema>;
 export type ProviderId = z.output<typeof providerIdSchema>;
 export type RefKind = z.output<typeof refKindSchema>;
 export type Ref = z.output<typeof refSchema>;
@@ -146,6 +207,14 @@ export function refKey(ref: Ref): string {
  */
 export function refNumber(ref: Pick<Ref, 'provider' | 'number'> & { kind?: RefKind }): string {
   return `${ref.provider === 'gitlab' && ref.kind === 'pr' ? '!' : '#'}${ref.number}`;
+}
+
+/**
+ * Whether the history scan is done with a session: it read every stored message, pushes
+ * included. The TUI skips such sessions without a request, and the server answers `skipped`.
+ */
+export function historyScanned(refs: SessionRefs): boolean {
+  return refs.scanned?.pushes === true;
 }
 
 /** Empty metadata value for sessions that have no links yet. */

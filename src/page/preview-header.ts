@@ -7,10 +7,10 @@ import { jsx } from '@opentui/solid/jsx-runtime';
 import { createComponent, createMemo, For, type JSX, Show, untrack } from 'solid-js';
 import type { Options } from '../config.js';
 import { type createMarquee, marqueeText } from '../marquee.js';
-import { type Ref, refKey } from '../refs/ref.js';
-import { mainPullRequest, trackedRefs } from '../refs/summary.js';
+import { type PullDetails, type Ref, refKey } from '../refs/ref.js';
+import { pullRequests, trackedRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
-import { reviewSummary, workRow, workStatusLine } from '../work-row.js';
+import { createFailedChecks, hasWorkStatus, workRow, workStatus } from '../work-row.js';
 import { fitText } from './row.js';
 
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -40,6 +40,8 @@ export interface HeaderProps {
   selectedRef(): string | undefined;
   width(): number;
   marquee: ReturnType<typeof createMarquee>;
+  /** A pull request's details, for the failed checks under it. Without it none are listed. */
+  pullDetails?(ref: Ref): Promise<PullDetails>;
 }
 
 /**
@@ -237,6 +239,16 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
     const view = props.refs();
     return view === undefined ? [] : workLines(view);
   });
+  const failed = createFailedChecks({
+    refs: () => {
+      const view = props.refs();
+      return work().flatMap((item) =>
+        item.kind === 'status' ? [{ ref: item.ref, state: view?.states[refKey(item.ref)] }] : []
+      );
+    },
+    load: (ref) =>
+      props.pullDetails?.(ref) ?? Promise.reject(new Error('No details for this preview.'))
+  });
   const workSection = section('Work', () => work().length > 0, [
     createComponent(For, {
       get each() {
@@ -246,7 +258,14 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
         if (item.kind === 'label') return line(() => item.text);
         const state = () => props.refs()?.states[refKey(item.ref)];
         if (item.kind === 'status') {
-          return workStatusLine({ theme, state, width: () => props.width() });
+          return workStatus({
+            context,
+            theme,
+            ref: () => item.ref,
+            state,
+            details: () => failed(refKey(item.ref)),
+            width: () => props.width()
+          });
         }
         return workRow({
           context,
@@ -256,8 +275,7 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
           state,
           width: () => props.width(),
           marquee: props.marquee,
-          selected: () => props.selectedRef() === refKey(item.ref),
-          marker: () => (item.branch ? 'branch' : undefined)
+          selected: () => props.selectedRef() === refKey(item.ref)
         });
       }
     })
@@ -291,41 +309,35 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
 }
 
 /**
- * One line of the preview's Work section: a ref row (`branch` marks the session's branch PR),
- * the status line under a pull request, or the label over mentioned refs.
+ * One line of the preview's Work section: a ref row, the status lines under an open pull request
+ * (see `workStatus`), or the label over mentioned refs.
  */
 export type WorkLine =
   | { kind: 'label'; text: string }
-  | { kind: 'ref'; ref: Ref; branch?: boolean }
+  | { kind: 'ref'; ref: Ref }
   | { kind: 'status'; ref: Ref };
 
 /**
- * Tracked refs, the main PR first, each PR followed by its status line when it has one and the
- * issues it closes right under it, in the same columns; then mentioned refs under a label. Each
- * ref appears once, so its key names its row.
+ * Tracked refs: pull requests in the rows' order (see `pullRequests`), so an open one is always
+ * above the merged and closed ones, each followed by its status line when it has one and the
+ * issues it closes right under it, in the same columns; then the other tracked issues, then
+ * mentioned refs under a label. Each ref appears once, so its key names its row.
  */
 export function workLines(view: SessionRefView): WorkLine[] {
-  const main = mainPullRequest(view);
-  const mainKey = main.pr === undefined ? undefined : refKey(main.pr);
   const tracked = trackedRefs(view);
   const trackedKeys = new Set(tracked.map(refKey));
   const nestedKeys = new Set<string>();
+  // The PR's snapshot still lists an issue the user unlinked; its stored link is what is gone.
+  const linkedKeys = new Set(view.links.map((link) => refKey(link.ref)));
   const lines: WorkLine[] = [];
-  const prs = tracked.filter((ref) => ref.kind === 'pr');
-  const ordered = [
-    ...prs.filter((ref) => refKey(ref) === mainKey),
-    ...prs.filter((ref) => refKey(ref) !== mainKey)
-  ];
-  for (const pr of ordered) {
+  for (const pr of pullRequests(view)) {
     const key = refKey(pr);
-    lines.push(
-      key === mainKey && main.branch
-        ? { kind: 'ref', ref: pr, branch: true }
-        : { kind: 'ref', ref: pr }
-    );
-    if (reviewSummary(view.states[key]) !== undefined) lines.push({ kind: 'status', ref: pr });
+    lines.push({ kind: 'ref', ref: pr });
+    if (hasWorkStatus(view.states[key])) lines.push({ kind: 'status', ref: pr });
     const closes = new Map<string, Ref>();
-    for (const ref of view.states[key]?.closes ?? []) closes.set(refKey(ref), ref);
+    for (const ref of view.states[key]?.closes ?? []) {
+      if (linkedKeys.has(refKey(ref))) closes.set(refKey(ref), ref);
+    }
     for (const link of view.links) {
       if (link.source === 'closes' && link.via === key) closes.set(refKey(link.ref), link.ref);
     }

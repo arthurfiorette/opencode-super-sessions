@@ -3,6 +3,8 @@ import { assistantText, shellRun, userPrompt } from '../host/events.js';
 import { shellCall } from '../host/tool-hook.js';
 import type { RepoRef } from '../providers/provider.js';
 import { detectCreated, detectInPrompt, detectInText, isCloseCommand } from '../refs/detect.js';
+import { pushedBranches, runsPush } from '../refs/push.js';
+import { addPushed } from '../refs/store.js';
 import type { EventContext, HandledEvent } from './events.js';
 import { linkDetected, resolveRepo } from './links.js';
 import type { SessionAccess } from './queue.js';
@@ -26,9 +28,9 @@ export async function registerShellHook(runtime: Runtime, context: Plugin.Contex
 }
 
 /**
- * Links refs a shell command created and refreshes refs it may have merged or closed. Called by
- * the agent's shell tool hook and by `session.shell.ended` for `!` commands, which never reach
- * the hook, so each run reaches this once.
+ * Links refs a shell command created, records branches it pushed and refreshes refs it may have
+ * merged or closed. Called by the agent's shell tool hook and by `session.shell.ended` for `!`
+ * commands, which never reach the hook, so each run reaches this once.
  */
 async function onShell(
   runtime: Runtime,
@@ -38,10 +40,38 @@ async function onShell(
   output: string
 ): Promise<void> {
   const created = detectCreated(runtime.definitions, command, output);
-  await linkDetected(runtime, session, sessionID, created, 'created');
+  await Promise.all([
+    linkDetected(runtime, session, sessionID, created, 'created'),
+    // A failed push record must not stop the refresh below.
+    recordPush(runtime, session, sessionID, command, output).catch((error: unknown) =>
+      warn(`Recording a push in ${sessionID} failed`, error)
+    )
+  ]);
   if (isCloseCommand(runtime.definitions, command)) {
     refreshInBackground(runtime, session, [sessionID], true);
   }
+}
+
+/**
+ * Records the branches a `git push` wrote in the session's metadata, so the branch pull request
+ * counts for the session even when another session opened it. Without git's report in the
+ * output, the branch checked out in the session's directory stands in for the push's target.
+ */
+async function recordPush(
+  runtime: Runtime,
+  session: SessionAccess,
+  sessionID: string,
+  command: string,
+  output: string
+): Promise<void> {
+  if (!runsPush(command)) return;
+  const info = await session.get({ sessionID });
+  // Read again rather than from the 10 second cache: the same script may have switched branches
+  // right before it pushed.
+  const current = (await resolveRepo(runtime, info.location.directory, { force: true })).branch;
+  const branches = pushedBranches(command, output, current);
+  if (branches.length === 0) return;
+  await runtime.writes.update(session, sessionID, (refs) => addPushed(refs, branches));
 }
 
 /**

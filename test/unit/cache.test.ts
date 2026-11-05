@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { candidateKey, createSnapshotCache, type Snapshot } from '../../src/cache.js';
-import type { ForgeProvider, RefCandidate } from '../../src/providers/provider.js';
-import type { RefStatus } from '../../src/refs/ref.js';
+import {
+  candidateKey,
+  createDetailsCache,
+  createSnapshotCache,
+  type Snapshot
+} from '../../src/cache.js';
+import type { ForgeError, ForgeProvider, RefCandidate } from '../../src/providers/provider.js';
+import type { PullDetails, RefStatus } from '../../src/refs/ref.js';
 
 const MINUTE = 60_000;
 
@@ -26,6 +31,7 @@ function fakeProvider(answer: (item: RefCandidate) => Snapshot | Promise<Snapsho
     definition: {} as ForgeProvider['definition'],
     available: async () => 'ok' as const,
     branchPullRequests: async () => [],
+    details: async () => ({ reason: 'failed' as const }),
     snapshot: async (items: RefCandidate[]) => {
       calls.push(items.map((item) => item.number));
       return Promise.all(items.map(answer));
@@ -105,4 +111,64 @@ test('a rate limit keeps the last state and blocks even forced refetches until r
   clock = 10 * MINUTE;
   await cache.ensure(provider, [item], { force: true });
   assert.equal(calls.length, 3);
+});
+
+test('an unknown mergeability keeps the last known conflicts until the pull request changes', async () => {
+  let clock = 0;
+  const cache = createSnapshotCache({ now: () => clock });
+  const item = candidate(8, 'pr');
+  const key = candidateKey(item);
+  let answer: { conflicts?: boolean; updatedAt: number } = { conflicts: true, updatedAt: 1 };
+  const { provider } = fakeProvider((value) => {
+    const base = resolved(value, 'open');
+    if (!('state' in base)) return base;
+    const { conflicts, updatedAt } = answer;
+    return {
+      ...base,
+      state: {
+        ...base.state,
+        updatedAt,
+        review: { checks: 'passing', ...(conflicts === undefined ? {} : { conflicts }) }
+      }
+    };
+  });
+  /** Fetches the ref again and returns its review. */
+  const review = async () => {
+    clock += 3 * MINUTE;
+    const value = (await cache.ensure(provider, [item])).get(key);
+    return value && 'state' in value ? value.state.review : undefined;
+  };
+
+  await review();
+  // GitHub answers UNKNOWN while it recomputes after the base branch moved.
+  answer = { updatedAt: 1 };
+  assert.deepEqual(await review(), { checks: 'passing', conflicts: true });
+  // A push to the pull request bumps updatedAt and may have resolved the conflict.
+  answer = { updatedAt: 2 };
+  assert.deepEqual(await review(), { checks: 'passing' });
+});
+
+test('forced details loads skip fresh entries but wait out a rate limit', async () => {
+  let clock = 0;
+  const cache = createDetailsCache({ now: () => clock });
+  let loads = 0;
+  let answer: PullDetails | ForgeError = { body: '', checks: [] };
+  const load = async () => {
+    loads++;
+    return answer;
+  };
+
+  await cache.get('k', 'open', load);
+  await cache.get('k', 'open', load);
+  await cache.get('k', 'open', load, { force: true });
+  assert.equal(loads, 2);
+
+  answer = { reason: 'rate-limited', retryAt: 10 * MINUTE };
+  await cache.get('k', 'open', load, { force: true });
+  clock = 5 * MINUTE;
+  await cache.get('k', 'open', load, { force: true });
+  assert.equal(loads, 3);
+  clock = 10 * MINUTE;
+  await cache.get('k', 'open', load, { force: true });
+  assert.equal(loads, 4);
 });

@@ -1,14 +1,15 @@
 import type { SessionInfo } from '@opencode/client';
-import { refKey } from '../refs/ref.js';
+import { activityTime } from '../host/session-api.js';
+import { type ProviderId, type Ref, type RefState, refKey } from '../refs/ref.js';
 import { rankSessions } from '../refs/search.js';
-import { doneAt, isDone } from '../refs/summary.js';
+import { doneAt, isDone, trackedRefs } from '../refs/summary.js';
 import type { SearchHit, SearchMatch, SessionRefView } from '../rpc.js';
 
-export type PageView = 'active' | 'done' | 'archived';
+export type PageView = 'active' | 'done' | 'archived' | 'pulls';
 export type PageScope = 'project' | 'all';
 
 /** Views in `tab` order. */
-export const VIEWS: readonly PageView[] = ['active', 'done', 'archived'];
+export const VIEWS: readonly PageView[] = ['active', 'done', 'archived', 'pulls'];
 
 /**
  * Page state kept in `storage.memory`, so returning with `<leader>l` after a peek restores it.
@@ -17,9 +18,122 @@ export const VIEWS: readonly PageView[] = ['active', 'done', 'archived'];
 export interface PageMemory {
   query: string;
   view: PageView;
+  /**
+   * The selected session. In the Pull requests view it is the selected pull request's newest
+   * session, so peeking and the way back work as in the other views.
+   */
   selected: string | undefined;
+  /** `refKey` of the selected pull request in the Pull requests view. */
+  pull?: string | undefined;
   /** First visible list line. */
   scroll: number;
+}
+
+/** A pull request in the Pull requests view and the sessions that track it, newest first. */
+export interface PullRow {
+  key: string;
+  ref: Ref;
+  state: RefState | undefined;
+  sessions: SessionInfo[];
+}
+
+/** A day of the Pull requests view. */
+export interface PullGroup {
+  title: string;
+  pulls: PullRow[];
+}
+
+/**
+ * One row per pull request the given top-level sessions track (stored links and branch pull
+ * requests, mentions left out), with its sessions newest first.
+ */
+export function pullRows(
+  sessions: readonly SessionInfo[],
+  refs: Readonly<Record<string, SessionRefView>>
+): PullRow[] {
+  const rows = new Map<string, PullRow>();
+  for (const session of sessions) {
+    const view = refs[session.id];
+    if (session.parentID !== undefined || view === undefined) continue;
+    for (const ref of trackedRefs(view)) {
+      if (ref.kind !== 'pr') continue;
+      const key = refKey(ref);
+      const row = rows.get(key) ?? { key, ref, state: view.states[key], sessions: [] };
+      row.state ??= view.states[key];
+      row.sessions.push(session);
+      rows.set(key, row);
+    }
+  }
+  for (const row of rows.values()) row.sessions.sort(byActivity);
+  return [...rows.values()];
+}
+
+/**
+ * When a pull request last changed: its `updatedAt` on the forge, else its merge or close, else
+ * the latest activity of its sessions (states cached before `updatedAt` existed have none).
+ */
+export function pullUpdated(row: PullRow): number {
+  const newest = row.sessions[0];
+  return (
+    row.state?.updatedAt ??
+    row.state?.mergedAt ??
+    row.state?.closedAt ??
+    (newest === undefined ? 0 : activityTime(newest))
+  );
+}
+
+/** Orders sessions by their latest activity, newest first. */
+function byActivity(a: SessionInfo, b: SessionInfo): number {
+  return activityTime(b) - activityTime(a);
+}
+
+/**
+ * Pull requests whose title holds the query, or whose number it names (`12`, `#12`, `!12`). A
+ * number matches only whole, like the session search.
+ */
+export function filterPulls(rows: readonly PullRow[], query: string): PullRow[] {
+  const text = query.trim().toLowerCase();
+  if (text === '') return [...rows];
+  const number = /^[#!]?(\d+)$/.exec(text)?.[1];
+  return rows.filter(
+    (row) =>
+      (number !== undefined && String(row.ref.number) === number) ||
+      (row.state?.title.toLowerCase().includes(text) ?? false)
+  );
+}
+
+/**
+ * Groups pull requests by the day they last changed on the forge, newest day first. Within a
+ * day, open and draft ones come first, then merged and closed ones, newest change first.
+ */
+export function groupPulls(rows: readonly PullRow[], now: number): PullGroup[] {
+  const open = (row: PullRow) =>
+    row.state?.status === 'merged' || row.state?.status === 'closed' ? 1 : 0;
+  const sorted = [...rows].sort(
+    (a, b) =>
+      startOfDay(pullUpdated(b)) - startOfDay(pullUpdated(a)) ||
+      open(a) - open(b) ||
+      pullUpdated(b) - pullUpdated(a)
+  );
+  const today = new Date(now).toDateString();
+  const groups: PullGroup[] = [];
+  for (const row of sorted) {
+    const date = new Date(pullUpdated(row)).toDateString();
+    const title = date === today ? 'Today' : date;
+    const last = groups.at(-1);
+    if (last?.title === title) last.pulls.push(row);
+    else groups.push({ title, pulls: [row] });
+  }
+  return groups;
+}
+
+/** Lays the Pull requests view out like the session list: one line per pull request. */
+export function layoutPulls(groups: readonly PullGroup[]): Line[] {
+  return groups.flatMap((group, index): Line[] => [
+    ...(index > 0 ? [{ kind: 'blank' as const }] : []),
+    { kind: 'header' as const, title: group.title },
+    ...group.pulls.map((pull) => ({ kind: 'pull' as const, pull }))
+  ]);
 }
 
 /** A titled run of sessions. */
@@ -28,16 +142,22 @@ export interface Group {
   sessions: SessionInfo[];
 }
 
-/** Lines a session row can draw under its title, in this order. */
-export type DetailKind = 'pr' | 'status' | 'issues';
+/**
+ * A line a session row can draw under its title: the `index`th PR line, then either the joined
+ * issues line or the `index`th of the one-per-issue lines.
+ */
+export type DetailLine = { kind: 'issues' } | { kind: 'pr' | 'issue'; index: number };
 
 /** One terminal line of the session list. A session takes a `title` line and the others it needs. */
 export type Line =
   | { kind: 'blank' }
   | { kind: 'header'; title: string }
-  | { kind: 'title' | DetailKind; session: SessionInfo }
+  | { kind: 'title'; session: SessionInfo }
+  | (DetailLine & { session: SessionInfo })
   /** The `index`th line (1 and up) of a title that wraps. */
-  | { kind: 'wrap'; session: SessionInfo; index: number };
+  | { kind: 'wrap'; session: SessionInfo; index: number }
+  /** A row of the Pull requests view. */
+  | { kind: 'pull'; pull: PullRow };
 
 /** What the Done rule needs beyond refs. Fetched only for sessions that could be Done. */
 export interface DoneExtra {
@@ -94,28 +214,32 @@ export function sessionDone(
   });
 }
 
+/** Title of the group of running sessions, whose header takes the spinner's color. */
+export const RUNNING_GROUP = 'Running';
+
 /**
  * Groups sessions for a view.
  *
- * - Active: Pinned in pin order, then Running, then one group per day of `time.updated`. Done
- *   sessions are left out, except pinned ones: a pin is an explicit choice to keep it in sight.
+ * - Active: Pinned in pin order, then Running, then one group per day of the latest activity
+ *   (`activityTime`). Done sessions are left out, except pinned ones: a pin is an explicit choice
+ *   to keep it in sight.
  * - Done: one group per day of the last merge or close.
- * - Archived: one group per day of `time.archived`, newest update first within a day.
+ * - Archived: one group per day of `time.archived`, latest activity first within a day.
  */
 export function groupSessions(input: GroupInput): Group[] {
   const roots = input.sessions.filter((session) => session.parentID === undefined);
   const done = (session: SessionInfo) =>
     sessionDone(session, input.refs, input.extra, input.running(session.id));
-  const byUpdated = (a: SessionInfo, b: SessionInfo) => b.time.updated - a.time.updated;
   if (input.view === 'archived') {
-    const day = (session: SessionInfo) => startOfDay(session.time.archived ?? session.time.updated);
-    const sorted = [...roots].sort((a, b) => day(b) - day(a) || byUpdated(a, b));
-    return byDay(sorted, (session) => session.time.archived ?? session.time.updated, input.now);
+    const archivedAt = (session: SessionInfo) => session.time.archived ?? activityTime(session);
+    const day = (session: SessionInfo) => startOfDay(archivedAt(session));
+    const sorted = [...roots].sort((a, b) => day(b) - day(a) || byActivity(a, b));
+    return byDay(sorted, archivedAt, input.now);
   }
   if (input.view === 'done') {
     const at = (session: SessionInfo) => {
       const view = input.refs[session.id];
-      return (view === undefined ? undefined : doneAt(view)) ?? session.time.updated;
+      return (view === undefined ? undefined : doneAt(view)) ?? activityTime(session);
     };
     const sorted = roots.filter(done).sort((a, b) => at(b) - at(a));
     return byDay(sorted, at, input.now);
@@ -124,16 +248,19 @@ export function groupSessions(input: GroupInput): Group[] {
   const pinned = input.pins.flatMap((id) => byID.get(id) ?? []);
   const pinnedIDs = new Set(pinned.map((session) => session.id));
   const rest = roots.filter((session) => !pinnedIDs.has(session.id) && !done(session));
-  const running = rest.filter((session) => input.running(session.id)).sort(byUpdated);
-  const idle = rest.filter((session) => !input.running(session.id)).sort(byUpdated);
+  const running = rest.filter((session) => input.running(session.id)).sort(byActivity);
+  const idle = rest.filter((session) => !input.running(session.id)).sort(byActivity);
   return [
     ...(pinned.length > 0 ? [{ title: 'Pinned', sessions: pinned }] : []),
-    ...(running.length > 0 ? [{ title: 'Running', sessions: running }] : []),
-    ...byDay(idle, (session) => session.time.updated, input.now)
+    ...(running.length > 0 ? [{ title: RUNNING_GROUP, sessions: running }] : []),
+    ...byDay(idle, activityTime, input.now)
   ];
 }
 
-// Match tiers in the order a day group lists them.
+/** Title of the search group of message text hits, whose header is muted. */
+export const MESSAGES_GROUP = 'In messages';
+
+// Match tiers in the order a day group lists them. Message hits have a group of their own.
 const MATCH_TIER: Record<SearchMatch, number> = {
   title: 0,
   'ref-number': 1,
@@ -142,10 +269,11 @@ const MATCH_TIER: Record<SearchMatch, number> = {
 };
 
 /**
- * Groups search results like the Active list: Running first, then one group per day of
- * `time.updated`, with pins left in place. Within a group, title matches come first, then ref
- * numbers, ref titles and message hits, newest update first within a tier. Hits the server adds
- * later land in their day group by the same rule instead of after the local ones.
+ * Groups search results like the Active list: Running first, then one group per day of the
+ * latest activity, with pins left in place. Within a group, title matches come first, then ref
+ * numbers and ref titles, latest activity first within a tier. Message hits, running or not, go
+ * last in an {@link MESSAGES_GROUP} group, newest first, so they never push the stronger matches
+ * around when the server answers after the local filter.
  */
 export function groupSearch(
   sessions: readonly SessionInfo[],
@@ -153,17 +281,20 @@ export function groupSearch(
   running: (sessionID: string) => boolean,
   now: number
 ): Group[] {
-  const tier = (session: SessionInfo) => MATCH_TIER[reasons[session.id]?.match ?? 'body'];
-  const ranked = (a: SessionInfo, b: SessionInfo) =>
-    tier(a) - tier(b) || b.time.updated - a.time.updated;
-  const active = sessions.filter((session) => running(session.id)).sort(ranked);
-  const day = (session: SessionInfo) => startOfDay(session.time.updated);
-  const idle = sessions
+  const match = (session: SessionInfo) => reasons[session.id]?.match ?? 'body';
+  const messages = sessions.filter((session) => match(session) === 'body').sort(byActivity);
+  const matched = sessions.filter((session) => match(session) !== 'body');
+  const tier = (session: SessionInfo) => MATCH_TIER[match(session)];
+  const ranked = (a: SessionInfo, b: SessionInfo) => tier(a) - tier(b) || byActivity(a, b);
+  const active = matched.filter((session) => running(session.id)).sort(ranked);
+  const day = (session: SessionInfo) => startOfDay(activityTime(session));
+  const idle = matched
     .filter((session) => !running(session.id))
     .sort((a, b) => day(b) - day(a) || ranked(a, b));
   return [
-    ...(active.length > 0 ? [{ title: 'Running', sessions: active }] : []),
-    ...byDay(idle, (session) => session.time.updated, now)
+    ...(active.length > 0 ? [{ title: RUNNING_GROUP, sessions: active }] : []),
+    ...byDay(idle, activityTime, now),
+    ...(messages.length > 0 ? [{ title: MESSAGES_GROUP, sessions: messages }] : [])
   ];
 }
 
@@ -200,7 +331,7 @@ export function rowsOf(groups: readonly Group[]): SessionInfo[] {
  */
 export function layoutLines(
   groups: readonly Group[],
-  details: (session: SessionInfo) => readonly DetailKind[],
+  details: (session: SessionInfo) => readonly DetailLine[],
   titleLines: (session: SessionInfo) => number = () => 1
 ): Line[] {
   return groups.flatMap((group, index): Line[] => [
@@ -213,7 +344,7 @@ export function layoutLines(
         session,
         index: line + 1
       })),
-      ...details(session).map((kind) => ({ kind, session }))
+      ...details(session).map((line): Line => ({ ...line, session }))
     ])
   ]);
 }
@@ -248,7 +379,8 @@ export function keepSelection(
 
 /**
  * Returns the first visible line so every line of the selected row is on screen. When the row is
- * the first of its group, its header is kept in view too.
+ * the first of its group, its header is kept in view too. `selected` is a session id, or a pull
+ * request's key in the Pull requests view.
  */
 export function scrollFor(
   lines: readonly Line[],
@@ -257,14 +389,18 @@ export function scrollFor(
   height: number
 ): number {
   const max = Math.max(0, lines.length - height);
-  const at = lines.findIndex((line) => line.kind === 'title' && line.session.id === selected);
+  const at = lines.findIndex(
+    (line) =>
+      (line.kind === 'title' && line.session.id === selected) ||
+      (line.kind === 'pull' && line.pull.key === selected)
+  );
   if (at === -1 || height <= 0) return Math.min(Math.max(0, scroll), max);
   const top = lines[at - 1]?.kind === 'header' ? at - 1 : at;
   let end = at + 1;
   while (end < lines.length) {
     const line = lines[end];
     if (line === undefined || line.kind === 'blank' || line.kind === 'header') break;
-    if (line.kind === 'title' || line.session.id !== selected) break;
+    if (line.kind === 'title' || line.kind === 'pull' || line.session.id !== selected) break;
     end++;
   }
   let next = scroll;
@@ -279,7 +415,8 @@ export interface PageDeps {
   get(sessionID: string): Promise<SessionInfo>;
   search(input: { query: string; archived: boolean; scope: PageScope }): Promise<SearchHit[]>;
   refs(sessionIDs: string[]): Promise<Record<string, SessionRefView>>;
-  refresh(sessionIDs: string[]): Promise<Record<string, SessionRefView>>;
+  /** `force` refetches fresh entries too and reads the git checkouts again. */
+  refresh(sessionIDs: string[], force?: boolean): Promise<Record<string, SessionRefView>>;
   running(sessionID: string): boolean;
   pending(sessionID: string): Promise<boolean>;
   lastUserMessageAt(sessionID: string): Promise<number | undefined>;
@@ -317,6 +454,16 @@ export interface PageData {
 export const SEARCH_DELAY = 150;
 // The RPC accepts at most 200 ids per call.
 const RPC_BATCH = 200;
+// How long a load from empty data holds the lists back for their refs and Done lookups, so they
+// draw once. On a 42-session project the refs RPC took 115 ms on a cold daemon and the Done
+// lookups about 50 ms; a slow server delays the lists by at most this much.
+const COLD_DEADLINE = 400;
+
+/** Refs and Done lookups a load found before its lists were published. */
+interface Found {
+  refs?: Record<string, SessionRefView>;
+  extra?: Record<string, DoneExtra>;
+}
 
 /** Data before the first load. */
 function initialData(): PageData {
@@ -344,7 +491,7 @@ export function localSearch(
         return {
           id: session.id,
           title: session.title ?? '',
-          updated: session.time.updated,
+          updated: activityTime(session),
           refs: all.map((ref) => {
             const title = view?.states[refKey(ref)]?.title;
             return title === undefined ? { ref } : { ref, title };
@@ -391,33 +538,32 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
     changed(data);
   };
 
-  /**
-   * Fetches cached refs for every loaded session, then the Done lookups for candidates. A load
-   * superseded while its refs were in flight drops them: they may be older than the newer
-   * load's answer, and a reset in between means they belong to another scope.
-   */
-  const loadRefs = async (ids: string[], token: number) => {
+  /** Fetches cached refs for the given sessions. A batch that fails is left out. */
+  const fetchRefs = async (ids: string[]) => {
     const batches = [];
     for (let start = 0; start < ids.length; start += RPC_BATCH) {
       batches.push(ids.slice(start, start + RPC_BATCH));
     }
     const results = await Promise.allSettled(batches.map((batch) => deps.refs(batch)));
-    if (token !== loadToken) return;
-    const refs = { ...data.refs };
+    const refs: Record<string, SessionRefView> = {};
     for (const result of results)
       if (result.status === 'fulfilled') Object.assign(refs, result.value);
-    publish({ refs });
-    await classify();
+    return refs;
   };
 
-  /** Runs the pending and last-message lookups for sessions that could be Done. */
-  const classify = async () => {
-    const candidates = data.active.filter(
+  /**
+   * Runs the pending and last-message lookups for the given sessions that could be Done under
+   * `refs` and were not looked up yet. Resolves to undefined when there were none.
+   */
+  const lookups = async (
+    sessions: readonly SessionInfo[],
+    refs: Readonly<Record<string, SessionRefView>>
+  ) => {
+    const candidates = sessions.filter(
       (session) =>
-        !extraRequested.has(session.id) &&
-        doneCandidate(session, data.refs, deps.running(session.id))
+        !extraRequested.has(session.id) && doneCandidate(session, refs, deps.running(session.id))
     );
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) return undefined;
     for (const session of candidates) extraRequested.add(session.id);
     const found = await Promise.all(
       candidates.map(async (session) => {
@@ -428,7 +574,36 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
         return [session.id, { pending, lastUserMessageAt }] as const;
       })
     );
-    publish({ extra: { ...data.extra, ...Object.fromEntries(found) } });
+    return Object.fromEntries(found);
+  };
+
+  /** Runs the Done lookups for the loaded sessions and publishes what they found. */
+  const classify = async () => {
+    const found = await lookups(data.active, data.refs);
+    if (found !== undefined) publish({ extra: { ...data.extra, ...found } });
+  };
+
+  /**
+   * Fetches cached refs for the loaded sessions, then the Done lookups, publishing each as it
+   * arrives once `shown()` holds; before that, `found` keeps them for the first publish. A load
+   * superseded on the way drops them: they may be older than the newer load's answer, and a
+   * reset in between means they belong to another scope.
+   */
+  const loadRefs = async (
+    sessions: readonly SessionInfo[],
+    ids: string[],
+    token: number,
+    shown: () => boolean,
+    found: Found
+  ) => {
+    const refs = await fetchRefs(ids);
+    if (token !== loadToken) return;
+    found.refs = refs;
+    if (shown()) publish({ refs: { ...data.refs, ...refs } });
+    const extra = await lookups(sessions, { ...data.refs, ...refs });
+    if (token !== loadToken || extra === undefined) return;
+    found.extra = extra;
+    if (shown()) publish({ extra: { ...data.extra, ...extra } });
   };
 
   /**
@@ -485,20 +660,45 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
   return {
     snapshot: () => data,
 
-    /** Loads both session lists for a scope. Earlier loads still in flight are ignored. */
+    /**
+     * Loads both session lists for a scope. Earlier loads still in flight are ignored. A load
+     * from empty data holds the lists back until their refs and Done lookups are in, for at most
+     * {@link COLD_DEADLINE} ms, so rows do not grow PR lines and then leave for Done right after
+     * they appear. A reload publishes the lists at once: the rows on screen keep their refs.
+     */
     async load(scope: PageScope): Promise<void> {
       const token = ++loadToken;
+      const cold = data.status === 'loading';
       try {
         const [active, archived] = await Promise.all([
           deps.list({ archived: false, scope }),
           deps.list({ archived: true, scope })
         ]);
         if (token !== loadToken) return;
-        publish({ status: 'ready', active, archived });
-        await loadRefs(
-          [...active, ...archived].map((session) => session.id),
-          token
-        );
+        const ids = [...active, ...archived].map((session) => session.id);
+        let shown = !cold;
+        if (shown) publish({ status: 'ready', active, archived });
+        const found: Found = {};
+        const loading = loadRefs(active, ids, token, () => shown, found);
+        if (!shown) {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const deadline = new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, COLD_DEADLINE);
+          });
+          // A failure shows up when `loading` is awaited below, after the lists are published.
+          await Promise.race([loading, deadline]).catch(() => {});
+          clearTimeout(timer);
+          if (token !== loadToken) return;
+          shown = true;
+          publish({
+            status: 'ready',
+            active,
+            archived,
+            ...(found.refs ? { refs: { ...data.refs, ...found.refs } } : {}),
+            ...(found.extra ? { extra: { ...data.extra, ...found.extra } } : {})
+          });
+        }
+        await loading;
       } catch {
         if (token === loadToken) publish({ status: 'error' });
       }
@@ -554,6 +754,30 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
       } catch {
         // The server plugin is optional; rows keep their cached refs.
       }
+    },
+
+    /**
+     * Reads the given sessions' refs again without asking the forge, after a change the server
+     * stored, such as an unlink. The server answers from its caches, so the rows follow at once.
+     */
+    async reread(ids: string[]): Promise<void> {
+      const refs = await fetchRefs(ids);
+      publish({ refs: { ...data.refs, ...refs } });
+      await classify();
+    },
+
+    /**
+     * Refetches one session's refs, branch pull requests and git checkout, ignoring the caches
+     * (a rate limit still holds). Resolves to the forges that failed; throws when the server
+     * plugin did not answer for the session.
+     */
+    async reload(sessionID: string): Promise<ProviderId[]> {
+      const { [sessionID]: found } = await deps.refresh([sessionID], true);
+      if (found === undefined) throw new Error(`No refs came back for ${sessionID}.`);
+      const { failed = [], ...view } = found;
+      publish({ refs: { ...data.refs, [sessionID]: view } });
+      await classify();
+      return failed;
     },
 
     /** Drops the Done lookups of a session after it ran again. */

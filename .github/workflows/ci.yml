@@ -12,6 +12,8 @@ jobs:
   build:
     name: Build and test code (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A green run takes a few minutes; this ends a hang the test timeouts miss.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

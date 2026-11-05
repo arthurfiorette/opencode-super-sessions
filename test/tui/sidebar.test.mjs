@@ -39,19 +39,45 @@ const view = {
       [4871, 'Rollup plugin order']
     ].map(([number, title]) => [
       `github:github.com/mastra-ai/mastra/pr/${number}`,
-      { status: 'open', title, url: `https://github.com/mastra-ai/mastra/pull/${number}` }
+      {
+        status: 'open',
+        title,
+        url: `https://github.com/mastra-ai/mastra/pull/${number}`,
+        ...(number === 4930
+          ? {
+              review: {
+                decision: 'changes_requested',
+                checks: 'failing',
+                checksPassed: 1,
+                checksTotal: 3
+              }
+            }
+          : // Conflicts alone still earn the status line.
+            { review: { conflicts: true } })
+      }
     ])
   )
 };
 
-test('the Work rows load cold and clicking one opens its own URL', async () => {
+test('the Work rows load cold, put the status icons and the first failed check on one line under the PR line, and a click on a row or a check opens its own URL', async () => {
   let claim;
   const answer = async ({ sessionIDs }) => Object.fromEntries(sessionIDs.map((id) => [id, view]));
+  const details = async ({ ref }) => ({
+    body: '',
+    checks:
+      ref.number === 4930
+        ? [
+            { name: 'Lint', status: 'failure', url: 'https://ci.example/lint' },
+            { name: 'Build', status: 'success' },
+            { name: 'Typecheck', status: 'failure', url: 'https://ci.example/typecheck' }
+          ]
+        : []
+  });
   const context = {
     location: { directory: '/repo' },
     theme: resolveThemeDocument(migrateV1(themeSource), 'dark'),
     themeMode: 'dark',
-    client: { rpc: () => ({ refs: answer, refresh: answer }) },
+    client: { rpc: () => ({ refs: answer, refresh: answer, 'pull.details': details }) },
     data: {
       on: () => () => {},
       session: { get: () => undefined },
@@ -84,10 +110,31 @@ test('the Work rows load cold and clicking one opens its own URL', async () => {
   try {
     // Mount cold first, then wait for the lazy module; renderer idle does not mean it loaded.
     await import('../../dist/sidebar-view.js');
-    await rendered.waitForFrame((frame) => frame.includes('#4930') && frame.includes('#4871'));
+    const frame = await rendered.waitForFrame(
+      (frame) =>
+        frame.includes('#4930 Migrate build to Rspack') &&
+        frame.includes('#4871') &&
+        frame.includes('Typecheck')
+    );
+    const lines = frame.split('\n');
+    const pr = lines.findIndex((line) => line.includes('#4930'));
+    // The PR line holds only the number and title. Under it the review icon shares a line with
+    // the first failed check; the CI icon is left out since each check carries its own x.
+    assert.match(lines[pr + 1], /^ {2}\uf4d2 {2}\uf467 Lint\s*$/);
+    assert.equal(lines[pr + 2].indexOf('\uf467 Typecheck'), lines[pr + 1].indexOf('\uf467'));
+    assert.equal(frame.split('\uf467').length - 1, 2);
+    assert.ok(!frame.includes('Build') && !frame.includes('1/3'));
+    // Conflicts alone still earn the status line, without check lines.
+    assert.match(lines[lines.findIndex((line) => line.includes('#4871')) + 1], /^ {2}\uf421\s*$/);
+
+    await rendered.mockMouse.click(lines[pr + 1].indexOf('Lint') + 1, pr + 1);
+    await rendered.mockMouse.click(lines[pr + 1].indexOf('\uf4d2'), pr + 1);
     const second = rendered.renderer.root.findDescendantById('super-sessions-sidebar-ref-1');
     await rendered.mockMouse.click(second.x + 4, second.y);
-    assert.deepEqual(opened, ['https://github.com/mastra-ai/mastra/pull/4871']);
+    assert.deepEqual(opened, [
+      'https://ci.example/lint',
+      'https://github.com/mastra-ai/mastra/pull/4871'
+    ]);
   } finally {
     unregister();
     rendered.renderer.destroy();

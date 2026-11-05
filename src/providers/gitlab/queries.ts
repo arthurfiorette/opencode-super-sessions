@@ -1,15 +1,16 @@
 import type { Ref, RefReview, RefState, RefStatus } from '../../refs/ref.js';
 import { commitSha, isRecord } from '../include.js';
-import type { ForgeError, RefCandidate, RepoRef } from '../provider.js';
+import type { BranchPull, ForgeError, RefCandidate, RepoRef } from '../provider.js';
 import type { GraphQLError, GraphQLResponse } from './output.js';
 
 // GitLab rejects a whole document above 200 complexity points when anonymous (250 signed in).
 // Costs were measured on gitlab.com with `queryComplexity { score }`; the budget leaves room
 // for the query itself and `metadata`. The review fields and `diffHeadSha` raised a merge
-// request from 21 to 34, so an all-merge-request batch holds 5 instead of 8.
+// request from 21 to 34, `updatedAt` with the two job counts to 43 and `conflicts` to 44, so an
+// all-merge-request batch holds 4 (four in one project scored 182 of 200).
 const COMPLEXITY_BUDGET = 180;
 const PROJECT_COST = 2;
-const MERGE_REQUEST_COST = 34;
+const MERGE_REQUEST_COST = 44;
 const ISSUE_COST = 6;
 
 /** GraphQL field that lists the issues a merge request closes. Older GitLab servers lack it. */
@@ -26,7 +27,8 @@ export const REVIEW_FIELDS: readonly string[] = [
   'detailedMergeStatus',
   'resolvableDiscussionsCount',
   'resolvedDiscussionsCount',
-  'headPipeline'
+  'headPipeline',
+  'jobs'
 ];
 
 export type SnapshotEntry = { ref: Ref; state: RefState } | ForgeError;
@@ -52,12 +54,15 @@ export interface SnapshotDocument {
 
 // `diffHeadSha` is the source branch head, the same commit REST calls `sha`; it stays the branch
 // head after a squash merge.
-const MERGE_REQUEST_FIELDS = 'state draft title webUrl mergedAt closedAt diffHeadSha';
+const MERGE_REQUEST_FIELDS = 'state draft title webUrl mergedAt closedAt updatedAt diffHeadSha';
 const CLOSES_SELECTION = `${CLOSES_FIELD}(types: [CLOSES], first: 10) { nodes { workItem { iid namespace { fullPath } } } }`;
-// One approver is enough to tell "someone approved" from "nobody did". The discussion counts are
-// precomputed by GitLab, so no discussion is read.
-const REVIEW_SELECTION =
-  'approved approvedBy(first: 1) { nodes { id } } detailedMergeStatus resolvableDiscussionsCount resolvedDiscussionsCount headPipeline { status }';
+// Every job status but MANUAL: a manual job waits for a person, so counting it would show a
+// passing pipeline as `56/60`. Retried jobs were replaced by a later run of the same job.
+const COUNTED_JOBS =
+  'CREATED, WAITING_FOR_RESOURCE, PREPARING, WAITING_FOR_CALLBACK, PENDING, RUNNING, FAILED, SUCCESS, CANCELED, CANCELING, SKIPPED, SCHEDULED';
+// One approver is enough to tell "someone approved" from "nobody did". The discussion and job
+// counts are precomputed by GitLab, so no discussion or job is read.
+const REVIEW_SELECTION = `approved approvedBy(first: 1) { nodes { id } } detailedMergeStatus conflicts resolvableDiscussionsCount resolvedDiscussionsCount headPipeline { status total: jobs(retried: false, statuses: [${COUNTED_JOBS}]) { count } passed: jobs(retried: false, statuses: [SUCCESS, SKIPPED]) { count } }`;
 const ISSUE_FIELDS = 'state title webUrl closedAt';
 
 /**
@@ -189,11 +194,12 @@ function statusOf(node: Record<string, unknown>, kind: Ref['kind']): RefStatus |
 }
 
 // `manual` waits on a person and `skipped` ran nothing, so neither says anything about the code.
+// A canceled pipeline draws the muted cancelled icon, as on GitHub.
 const CHECKS: Record<string, NonNullable<RefReview['checks']>> = {
   SUCCESS: 'passing',
   FAILED: 'failing',
-  CANCELED: 'failing',
-  CANCELING: 'failing',
+  CANCELED: 'cancelled',
+  CANCELING: 'cancelled',
   CREATED: 'pending',
   WAITING_FOR_RESOURCE: 'pending',
   PREPARING: 'pending',
@@ -219,6 +225,28 @@ function decisionOf(node: Record<string, unknown>, enterprise: unknown): RefRevi
   return node.approved === true && approvals > 0 ? 'approved' : undefined;
 }
 
+// GitLab answers `conflicts: false` until it has checked mergeability, so these mean unknown.
+const UNCHECKED = new Set(['UNCHECKED', 'CHECKING', 'PREPARING']);
+
+/**
+ * Whether the merge request conflicts with its target branch. `detailedMergeStatus` names only
+ * the first check that blocks the merge, so `conflicts` is read too: a draft with conflicts
+ * reports `DRAFT_STATUS`.
+ */
+function conflictsOf(node: Record<string, unknown>): boolean | undefined {
+  if (node.conflicts === true || node.detailedMergeStatus === 'CONFLICT') return true;
+  if (typeof node.detailedMergeStatus === 'string' && UNCHECKED.has(node.detailedMergeStatus)) {
+    return undefined;
+  }
+  return typeof node.conflicts === 'boolean' ? node.conflicts : undefined;
+}
+
+/** Reads `{ count }` of a job connection. */
+function jobCount(connection: unknown): number | undefined {
+  const count = isRecord(connection) ? connection.count : undefined;
+  return Number.isSafeInteger(count) && (count as number) >= 0 ? (count as number) : undefined;
+}
+
 /**
  * Builds the review summary of an open or draft merge request. Merged and closed ones get none:
  * their snapshot is never refetched, so a running pipeline would show forever.
@@ -238,9 +266,17 @@ function reviewOf(
     review.threads = threads as number;
     review.unresolved = Math.max(0, (threads as number) - (resolved as number));
   }
-  const pipeline = isRecord(node.headPipeline) ? node.headPipeline.status : undefined;
-  const checks = typeof pipeline === 'string' ? CHECKS[pipeline] : undefined;
+  const pipeline = isRecord(node.headPipeline) ? node.headPipeline : undefined;
+  const checks = typeof pipeline?.status === 'string' ? CHECKS[pipeline.status] : undefined;
   if (checks) review.checks = checks;
+  const total = jobCount(pipeline?.total);
+  const passed = jobCount(pipeline?.passed);
+  if (total !== undefined && passed !== undefined && total > 0) {
+    review.checksPassed = passed;
+    review.checksTotal = total;
+  }
+  const conflicts = conflictsOf(node);
+  if (conflicts !== undefined) review.conflicts = conflicts;
   return Object.keys(review).length > 0 ? review : undefined;
 }
 
@@ -336,6 +372,7 @@ export function parseSnapshotResponse(
     };
     const mergedAt = epoch(node.mergedAt);
     const closedAt = epoch(node.closedAt);
+    const updatedAt = kind === 'pr' ? epoch(node.updatedAt) : undefined;
     const review =
       kind === 'pr' && document.review ? reviewOf(node, status, enterprise) : undefined;
     const headSha = kind === 'pr' ? commitSha(node.diffHeadSha) : undefined;
@@ -345,6 +382,7 @@ export function parseSnapshotResponse(
       url: node.webUrl,
       ...(mergedAt === undefined ? {} : { mergedAt }),
       ...(closedAt === undefined ? {} : { closedAt }),
+      ...(updatedAt === undefined ? {} : { updatedAt }),
       ...(kind === 'pr' && document.closes
         ? { closes: closingIssues(node[CLOSES_FIELD], candidate.host) }
         : {}),
@@ -365,7 +403,7 @@ export function buildBranchQuery(
   const query = `query($path: ID!, $branch: String!) {
   project(fullPath: $path) {
     mergeRequests(sourceBranches: [$branch], first: 20, sort: CREATED_DESC) {
-      nodes { iid state sourceProject { fullPath } }
+      nodes { iid state createdAt sourceProject { fullPath } }
     }
   }
 }`;
@@ -376,13 +414,14 @@ export function buildBranchQuery(
  * Picks the merge request for a branch, following t3code: the newest open one, otherwise the
  * newest of any state. Only merge requests whose source project is `headRepo` count (the user's
  * fork when the branch was pushed there, else `repo` itself); a deleted or hidden fork reports
- * no source project. Returns at most one ref, numbered in `repo`, where the merge request lives.
+ * no source project. Returns at most one merge request, numbered in `repo`, where it lives, with
+ * when it was opened.
  */
 export function parseBranchResponse(
   repo: RepoRef,
   response: GraphQLResponse,
   headRepo: RepoRef = repo
-): Ref[] | ForgeError {
+): BranchPull[] | ForgeError {
   const project = response.data.project;
   if (!isRecord(project)) return reasonOf(response.errors[0]);
   // A fork on another host can never be the source of a merge request here.
@@ -397,12 +436,23 @@ export function parseBranchResponse(
       return [];
     }
     if (!Number.isSafeInteger(number) || number <= 0) return [];
-    return [{ number, open: node.state === 'opened' || node.state === 'locked' }];
+    return [
+      {
+        number,
+        open: node.state === 'opened' || node.state === 'locked',
+        createdAt: epoch(node.createdAt)
+      }
+    ];
   });
   // Nodes arrive newest first, so the first match in each pass is the newest.
   const chosen = own.find((node) => node.open) ?? own[0];
   if (!chosen) return [];
-  return [
-    { provider: 'gitlab', host: repo.host, repo: repo.repo, kind: 'pr', number: chosen.number }
-  ];
+  const ref: Ref = {
+    provider: 'gitlab',
+    host: repo.host,
+    repo: repo.repo,
+    kind: 'pr',
+    number: chosen.number
+  };
+  return [chosen.createdAt === undefined ? { ref } : { ref, createdAt: chosen.createdAt }];
 }

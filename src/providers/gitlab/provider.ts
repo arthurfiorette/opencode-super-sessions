@@ -6,6 +6,7 @@ import type {
   RefCandidate
 } from '../provider.js';
 import { createGitLabClient } from './client.js';
+import { buildDetailsQuery, parseDetailsResponse } from './details.js';
 import type { GitLabFailure, GraphQLResponse } from './output.js';
 import {
   buildBranchQuery,
@@ -166,6 +167,13 @@ export function createGitLabProvider(options: {
         })
       );
       return results;
+    },
+
+    async details(ref) {
+      const host = ref.host.toLowerCase();
+      const document = buildDetailsQuery(ref);
+      const response = await query(host, document.query, document.variables);
+      return 'data' in response ? parseDetailsResponse(response, host) : plainError(response);
     }
   };
 }

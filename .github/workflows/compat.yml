@@ -19,6 +19,7 @@ jobs:
   compat:
     name: Test against the latest OpenCode release
     runs-on: ubuntu-latest
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -70,30 +71,36 @@ jobs:
           node "$cli/postinstall.mjs"
           echo "OPENCODE_BIN=$cli/bin/opencode.exe" >> "$GITHUB_ENV"
 
-      # Every suite runs even after one fails, so the issue lists all of them.
+      # Every suite runs even after one fails, so the issue lists all of them. A suite that hangs
+      # fails at its step timeout, before the job timeout would skip the report.
       - name: Typecheck
         id: typecheck
         continue-on-error: true
+        timeout-minutes: 10
         run: pnpm build && pnpm test-types
 
       - name: Unit tests
         id: unit
         continue-on-error: true
+        timeout-minutes: 10
         run: pnpm test
 
       - name: Integration tests
         id: integration
         continue-on-error: true
+        timeout-minutes: 10
         run: pnpm test:integration
 
       - name: Contract tests
         id: contract
         continue-on-error: true
+        timeout-minutes: 10
         run: pnpm test:contract
 
       - name: Native TUI tests
         id: tui
         continue-on-error: true
+        timeout-minutes: 10
         run: pnpm test:tui
 
       - name: Report the result

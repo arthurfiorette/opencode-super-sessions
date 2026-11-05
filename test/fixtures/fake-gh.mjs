@@ -1,5 +1,11 @@
-// Stands in for `gh` in the configured host fixture. Answers `auth status` and the GraphQL
-// documents the GitHub provider builds from a fixed set of acme/widgets refs; anything else fails.
+// Stands in for `gh` in the configured host fixture and the manual live checks. Answers
+// `auth status`, `pr create` and the GraphQL documents the GitHub provider builds from a fixed
+// set of acme/widgets refs; anything else fails. The protocol is in gh-protocol.mjs.
+
+import { checkRun, counts, serveGh } from './gh-protocol.mjs';
+
+/** A check run of acme/widgets' workflow `workflow`. */
+const run = (workflow, name, conclusion) => checkRun('acme/widgets', workflow, name, conclusion);
 
 const refs = {
   'acme/widgets#12': {
@@ -31,6 +37,7 @@ const refs = {
     url: 'https://github.com/acme/widgets/pull/78',
     mergedAt: '2026-11-01T10:00:00Z',
     closedAt: '2026-11-01T10:00:00Z',
+    updatedAt: '2026-11-01T10:00:00Z',
     closingIssuesReferences: { nodes: [] }
   },
   // Open with review trouble: changes requested, three of four threads open, a failing head.
@@ -57,7 +64,22 @@ const refs = {
         { isResolved: false }
       ]
     },
-    commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] }
+    updatedAt: '2026-11-03T16:20:00Z',
+    commits: {
+      nodes: [
+        {
+          commit: {
+            statusCheckRollup: {
+              state: 'FAILURE',
+              contexts: counts(
+                { SUCCESS: 84, SKIPPED: 3, FAILURE: 5, TIMED_OUT: 1 },
+                { SUCCESS: 1 }
+              )
+            }
+          }
+        }
+      ]
+    }
   },
   // Issues for a session that tracks three at once.
   ...Object.fromEntries(
@@ -78,99 +100,88 @@ const refs = {
       }
     ])
   ),
+  // Opened before any session a fixture creates, so its branch lookup counts it only for a
+  // session that pushed fix-titles.
   'acme/widgets#34': {
     __typename: 'PullRequest',
     state: 'OPEN',
     isDraft: false,
+    createdAt: '2026-11-01T09:00:00Z',
     title: 'Show full session titles',
     url: 'https://github.com/acme/widgets/pull/34',
     mergedAt: null,
     closedAt: null,
+    updatedAt: '2026-11-04T09:10:00Z',
+    reviewDecision: 'APPROVED',
     closingIssuesReferences: {
       nodes: [{ number: 56, repository: { nameWithOwner: 'acme/widgets' } }]
+    },
+    latestReviews: { nodes: [{ state: 'APPROVED' }] },
+    reviewThreads: { totalCount: 0, nodes: [] },
+    commits: {
+      nodes: [
+        {
+          commit: {
+            statusCheckRollup: {
+              state: 'PENDING',
+              contexts: counts({ SUCCESS: 12, IN_PROGRESS: 2 }, {})
+            }
+          }
+        }
+      ]
     }
+  }
+};
+
+// What the Pull requests view's preview asks for one pull request.
+const details = {
+  'acme/widgets#90': {
+    author: { login: 'octo-dev' },
+    headRefName: 'group-search',
+    baseRefName: 'main',
+    body: '## Summary\n\nGroups search results by **day**, like the session list.\n\n- Running first\n- Then `Today` and dated groups\n\nFixes #61.',
+    checks: [
+      run('CI', 'Lint', 'FAILURE'),
+      run('CI', 'Unit tests (node 24)', 'SUCCESS'),
+      run('CI', 'Unit tests (node 22)', 'SUCCESS'),
+      // A re-run of the same check: the preview keeps the newest.
+      { ...run('CI', 'E2E', 'FAILURE'), completedAt: '2026-11-03T16:05:00Z' },
+      run('CI', 'E2E', 'FAILURE'),
+      run('CI', 'Typecheck', 'FAILURE'),
+      run('Integration', 'Integration (linux)', 'FAILURE'),
+      run('Integration', 'Integration (macos)', 'TIMED_OUT'),
+      // An app without a details page: the link falls back to the run on github.com.
+      { ...run('Integration', 'Integration (windows)', 'FAILURE'), detailsUrl: null },
+      run('Docs', 'Build docs', 'SKIPPED'),
+      {
+        __typename: 'StatusContext',
+        context: 'Vercel – widgets-preview',
+        state: 'SUCCESS',
+        targetUrl: 'https://vercel.com/acme/widgets',
+        createdAt: '2026-11-03T16:02:00Z'
+      }
+    ]
+  },
+  'acme/widgets#34': {
+    author: { login: 'octo-dev' },
+    headRefName: 'fix-titles',
+    baseRefName: 'main',
+    body: 'Shows the **full** session title in the list instead of cutting it at 40 cells.\n\nCloses #56.',
+    checks: [run('CI', 'Lint', 'SUCCESS'), run('CI', 'Unit tests', null), run('CI', 'Build', null)]
   }
 };
 
 // Head branch of each pull request above, for `pullRequests(headRefName:)` lookups.
 const branches = { 'acme/widgets@fix-titles': [34], 'acme/widgets@group-search': [90] };
 
-const args = process.argv.slice(2);
-
-/** Prints a `gh api --include` style response and exits like gh: 1 when GraphQL reported errors. */
-function reply(body) {
-  process.stdout.write(
-    `HTTP/2.0 200 OK\nContent-Type: application/json\r\n\r\n${JSON.stringify(body)}`
-  );
-  process.exit(body.errors?.length ? 1 : 0);
-}
-
-/** Answers one snapshot document by reading its aliases back out of the query text. */
-function snapshot(query, variables) {
-  const data = { rateLimit: { remaining: 4999, resetAt: '2099-01-01T00:00:00Z' } };
-  const errors = [];
-  const repositories = [...query.matchAll(/(r\d+): repository\(owner: \$o(\d+), name: \$n\d+\)/g)];
-  for (const [position, match] of repositories.entries()) {
-    const [, alias, index] = match;
-    // Each repository's items run until the next repository selection.
-    const body = query.slice(match.index, repositories[position + 1]?.index);
-    const repo = `${variables[`o${index}`]}/${variables[`n${index}`]}`.toLowerCase();
-    data[alias] = {};
-    for (const [, item, number] of body.matchAll(/(i\d+): issueOrPullRequest\(number: (\d+)\)/g)) {
-      const node = refs[`${repo}#${number}`];
-      data[alias][item] = node ?? null;
-      if (!node) {
-        errors.push({
-          type: 'NOT_FOUND',
-          path: [alias, item],
-          message: `Could not resolve to an issue or pull request with the number of ${number}.`
-        });
-      }
-    }
-  }
-  reply(errors.length ? { data, errors } : { data });
-}
-
-/** Answers a branch lookup. */
-function branch(variables) {
-  const key = `${variables.owner}/${variables.name}@${variables.branch}`.toLowerCase();
-  const nodes = (branches[key] ?? []).map((number) => ({
-    number,
-    state: refs[`${variables.owner}/${variables.name}#${number}`.toLowerCase()].state,
-    headRepository: { nameWithOwner: `${variables.owner}/${variables.name}` }
-  }));
-  reply({
-    data: {
-      rateLimit: { remaining: 4999, resetAt: '2099-01-01T00:00:00Z' },
-      repository: { pullRequests: { nodes } }
-    }
-  });
-}
-
-if (args[0] === 'auth' && args[1] === 'status') {
-  console.log('github.com\n  ✓ Logged in to github.com account fixture');
-  process.exit(0);
-}
-
-// Run from a user `!` command through the `gh` shim on PATH. Real gh prints the new PR's URL last.
-if (args[0] === 'pr' && args[1] === 'create') {
-  console.log('Creating pull request for fix-titles into main in acme/widgets\n');
-  console.log('https://github.com/acme/widgets/pull/34');
-  process.exit(0);
-}
-
-if (args[0] === 'api' && args[1] === 'graphql') {
-  let input = '';
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (chunk) => {
-    input += chunk;
-  });
-  process.stdin.on('end', () => {
-    const { query, variables } = JSON.parse(input);
-    if (query.includes('pullRequests(headRefName')) branch(variables);
-    else snapshot(query, variables);
-  });
-} else {
-  console.error(`fake gh: unsupported command ${args.join(' ')}`);
-  process.exit(2);
-}
+serveGh({
+  refs,
+  details,
+  branches,
+  // Run from a user `!` command through the `gh` shim on PATH. Real gh prints the new PR's URL
+  // last.
+  created: [
+    'Creating pull request for fix-titles into main in acme/widgets\n',
+    'https://github.com/acme/widgets/pull/34'
+  ]
+});

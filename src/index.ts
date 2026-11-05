@@ -62,6 +62,8 @@ async function registerInert(context: Plugin.Context): Promise<void> {
     link: async (_input, invocation) =>
       invocation.error('unavailable', 'The plugin options are invalid.', { reason: 'failed' }),
     unlink: async () => ({}),
+    'pull.details': async (_input, invocation) =>
+      invocation.error('unavailable', 'The plugin options are invalid.', { reason: 'failed' }),
     // Fails, so the browser says the mark did not stick instead of showing no change.
     'done.set': async () => {
       throw new Error('The plugin options are invalid.');

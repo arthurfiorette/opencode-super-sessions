@@ -20,7 +20,7 @@ import { type SessionRefView, SuperSessions } from './rpc.js';
 import { tuiSettingsFor } from './settings/store.js';
 import type { SidebarProps } from './sidebar.js';
 import { createSidebarState } from './sidebar-state.js';
-import { workRow, workStatusLine } from './work-row.js';
+import { createFailedChecks, workRow, workStatus } from './work-row.js';
 
 const REFRESH_INTERVAL = 60_000;
 
@@ -83,17 +83,17 @@ export default function Sidebar(props: SidebarProps) {
     controller.dispose();
   });
 
-  /** Key of the session's branch PR, which leads the list with a `branch` marker. */
-  const branchKey = () => {
-    const ref = data.view?.branchRefs[0];
-    return ref === undefined ? undefined : refKey(ref);
-  };
+  const failed = createFailedChecks({
+    refs: () => listed().refs.map((ref) => ({ ref, state: stateOf(ref) })),
+    load: (ref) => rpc['pull.details']({ ref }, rpcOptions(untrack(props.sessionID)))
+  });
   /**
-   * One ref line, plus the status line under a pull request; the shared Work row also draws the
-   * preview's Work section.
+   * One ref line; the shared Work row also draws the preview's Work section. An open pull
+   * request gets the same icon and failed check lines under it as there.
    */
   const row = (ref: () => Ref, index: number) =>
     jsx('box', {
+      flexDirection: 'column',
       flexShrink: 0,
       children: [
         workRow({
@@ -104,10 +104,16 @@ export default function Sidebar(props: SidebarProps) {
           state: () => stateOf(ref()),
           width,
           marquee,
-          marker: () => (refKey(ref()) === branchKey() ? 'branch' : undefined),
           id: `super-sessions-sidebar-ref-${index}`
         }),
-        workStatusLine({ theme, state: () => stateOf(ref()), width })
+        workStatus({
+          context,
+          theme,
+          ref,
+          state: () => stateOf(ref()),
+          details: () => failed(refKey(ref())),
+          width
+        })
       ]
     });
 
