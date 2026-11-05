@@ -74,8 +74,8 @@ Pinned sessions stay in the Pinned group of Active even when they are Done. `ctr
 A row is its title line and, when they apply, the lines under it:
 
 - The title line: a marker, the title and the age of the last update. In the Archived view the age reads `archived 3d · updated 5d`.
-- The PR line, when the session has a [main pull request](#main-pull-request): its icon and number in the state color, its [review and CI icons](#review-and-ci-icons) while it is open or a draft, then its title. A trailing `+N` counts the session's other pull requests and mentioned refs.
-- One line per tracked issue: its icon and number in the state color, then its title, cut with `…`. The issues the main pull request closes come first, then the others newest first. After five issues the rest are counted on a `+N more` line. Without a PR line, the first issue line carries the `+N` for the other refs.
+- One line per tracked pull request, in the [pull request order](#pull-request-order), at most three: its icon and number in the state color, its [review and CI icons](#review-and-ci-icons) while it is open or a draft, then its title. A `+N` after the first one counts the session's other pull requests and mentioned refs.
+- One line per tracked issue: its icon and number in the state color, then its title, cut with `…`. The issues a shown pull request closes come first, then the others, newest first in each part. After five issues the rest are counted on a `+N more` line. Without a PR line, the first issue line carries the `+N` for the other refs.
 - With the "Group issues" setting on, one issues line instead: every issue number in its state color, joined as `#1230, #19083 and #8923`, with `+N` for the ones that do not fit. A session that tracks one issue shows its title after the number.
 
 The marker column shows one of these, highest first:
@@ -143,7 +143,7 @@ The header holds the title and these sections:
 
 - Context: tokens in the context window and their share of the model's limit, the cost so far, and whether the session is running, idle, interrupted or failed.
 - Session: the project (only when it differs from the browser's), the worktree directory (only when it is not the project root) and the branch (only when it is not the default branch).
-- Work: every tracked pull request and issue, the main pull request first. A pull request's line holds its state icon, number and title. Under an open one, a line shows its [review and CI icons](#review-and-ci-icons) when it has any. Each check that failed (red x) or waits for an action (yellow alert) is listed by name, failures first, at most five and then `+N more`; pending and cancelled checks are not listed. The first listed check goes on the icons' line in place of the CI icon, after a two-cell gap, and the others line up under it. A click on a listed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The icons are not a link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
+- Work: every tracked pull request, in the [pull request order](#pull-request-order), then the tracked issues. A pull request's line holds its state icon, number and title. Under an open one, a line shows its [review and CI icons](#review-and-ci-icons) when it has any. Each check that failed (red x) or waits for an action (yellow alert) is listed by name, failures first, at most five and then `+N more`; pending and cancelled checks are not listed. The first listed check goes on the icons' line in place of the CI icon, after a two-cell gap, and the others line up under it. A click on a listed check opens its log and on `+N more` the pull request's checks page, and a ctrl+click copies the link. The icons are not a link. The issues a pull request closes sit right under it, and mentioned refs follow under `mentioned`.
 
 The transcript below draws messages the way OpenCode's session view does and follows your `cli.json` session settings (scrollbar, thinking, markdown, verbosity, grouping). It starts at the latest message; scrolling up loads older ones.
 
@@ -181,34 +181,34 @@ The footer always shows the same hints: `space peek`, `ctrl+s archive`, `ctrl+q 
 
 Keys are written the way OpenCode writes them. Keys marked "yours" belong to an OpenCode command the browser reuses, so the browser, its footer and the keys dialog follow your own keybinds for that command.
 
-| Key                           | Action                                                                                                                         |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `up` / `down`                 | Select the previous or next session                                                                                            |
-| `pageup` / `pagedown`         | Move by the rows on screen                                                                                                     |
-| `home` / `end`                | Select the first or last session                                                                                               |
-| `enter`                       | Open the session; in the Pull requests view, its newest session                                                                |
-| `space`                       | [Peek](#peek), while the search is empty                                                                                       |
-| `right`                       | Move to the [Work links](#work-links), or to the sessions of a pull request                                                    |
-| `c`                           | Copy the selected Work link's URL, while the Work links have the arrow keys                                                    |
-| `d`, `delete`                 | Unlink pull request or issue: the selected Work link, while the Work links have the arrow keys                                 |
-| `esc`                         | Close the browser                                                                                                              |
-| `ctrl+/`, `?`                 | The keys dialog. `?` types into a search that is not empty                                                                     |
-| `tab` / `shift+tab`           | Next or previous view                                                                                                          |
-| `ctrl+a`                      | Switch between this project and all projects                                                                                   |
-| `ctrl+s`                      | Archive, or restore in the Archived view                                                                                       |
-| `ctrl+q`                      | Mark Done, or not Done when the session is Done (see [Done](#done))                                                            |
-| `ctrl+r` (yours)              | Rename (`session.rename`)                                                                                                      |
-| `ctrl+t`                      | Ask OpenCode's title agent for a new title                                                                                     |
-| `ctrl+f` (yours)              | Pin or unpin (`session.pin.toggle`)                                                                                            |
-| `ctrl+d` (yours)              | Delete; press twice (`session.delete`)                                                                                         |
-| `ctrl+b`                      | Fork the session, whole or before one of your prompts, and open the fork (see below)                                           |
-| `ctrl+y`                      | Archive every Done session after confirmation. Done view, not while searching                                                  |
-| `ctrl+l`                      | Link a pull request or issue: a URL, `owner/repo#N` or `#N`                                                                    |
-| `ctrl+g`                      | Open the main pull request, or else the first issue, in your web browser. In the Pull requests view, the selected pull request |
-| `f5`                          | Reload the selected row from GitHub or GitLab, past the caches (see below)                                                     |
-| `ctrl+p`                      | OpenCode's command palette; `esc` returns to the browser                                                                       |
-| `ctrl+o`                      | [Settings](#settings)                                                                                                          |
-| `ctrl+c`, `<leader>q` (yours) | Clear the search, then close the browser (`app.exit`)                                                                          |
+| Key                           | Action                                                                                                                                                                |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `up` / `down`                 | Select the previous or next session                                                                                                                                   |
+| `pageup` / `pagedown`         | Move by the rows on screen                                                                                                                                            |
+| `home` / `end`                | Select the first or last session                                                                                                                                      |
+| `enter`                       | Open the session; in the Pull requests view, its newest session                                                                                                       |
+| `space`                       | [Peek](#peek), while the search is empty                                                                                                                              |
+| `right`                       | Move to the [Work links](#work-links), or to the sessions of a pull request                                                                                           |
+| `c`                           | Copy the selected Work link's URL, while the Work links have the arrow keys                                                                                           |
+| `d`, `delete`                 | Unlink pull request or issue: the selected Work link, while the Work links have the arrow keys                                                                        |
+| `esc`                         | Close the browser                                                                                                                                                     |
+| `ctrl+/`, `?`                 | The keys dialog. `?` types into a search that is not empty                                                                                                            |
+| `tab` / `shift+tab`           | Next or previous view                                                                                                                                                 |
+| `ctrl+a`                      | Switch between this project and all projects                                                                                                                          |
+| `ctrl+s`                      | Archive, or restore in the Archived view                                                                                                                              |
+| `ctrl+q`                      | Mark Done, or not Done when the session is Done (see [Done](#done))                                                                                                   |
+| `ctrl+r` (yours)              | Rename (`session.rename`)                                                                                                                                             |
+| `ctrl+t`                      | Ask OpenCode's title agent for a new title                                                                                                                            |
+| `ctrl+f` (yours)              | Pin or unpin (`session.pin.toggle`)                                                                                                                                   |
+| `ctrl+d` (yours)              | Delete; press twice (`session.delete`)                                                                                                                                |
+| `ctrl+b`                      | Fork the session, whole or before one of your prompts, and open the fork (see below)                                                                                  |
+| `ctrl+y`                      | Archive every Done session after confirmation. Done view, not while searching                                                                                         |
+| `ctrl+l`                      | Link a pull request or issue: a URL, `owner/repo#N` or `#N`                                                                                                           |
+| `ctrl+g`                      | Open the row's first pull request (an open one when there is one), or else its first issue, in your web browser. In the Pull requests view, the selected pull request |
+| `f5`                          | Reload the selected row from GitHub or GitLab, past the caches (see below)                                                                                            |
+| `ctrl+p`                      | OpenCode's command palette; `esc` returns to the browser                                                                                                              |
+| `ctrl+o`                      | [Settings](#settings)                                                                                                                                                 |
+| `ctrl+c`, `<leader>q` (yours) | Clear the search, then close the browser (`app.exit`)                                                                                                                 |
 
 Most terminals send `ctrl+/` as `ctrl+_`; the browser takes both.
 
@@ -232,7 +232,7 @@ Work rows, checks and failed check lines are links: a click opens them in your w
 
 ## Sidebar
 
-The session sidebar lists the session's pull requests and issues at the top, right under the title: the branch's pull request first, then pull requests the agent linked or created or you linked, then other pull requests, then issues. Each row shows the state icon in the state color, the number and the title. Open pull requests get the same [review and CI icons](#review-and-ci-icons) and failed checks under them as in the preview, the first check on the icons' line, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), a click opens it in your web browser, and a ctrl+click copies its URL (see [Copying links](#copying-links)). A session without pull requests, issues or mentions shows nothing there.
+The session sidebar lists the session's pull requests and issues at the top, right under the title: the pull requests in the [pull request order](#pull-request-order), then the issues, newest first. Each row shows the state icon in the state color, the number and the title. Open pull requests get the same [review and CI icons](#review-and-ci-icons) and failed checks under them as in the preview, the first check on the icons' line, and mentioned refs are counted in a `+N mentioned` line. Hovering a row scrolls a cut title (see "Title scrolling on hover"), a click opens it in your web browser, and a ctrl+click copies its URL (see [Copying links](#copying-links)). A session without pull requests, issues or mentions shows nothing there.
 
 ## Pull request and issue tracking
 
@@ -260,9 +260,9 @@ Detection watches sessions as they run, so sessions from before you installed th
 
 Nothing is read until you touch a session. One session is read at a time, in pages of 100 messages with a short pause between pages, and closing the browser stops the read of a session you only selected. "Scan all sessions now" in the [settings](#settings) reads every session in the browser's current scope after asking, with progress in a toast.
 
-### Main pull request
+### Pull request order
 
-The PR line shows one pull request: the branch's pull request, else the newest one the agent linked or created or you linked, else the newest one from your prompts.
+Rows, the preview's Work section and the sidebar list a session's pull requests in the same order. Open and draft ones come first, then merged, then closed. A pull request whose state has not loaded yet counts as open, so it keeps its place once the state arrives. Within each state the branch's pull request comes first, then the ones the agent linked or created or you linked, then the ones from your prompts, newest first.
 
 ### Review and CI status
 

@@ -4,7 +4,7 @@ import { jsx } from '@opentui/solid/jsx-runtime';
 import type { JSX } from 'solid-js';
 import type { Options } from '../config.js';
 import { type Ref, type RefReview, type RefState, refKey, refNumber } from '../refs/ref.js';
-import { rowRefs } from '../refs/summary.js';
+import { ROW_PRS, rowRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { ciLook } from './checks.js';
 import { ICONS, refColor, refIcon } from './icons.js';
@@ -85,8 +85,9 @@ export function findRef(view: SessionRefView | undefined, key: string): Ref | un
 /**
  * Lines a row draws under its title. Each part is empty when its line is not drawn.
  *
- * - `pr`: the main PR's icon and number, its review and CI icons, its title, then a matched ref
- *   that is shown nowhere else, and `+N`.
+ * - `pr`: one line per shown pull request (see `rowRefs`): icon and number, review and CI icons,
+ *   title. A matched PR the row would not show takes the last line. The first line ends with
+ *   `+N`.
  * - `issues`: with `grouped`, one piece per tracked issue (with its title when it is the only
  *   one), joined on one line and fitted to the width when drawn; `extra` is the `+N` that line
  *   carries when there is no PR line. Otherwise one whole line per issue (icon, number and
@@ -94,7 +95,7 @@ export function findRef(view: SessionRefView | undefined, key: string): Ref | un
  *   carries the `+N` instead, and `extra` stays 0.
  */
 export interface RowDetails {
-  pr: Segment[];
+  pr: Segment[][];
   issues: Segment[][];
   extra: number;
   grouped: boolean;
@@ -109,7 +110,7 @@ export const ISSUE_LINES = 5;
 /** The detail lines a row has, in order, for laying out the list. */
 export function detailKinds(details: RowDetails): DetailLine[] {
   return [
-    ...(details.pr.length > 0 ? [{ kind: 'pr' as const }] : []),
+    ...details.pr.map((_, index) => ({ kind: 'pr' as const, index })),
     ...(details.issues.length === 0
       ? []
       : details.grouped
@@ -205,23 +206,26 @@ export function rowDetails(input: RefsInput): RowDetails {
     return segments;
   };
 
-  const shownKeys = new Set(
-    [summary.pr, ...summary.issues].flatMap((ref) => (ref ? [refKey(ref)] : []))
-  );
+  const shownKeys = new Set([...summary.prs, ...summary.issues].map(refKey));
   const matched = input.matched === undefined ? undefined : findRef(view, input.matched);
-  // A hit on a ref the row does not show (another PR, a mention) joins the line of its kind.
+  // A hit on a ref the row does not show (a PR past the cap, a mention) joins the lines of its
+  // kind. A PR hit takes the last PR line once all are used, and the PR it pushes out counts in
+  // `+N` instead; the order keeps it last, since a hidden PR sorts after every shown one.
   const extraHit = matched && !shownKeys.has(refKey(matched)) ? matched : undefined;
-  const extra = Math.max(0, summary.extra - (extraHit ? 1 : 0));
-  const prs = [summary.pr, extraHit?.kind === 'pr' ? extraHit : undefined].filter(
-    (ref): ref is Ref => ref !== undefined
-  );
+  let extra = Math.max(0, summary.extra - (extraHit ? 1 : 0));
+  const prs = [...summary.prs];
+  if (extraHit?.kind === 'pr') {
+    if (prs.length >= ROW_PRS) {
+      prs.pop();
+      extra++;
+    }
+    prs.push(extraHit);
+  }
   const issues = [...summary.issues, ...(extraHit?.kind === 'issue' ? [extraHit] : [])];
 
-  const pr = prs.flatMap((ref, index) => [
-    ...(index > 0 ? [{ text: '  ', fg: muted }] : []),
-    ...piece(ref, ref === summary.pr || ref === extraHit, ref === summary.pr)
-  ]);
-  if (pr.length > 0 && extra > 0) pr.push({ text: `  +${extra}`, fg: muted });
+  const pr = prs.map((ref) => piece(ref, true, true));
+  // The first PR line carries the `+N`, where the single PR line had it.
+  if (pr[0] && extra > 0) pr[0] = [...pr[0], { text: `  +${extra}`, fg: muted }];
   if (input.groupIssues === true) {
     return {
       pr,
@@ -637,7 +641,7 @@ export function detailsLine(
       return issueSegments(details.issues, details.extra, room, theme().text.muted);
     }
     if (line.kind === 'issue') return details.issues[line.index] ?? [];
-    return details.pr;
+    return details.pr[line.index] ?? [];
   });
 }
 

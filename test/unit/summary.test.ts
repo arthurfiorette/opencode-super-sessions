@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Ref, RefLink, RefSource, RefState } from '../../src/refs/ref.js';
 import { refKey } from '../../src/refs/ref.js';
-import { type DoneInput, doneAt, isDone } from '../../src/refs/summary.js';
+import { type DoneInput, doneAt, isDone, rowRefs, sidebarRefs } from '../../src/refs/summary.js';
 import type { SessionRefView } from '../../src/rpc.js';
 
 const ref = (kind: Ref['kind'], number: number): Ref => ({
@@ -143,4 +143,44 @@ test('decides when a session is Done', () => {
   // Auto-archive counts days from the mark, not from the merge.
   assert.equal(doneAt({ ...merged, done: true, doneAt: 500 }), 500);
   assert.equal(doneAt(merged), 100);
+});
+
+test('rows list open pull requests above merged and closed ones, and the issues they close next', () => {
+  const closes = (target: Ref, via: Ref, linkedAt: number): RefLink => ({
+    ...link(target, 'closes', linkedAt),
+    via: refKey(via)
+  });
+  const sessionView = view(
+    [
+      link(pr(2), 'agent', 5),
+      link(pr(3), 'created', 9),
+      // No snapshot yet: sorts with the open ones, after the explicit links.
+      link(pr(4), 'prompt', 8),
+      link(pr(7), 'mention', 10),
+      closes(issue(20), pr(2), 1),
+      link(issue(21), 'prompt', 7),
+      closes(issue(22), pr(6), 2),
+      // Closed by a PR the row does not show, so it waits with the other issues.
+      closes(issue(23), pr(3), 3)
+    ],
+    [
+      [pr(1), state('merged', 100)],
+      [pr(2), state('open')],
+      [pr(3), state('closed', 90)],
+      [pr(6), state('open')],
+      [issue(20), state('open')],
+      [issue(21), state('open')],
+      [issue(22), state('open')],
+      [issue(23), state('open')]
+    ],
+    // The open branch PR leads the open links; the merged one drops below every open PR.
+    [pr(6), pr(1)]
+  );
+  const numbers = (refs: Ref[]) => refs.map((item) => item.number);
+  const row = rowRefs(sessionView);
+  assert.deepEqual(numbers(row.prs), [6, 2, 4]);
+  assert.deepEqual(numbers(row.issues), [22, 20, 21, 23]);
+  // #1 and #3 past the three PR lines, and the mention.
+  assert.equal(row.extra, 3);
+  assert.deepEqual(numbers(sidebarRefs(sessionView).refs), [6, 2, 4, 1, 3, 21, 23, 22, 20]);
 });

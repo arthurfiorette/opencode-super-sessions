@@ -137,10 +137,10 @@ export interface Group {
 }
 
 /**
- * A line a session row can draw under its title: the PR line, then either the joined issues
- * line or the `index`th of the one-per-issue lines.
+ * A line a session row can draw under its title: the `index`th PR line, then either the joined
+ * issues line or the `index`th of the one-per-issue lines.
  */
-export type DetailLine = { kind: 'pr' | 'issues' } | { kind: 'issue'; index: number };
+export type DetailLine = { kind: 'issues' } | { kind: 'pr' | 'issue'; index: number };
 
 /** One terminal line of the session list. A session takes a `title` line and the others it needs. */
 export type Line =

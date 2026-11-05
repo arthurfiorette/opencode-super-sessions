@@ -620,7 +620,8 @@ export default function SessionBrowser(props: PageProps) {
     const session = selected();
     const view = session ? data.refs[session.id] : undefined;
     const summary = view ? rowRefs(view) : undefined;
-    const primary = summary?.pr ?? summary?.issues[0];
+    // The row's first line: an open PR whenever the session has one.
+    const primary = summary?.prs[0] ?? summary?.issues[0];
     if (!view || !primary) {
       toast('No pull request or issue on this session.');
       return;
@@ -1279,7 +1280,7 @@ export default function SessionBrowser(props: PageProps) {
           ? 'b'
           : value.kind === 'pull'
             ? `p:${value.pull.key}`
-            : value.kind === 'wrap' || value.kind === 'issue'
+            : value.kind === 'wrap' || value.kind === 'issue' || value.kind === 'pr'
               ? `${value.kind}${value.index}:${value.session.id}`
               : `${value.kind}:${value.session.id}`;
     });

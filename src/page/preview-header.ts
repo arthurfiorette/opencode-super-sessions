@@ -8,7 +8,7 @@ import { createComponent, createMemo, For, type JSX, Show, untrack } from 'solid
 import type { Options } from '../config.js';
 import { type createMarquee, marqueeText } from '../marquee.js';
 import { type PullDetails, type Ref, refKey } from '../refs/ref.js';
-import { mainPullRequest, trackedRefs } from '../refs/summary.js';
+import { pullRequests, trackedRefs } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { createFailedChecks, hasWorkStatus, workRow, workStatus } from '../work-row.js';
 import { fitText } from './row.js';
@@ -318,25 +318,19 @@ export type WorkLine =
   | { kind: 'status'; ref: Ref };
 
 /**
- * Tracked refs, the main PR first, each PR followed by its status line when it has one and the
- * issues it closes right under it, in the same columns; then mentioned refs under a label. Each
- * ref appears once, so its key names its row.
+ * Tracked refs: pull requests in the rows' order (see `pullRequests`), so an open one is always
+ * above the merged and closed ones, each followed by its status line when it has one and the
+ * issues it closes right under it, in the same columns; then the other tracked issues, then
+ * mentioned refs under a label. Each ref appears once, so its key names its row.
  */
 export function workLines(view: SessionRefView): WorkLine[] {
-  const main = mainPullRequest(view);
-  const mainKey = main.pr === undefined ? undefined : refKey(main.pr);
   const tracked = trackedRefs(view);
   const trackedKeys = new Set(tracked.map(refKey));
   const nestedKeys = new Set<string>();
   // The PR's snapshot still lists an issue the user unlinked; its stored link is what is gone.
   const linkedKeys = new Set(view.links.map((link) => refKey(link.ref)));
   const lines: WorkLine[] = [];
-  const prs = tracked.filter((ref) => ref.kind === 'pr');
-  const ordered = [
-    ...prs.filter((ref) => refKey(ref) === mainKey),
-    ...prs.filter((ref) => refKey(ref) !== mainKey)
-  ];
-  for (const pr of ordered) {
+  for (const pr of pullRequests(view)) {
     const key = refKey(pr);
     lines.push({ kind: 'ref', ref: pr });
     if (hasWorkStatus(view.states[key])) lines.push({ kind: 'status', ref: pr });

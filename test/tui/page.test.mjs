@@ -485,6 +485,39 @@ test('rows list each issue on its own line up to five, and "Group issues" joins 
   assert.doesNotMatch(rendered.captureCharFrame(), /Rspack issue/);
 });
 
+// A merged branch PR used to take the row's only PR line and hide the session's open PR.
+test('a row lists every pull request, the open one above the merged branch PR', async () => {
+  const merged = { ...pr4930, number: 29169 };
+  const open = { ...pr4930, number: 29489 };
+  refViews.multi = {
+    links: [{ ref: open, source: 'agent', linkedAt: 2 }],
+    branchRefs: [merged],
+    states: {
+      [key(merged)]: { status: 'merged', title: 'Merged branch fix', url: 'u' },
+      [key(open)]: {
+        status: 'open',
+        title: 'Open follow-up fix',
+        url: 'u',
+        review: { decision: 'review_required', checks: 'pending' }
+      }
+    }
+  };
+  const terminal = await host(undefined, undefined, [
+    session('multi', 'Nested state merge fix', { updated: NOW - 30 * MINUTE })
+  ]);
+  const rendered = await testRender(() => terminal.overlay.render({}), { width: 140, height: 40 });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  await eventually(rendered, (frame) => frame.includes('Merged branch fix'));
+  const lines = rendered.captureCharFrame().split('\n');
+  const title = lines.findIndex((line) => line.includes('Nested state merge fix'));
+  assert.match(lines[title + 1] ?? '', /#29489 .*Open follow-up fix/);
+  assert.match(lines[title + 2] ?? '', /#29169 Merged branch fix/);
+  delete refViews.multi;
+});
+
 // Old sessions are read only once the user selects one: no history reads on startup, and the
 // scan reuses the page the preview loaded.
 test('the selected session is scanned from the preview page, and nothing is scanned before', async () => {
