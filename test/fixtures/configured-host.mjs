@@ -341,6 +341,7 @@ try {
     { 'super-sessions': { v: 1, links: [], dismissed: [], scanned: oldMarker } },
     2
   );
+  const unscanned = await host.sessions.get({ sessionID: earlierID });
   assert.equal(await scanSession(source, earlierID, { pause: noPause }), 'scanned');
   const rescanned = (await host.sessions.get({ sessionID: earlierID })).metadata['super-sessions'];
   assert.deepEqual(rescanned, {
@@ -348,7 +349,9 @@ try {
     links: [],
     dismissed: [],
     scanned: { ...oldMarker, pushes: true },
-    pushed: ['fix-legacy']
+    pushed: ['fix-legacy'],
+    // The imported session has no run times, so the write keeps the activity time it moves.
+    activeAt: unscanned.time.updated
   });
   assert.equal(await scanSession(source, earlierID, { pause: noPause }), 'skipped');
 

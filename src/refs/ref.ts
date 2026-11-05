@@ -68,7 +68,11 @@ export const sessionRefsSchema = z.strictObject({
     .optional(),
   // Branches the session pushed with `git push`, oldest first. A branch pull request opened
   // before the session counts for it only when its head is one of these.
-  pushed: z.array(z.string().min(1)).optional()
+  pushed: z.array(z.string().min(1)).optional(),
+  // A session's activity time before the plugin first wrote it, for sessions without run times,
+  // whose only activity record is `time.updated` and which that write moves. The write queue
+  // stamps it; `activityTime` in src/host/session-api.ts reads it.
+  activeAt: z.number().int().nonnegative().optional()
 });
 
 /**

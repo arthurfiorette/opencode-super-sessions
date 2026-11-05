@@ -41,7 +41,7 @@ function fakeGitLab(failure: 'missing-tool' | 'failed'): ForgeProvider {
 function setup(provider: ForgeProvider, hosts = createForgeHosts({ gitlab: { hosts: [] } })) {
   let metadata: Record<string, unknown> = {};
   const session = {
-    get: async () => ({ metadata }),
+    get: async () => ({ metadata, time: { created: 0, updated: 0, idle: 0 } }),
     update: async (input: { metadata?: Record<string, unknown> }) => {
       metadata = input.metadata ?? {};
     }

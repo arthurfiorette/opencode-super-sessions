@@ -1,4 +1,5 @@
 import type { Plugin } from '@opencode/plugin';
+import { activityTime } from '../host/session-api.js';
 import type { BranchPull } from '../providers/provider.js';
 import {
   type ProviderId,
@@ -314,7 +315,7 @@ export async function searchSessions(
       return {
         id: info.id,
         title: info.title ?? '',
-        updated: info.time.updated,
+        updated: activityTime(info),
         refs: uniqueRefs([...links.map((link) => link.ref), ...branches.own]).map((ref) => {
           const snapshot = runtime.cache.get(refKey(ref));
           return snapshot !== undefined && 'ref' in snapshot

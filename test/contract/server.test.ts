@@ -13,6 +13,7 @@ import {
   userPrompt
 } from '../../src/host/events.js';
 import {
+  activityTime,
   forkSession,
   listFilters,
   projectScope,
@@ -23,6 +24,8 @@ import {
 } from '../../src/host/session-api.js';
 import { shellCall } from '../../src/host/tool-hook.js';
 import { projectWorktrees, removeWorktree } from '../../src/host/worktree.js';
+import { markScanned } from '../../src/refs/store.js';
+import { createWriteQueue } from '../../src/server/queue.js';
 import {
   ANSWER,
   createHost,
@@ -250,6 +253,58 @@ test('server plugin session.update replaces metadata and session.get returns it 
   assert.equal(info.location.directory, location.directory);
   // The sidebar refetches refs on this event.
   await event('session.metadata.updated', (item) => item.data.sessionID === session.id);
+});
+
+// The list's order, day groups and ages, and the cleanup inactivity rule, read `activityTime`.
+// A metadata write moves `time.updated`; it must not read as the user working in the session.
+test('a plugin metadata write leaves activityTime alone, and a prompt moves it', {
+  timeout: 60_000
+}, async () => {
+  // The run starts a Location, whose setup sets the probe.
+  const ranID = await agentRun('activity-ran', 'some work');
+  assert.ok(probe);
+  const context = probe;
+  const queue = createWriteQueue();
+  const read = (sessionID: string) => context.session.get({ sessionID });
+  /** Writes the history scan marker through the plugin's queue and returns the session before and after. */
+  const scan = async (sessionID: string) => {
+    const before = await read(sessionID);
+    await queue.update(context.session, sessionID, (refs) =>
+      markScanned(refs, Date.now(), undefined)
+    );
+    return { before, after: await read(sessionID) };
+  };
+  /** Prompts and waits until the run moved the activity time past `since`. */
+  const prompt = async (sessionID: string, since: number) => {
+    await host.sessions.prompt({ sessionID, text: 'more work' });
+    await until(
+      async () => activityTime(await read(sessionID)),
+      (at) => at > since
+    );
+  };
+
+  // A session that ran: busy and idle record activity.
+  const ran = await scan(ranID);
+  assert.ok(
+    ran.after.time.updated > ran.before.time.updated,
+    'the write did not move time.updated'
+  );
+  assert.equal(activityTime(ran.after), activityTime(ran.before));
+  await prompt(ranID, activityTime(ran.after));
+
+  // A session without run times, like one that last ran on a host before them: the queue stamps
+  // the activity time the write is about to overwrite.
+  const fresh = await host.sessions.create({
+    location: { directory: directory('activity-fresh') }
+  });
+  const stamped = await scan(fresh.id);
+  assert.equal(stamped.before.time.idle, undefined);
+  assert.ok(
+    stamped.after.time.updated > stamped.before.time.updated,
+    'the write did not move time.updated'
+  );
+  assert.equal(activityTime(stamped.after), stamped.before.time.updated);
+  await prompt(fresh.id, activityTime(stamped.after));
 });
 
 test('deleting a session publishes session.deleted with its id', async () => {

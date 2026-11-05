@@ -1,4 +1,5 @@
 import type { Plugin } from '@opencode/plugin';
+import { activityStamp } from '../host/session-api.js';
 import { METADATA_KEY, readSessionRefs, type SessionRefs, sessionRefsSchema } from '../refs/ref.js';
 import { type RefsUpdate, withSessionRefs } from '../refs/store.js';
 
@@ -23,7 +24,8 @@ export interface WriteQueue {
  * from tools, hooks, events and RPC goes through one process-wide queue to rule that out.
  *
  * A stored value that does not parse, such as one a newer plugin version wrote, is never
- * replaced: the update rejects and `warn` names the session.
+ * replaced: the update rejects and `warn` names the session. The first write to a session
+ * without run times also stamps `activeAt` (see `activityStamp`).
  */
 export function createWriteQueue(warn: (message: string) => void = () => {}): WriteQueue {
   const tails = new Map<string, Promise<unknown>>();
@@ -41,14 +43,17 @@ export function createWriteQueue(warn: (message: string) => void = () => {}): Wr
           throw new Error(message);
         }
         const result = mutate(readSessionRefs(info.metadata));
-        if (result.changed) {
-          await session.update({
-            sessionID,
-            // SessionRefs is plain JSON, which the schema-typed metadata cannot infer.
-            metadata: withSessionRefs(info.metadata, result.next) as typeof info.metadata & {}
-          });
-        }
-        return result.next;
+        if (!result.changed) return result.next;
+        // This write moves `time.updated`, the only activity record of a session without run
+        // times, so the value it had is kept for `activityTime`.
+        const stamp = activityStamp(info);
+        const next = stamp === undefined ? result.next : { ...result.next, activeAt: stamp };
+        await session.update({
+          sessionID,
+          // SessionRefs is plain JSON, which the schema-typed metadata cannot infer.
+          metadata: withSessionRefs(info.metadata, next) as typeof info.metadata & {}
+        });
+        return next;
       });
       tails.set(sessionID, next);
       // Drops the entry once the chain is idle so finished sessions do not accumulate.

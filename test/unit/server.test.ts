@@ -9,6 +9,9 @@ import type { Runtime } from '../../src/server/runtime.js';
 /** Yields to the event loop so concurrent fake calls interleave the way real I/O does. */
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
+/** Host times of a session that ran, so writes add no `activeAt` stamp. */
+const RAN = { created: 0, updated: 0, idle: 0 };
+
 /** A tracked link to `acme/widgets#number`. */
 function link(number: number): RefLink {
   return {
@@ -24,7 +27,7 @@ test('the write queue keeps every concurrent link and foreign metadata, and surv
   const session = {
     get: async () => {
       await tick();
-      return { metadata: structuredClone(metadata) };
+      return { metadata: structuredClone(metadata), time: RAN };
     },
     update: async (input: { metadata?: Record<string, unknown> }) => {
       await tick();
@@ -93,7 +96,7 @@ test('the write queue never overwrites a stored value it cannot read, such as a 
   const newer = { v: 2, links: [{ future: true }], dismissed: [] };
   const writes: unknown[] = [];
   const session = {
-    get: async () => ({ metadata: { 'super-sessions': newer } }),
+    get: async () => ({ metadata: { 'super-sessions': newer }, time: RAN }),
     update: async (input: { metadata?: Record<string, unknown> }) => {
       writes.push(input.metadata);
     }
@@ -103,7 +106,10 @@ test('the write queue never overwrites a stored value it cannot read, such as a 
   assert.deepEqual(writes, []);
 
   // A session without the key is a first write, not an unreadable one.
-  const fresh = { ...session, get: async () => ({ metadata: {} }) } as unknown as SessionAccess;
+  const fresh = {
+    ...session,
+    get: async () => ({ metadata: {}, time: RAN })
+  } as unknown as SessionAccess;
   await queue.update(fresh, 'ses_2', (refs) => mergeLinks(refs, [link(1)]));
   assert.equal(writes.length, 1);
 });

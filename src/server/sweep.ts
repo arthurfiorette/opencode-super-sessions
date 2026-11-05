@@ -349,7 +349,8 @@ function createSweeper(runtime: Runtime): Sweeper {
               archived: info?.time.archived !== undefined,
               done: session?.done ?? false,
               doneAt: session?.doneAt,
-              updated: info?.time.updated ?? now,
+              // A session the list did not return counts as active now, which keeps the worktree.
+              info: info ?? { time: { created: now, updated: now } },
               running: running.has(id),
               pending: waiting[index] ?? false,
               open: open.has(id),
@@ -436,7 +437,7 @@ function createSweeper(runtime: Runtime): Sweeper {
         return {
           ...(known.get(id) ?? { id, done: false }),
           archived: info.time.archived !== undefined,
-          updated: info.time.updated,
+          info,
           running: isBusy(info),
           pending: await hasPending(runtime, context, id),
           open: open.has(id),

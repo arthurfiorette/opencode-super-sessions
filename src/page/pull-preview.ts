@@ -21,6 +21,7 @@ import {
 import { createStore } from 'solid-js/store';
 import { useCliSettings } from '../cli-settings.js';
 import type { Options } from '../config.js';
+import { activityTime } from '../host/session-api.js';
 import { clickLink } from '../link.js';
 import { createMarquee } from '../marquee.js';
 import { type PullCheck, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
@@ -430,7 +431,7 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
         },
         children: (session: SessionInfo, index: () => number) => {
           const selected = () => props.selectedSession() === index();
-          const age = () => formatAge(props.now() - session.time.updated);
+          const age = () => formatAge(props.now() - activityTime(session));
           const fg = (fallback: string | RGBA) =>
             selected() ? theme().text.action.primary.focused : fallback;
           return jsx('box', {

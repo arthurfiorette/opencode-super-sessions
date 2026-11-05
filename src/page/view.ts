@@ -28,6 +28,7 @@ import { useCliSettings } from '../cli-settings.js';
 import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
 import { rpcError } from '../host/rpc.js';
 import {
+  activityTime,
   forkSession,
   isUnread,
   type Prompt,
@@ -202,18 +203,22 @@ export default function SessionBrowser(props: PageProps) {
           groupIssues: settings.groupIssues()
         })
       : NO_DETAILS;
-  /** The age, or the archive and update ages in the Archived view, on the title line. */
+  /**
+   * The age of the latest activity, or the archive and activity ages in the Archived view, on the
+   * title line.
+   */
   const rightOf = (session: SessionInfo) => {
     const info = live(session);
     const now = model.now();
+    const age = formatAge(now - activityTime(info));
     const archivedAt =
       memory.view === 'archived' && !data.search
         ? (session.time.archived ?? info.time.archived)
         : undefined;
     return archivedAt === undefined
       ? // Padded to the widest age (`11mo`), so labels before it line up down the list.
-        formatAge(now - info.time.updated).padStart(4)
-      : `archived ${formatAge(now - archivedAt)} · updated ${formatAge(now - info.time.updated)}`;
+        age.padStart(4)
+      : `archived ${formatAge(now - archivedAt)} · updated ${age}`;
   };
   /**
    * A row's title wrapped at its column. It reads no selection, hover or delete state, so moving
