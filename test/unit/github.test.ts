@@ -140,15 +140,16 @@ test('a rollup that failed only through cancelled runs reads as cancelled, not f
 });
 
 test('branch lookups pick the repository own pull request and ignore fork PRs with the same head', () => {
-  const cases: Array<[string, number[] | string, string?]> = [
+  // Each found PR carries when it was opened, which decides whether it counts for a session.
+  const cases: Array<[string, Array<[number, string]> | string, string?]> = [
     // Newer fork PRs and deleted forks (null head repository) come first in the response.
-    ['axios/axios@dev', [4225]],
+    ['axios/axios@dev', [[4225, '2021-10-27T16:00:06Z']]],
     // Every `patch-1` PR comes from a fork, including the open one.
     ['cli/cli@patch-1', []],
     // The same response seen from a fork checkout whose branch was pushed to acoulton/cli: the
     // newer closed PRs from other forks are skipped and the PR is numbered in cli/cli.
-    ['cli/cli@patch-1', [14373], 'acoulton/cli'],
-    ['cli/cli@babakks/auth-status-expired-hint', [14815]],
+    ['cli/cli@patch-1', [[14373, '2026-09-07T10:43:26Z']], 'acoulton/cli'],
+    ['cli/cli@babakks/auth-status-expired-hint', [[14815, '2026-10-24T18:51:08Z']]],
     ['arthurfiorette/does-not-exist-zz@x', 'not-found']
   ];
   const outputs = fixture<Record<string, CapturedOutput>>('branches.json');
@@ -164,8 +165,12 @@ test('branch lookups pick the repository own pull request and ignore fork PRs wi
 
     const result = parseBranchResponse(repo, response, headRepo);
     assert.deepEqual(
-      Array.isArray(result) ? result.map((ref) => `${ref.repo}#${ref.number}`) : result.reason,
-      Array.isArray(expected) ? expected.map((number) => `${repoName}#${number}`) : expected,
+      Array.isArray(result)
+        ? result.map((pull) => [`${pull.ref.repo}#${pull.ref.number}`, pull.createdAt])
+        : result.reason,
+      Array.isArray(expected)
+        ? expected.map(([number, opened]) => [`${repoName}#${number}`, Date.parse(opened)])
+        : expected,
       name
     );
   }

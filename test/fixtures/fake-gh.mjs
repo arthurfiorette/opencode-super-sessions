@@ -100,10 +100,13 @@ const refs = {
       }
     ])
   ),
+  // Opened before any session a fixture creates, so its branch lookup counts it only for a
+  // session that pushed fix-titles.
   'acme/widgets#34': {
     __typename: 'PullRequest',
     state: 'OPEN',
     isDraft: false,
+    createdAt: '2026-11-01T09:00:00Z',
     title: 'Show full session titles',
     url: 'https://github.com/acme/widgets/pull/34',
     mergedAt: null,

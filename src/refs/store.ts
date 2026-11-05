@@ -107,17 +107,38 @@ export function setDone(current: SessionRefs, done: boolean | null, now: number)
 }
 
 /**
- * Records that the history scan read the session, through `lastMessageID`. A session already
- * marked keeps its first marker, so a second scan of it writes nothing.
+ * Records that the history scan read the session, pushes included, through `lastMessageID`. A
+ * session already marked keeps its first marker, so a second scan of it writes nothing; a marker
+ * from before push detection only gains `pushes`.
  */
 export function markScanned(
   current: SessionRefs,
   scannedAt: number,
   lastMessageID: string | undefined
 ): RefsUpdate {
-  if (current.scanned !== undefined) return { next: current, changed: false };
-  const scanned = lastMessageID === undefined ? { scannedAt } : { scannedAt, lastMessageID };
+  if (current.scanned?.pushes === true) return { next: current, changed: false };
+  if (current.scanned !== undefined) {
+    return { next: { ...current, scanned: { ...current.scanned, pushes: true } }, changed: true };
+  }
+  const scanned =
+    lastMessageID === undefined
+      ? { scannedAt, pushes: true as const }
+      : { scannedAt, lastMessageID, pushes: true as const };
   return { next: { ...current, scanned }, changed: true };
+}
+
+// A session pushes to a handful of branches; the cap only bounds a runaway script.
+const PUSHED_MAX = 50;
+
+/**
+ * Records branches the session pushed, keeping the newest {@link PUSHED_MAX}. A branch already
+ * recorded writes nothing.
+ */
+export function addPushed(current: SessionRefs, branches: readonly string[]): RefsUpdate {
+  const known = current.pushed ?? [];
+  const added = [...new Set(branches)].filter((branch) => !known.includes(branch));
+  if (added.length === 0) return { next: current, changed: false };
+  return { next: { ...current, pushed: [...known, ...added].slice(-PUSHED_MAX) }, changed: true };
 }
 
 /** Removes a key from `dismissed` so detection may add it again. */

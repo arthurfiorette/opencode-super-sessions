@@ -1,9 +1,18 @@
 import type { Plugin } from '@opencode/plugin';
-import { type ProviderId, type Ref, type RefState, readSessionRefs, refKey } from '../refs/ref.js';
+import type { BranchPull } from '../providers/provider.js';
+import {
+  type ProviderId,
+  type Ref,
+  type RefLink,
+  type RefState,
+  readSessionRefs,
+  refKey,
+  type SessionRefs
+} from '../refs/ref.js';
 import { rankSessions, type SearchSession } from '../refs/search.js';
 import type { RepoInfo } from '../repo.js';
 import type { SearchHit, SearchScope, SessionRefView } from '../rpc.js';
-import type { BranchTarget } from './branches.js';
+import { type BranchTarget, sessionBranchPulls } from './branches.js';
 import { ensureRefs, resolveRepo, syncCloses } from './links.js';
 import type { SessionAccess } from './queue.js';
 import { type Runtime, warn } from './runtime.js';
@@ -35,6 +44,68 @@ async function readSession(session: Pick<SessionAccess, 'get'>, sessionID: strin
   return session.get({ sessionID }).catch((): SessionInfo | undefined => undefined);
 }
 
+/** A session's branch pull requests: all of the checkout's, and those that count for it. */
+interface BranchRefs {
+  /** The checkout's pull requests the user did not dismiss, whichever session opened them. */
+  checkout: Ref[];
+  /** The ones that came out of this session (see {@link sessionBranchPulls}). */
+  own: Ref[];
+  /**
+   * Keys of checkout pull requests that do not count for the session and that it does not link
+   * on its own. `closes` links recorded through them are hidden.
+   */
+  foreign: Set<string>;
+}
+
+/** Splits a branch lookup into the pull requests that count for the session and the others. */
+function branchRefsOf(
+  refs: SessionRefs,
+  created: number,
+  target: BranchTarget | undefined,
+  pulls: readonly BranchPull[] | undefined
+): BranchRefs {
+  if (target === undefined || pulls === undefined) {
+    return { checkout: [], own: [], foreign: new Set() };
+  }
+  const dismissed = new Set(refs.dismissed);
+  const kept = pulls.filter((pull) => !dismissed.has(refKey(pull.ref)));
+  const own = sessionBranchPulls(kept, target.branch, { created, pushed: refs.pushed ?? [] });
+  const counted = new Set([
+    ...own.map(refKey),
+    ...refs.links.filter((link) => link.source !== 'mention').map((link) => refKey(link.ref))
+  ]);
+  const checkout = kept.map((pull) => pull.ref);
+  return {
+    checkout,
+    own,
+    foreign: new Set(checkout.map(refKey).filter((key) => !counted.has(key)))
+  };
+}
+
+/**
+ * Links a view shows: not dismissed, and no `closes` link recorded through a branch pull request
+ * that does not count for the session. Those stay stored, so they come back if the session
+ * pushes to the branch, and links of every other source are never hidden here.
+ */
+function visibleLinks(refs: SessionRefs, foreign: ReadonlySet<string>): RefLink[] {
+  const dismissed = new Set(refs.dismissed);
+  return refs.links.filter(
+    (link) =>
+      !dismissed.has(refKey(link.ref)) &&
+      !(link.source === 'closes' && link.via !== undefined && foreign.has(link.via))
+  );
+}
+
+/**
+ * A session's view, and the same view with every branch pull request of its checkout. Worktree
+ * cleanup decides per checkout, so it reads `checkout`, which includes pull requests other
+ * sessions opened on the branch.
+ */
+export interface SessionViews {
+  view: SessionRefView;
+  checkout: SessionRefView;
+}
+
 /**
  * Builds the TUI's view of each existing session. Unknown ids are left out. Without `wait`
  * nothing here calls the forge: cached data is returned and stale sessions refresh in the
@@ -46,13 +117,30 @@ export async function buildViews(
   sessionIDs: string[],
   mode: ViewMode
 ): Promise<Record<string, SessionRefView>> {
+  const built = await collectViews(runtime, session, sessionIDs, mode);
+  return Object.fromEntries(Object.entries(built).map(([id, entry]) => [id, entry.view]));
+}
+
+/** {@link buildViews}, plus the checkout view worktree cleanup reads. */
+export async function collectViews(
+  runtime: Runtime,
+  session: SessionAccess,
+  sessionIDs: string[],
+  mode: ViewMode
+): Promise<Record<string, SessionViews>> {
   const force = mode.wait && mode.force === true;
   const loaded = await Promise.all(
     [...new Set(sessionIDs)].map(async (id) => {
       const info = await readSession(session, id);
       if (info === undefined) return undefined;
       const repo = await resolveRepo(runtime, info.location.directory, { force });
-      return { id, refs: readSessionRefs(info.metadata), repo, target: branchTarget(repo) };
+      return {
+        id,
+        created: info.time.created,
+        refs: readSessionRefs(info.metadata),
+        repo,
+        target: branchTarget(repo)
+      };
     })
   );
   const sessions = loaded.filter((entry) => entry !== undefined);
@@ -61,54 +149,63 @@ export async function buildViews(
   const withBranches = await Promise.all(
     sessions.map(async (entry) => {
       const provider = entry.repo.repo && runtime.providers.get(entry.repo.repo.provider);
-      if (entry.target === undefined || !provider) return { ...entry, branchRefs: [] as Ref[] };
+      if (entry.target === undefined || !provider) {
+        return { ...entry, branches: branchRefsOf(entry.refs, entry.created, undefined, []) };
+      }
       const found = mode.wait
         ? await runtime.branches.ensure(provider, entry.target, { force })
         : runtime.branches.get(entry.target);
       if (!mode.wait && runtime.branches.stale(entry.target)) stale.add(entry.id);
-      const dismissed = new Set(entry.refs.dismissed);
-      const branchRefs = (found ?? []).filter((ref) => !dismissed.has(refKey(ref)));
-      return { ...entry, branchRefs };
+      return { ...entry, branches: branchRefsOf(entry.refs, entry.created, entry.target, found) };
     })
   );
 
   if (mode.wait) {
-    await ensureRefs(runtime, uniqueRefs(withBranches.flatMap(trackedRefsOf)), { force });
+    // The checkout's pull requests include the session's own, and cleanup reads their states.
+    const refs = withBranches.flatMap((entry) => [
+      ...entry.refs.links.map((link) => link.ref),
+      ...entry.branches.checkout
+    ]);
+    await ensureRefs(runtime, uniqueRefs(refs), { force });
   }
 
-  const views: Record<string, SessionRefView> = {};
+  const views: Record<string, SessionViews> = {};
   const targets = new Map<string, BranchTarget | undefined>();
   const added: Ref[] = [];
   for (const entry of withBranches) {
     targets.set(entry.id, entry.target);
-    const refs = await syncCloses(runtime, session, entry.id, entry.refs, entry.branchRefs).catch(
+    // Only the session's own branch pull requests record `closes` links.
+    const refs = await syncCloses(runtime, session, entry.id, entry.refs, entry.branches.own).catch(
       (error: unknown) => {
         warn(`Recording closed issues for ${entry.id} failed`, error);
         return entry.refs;
       }
     );
     if (refs !== entry.refs) added.push(...refs.links.map((link) => link.ref));
-    const dismissed = new Set(refs.dismissed);
-    views[entry.id] = {
-      links: refs.links.filter((link) => !dismissed.has(refKey(link.ref))),
+    const view: SessionRefView = {
+      links: visibleLinks(refs, entry.branches.foreign),
       ...(entry.repo.branch === undefined ? {} : { branch: entry.repo.branch }),
       ...(entry.repo.defaultBranch === undefined
         ? {}
         : { defaultBranch: entry.repo.defaultBranch }),
-      branchRefs: entry.branchRefs,
+      branchRefs: entry.branches.own,
       states: {},
       ...(refs.done === undefined ? {} : { done: refs.done }),
       ...(refs.doneAt === undefined ? {} : { doneAt: refs.doneAt })
     };
+    views[entry.id] = { view, checkout: { ...view, branchRefs: entry.branches.checkout } };
   }
   // Issues recorded just now from `closes` have no snapshot yet; only the missing ones are fetched.
   if (mode.wait && added.length > 0) await ensureRefs(runtime, uniqueRefs(added));
 
-  for (const [id, view] of Object.entries(views)) {
+  for (const [id, { view, checkout }] of Object.entries(views)) {
     const keys = uniqueRefs([...view.links.map((link) => link.ref), ...view.branchRefs]).map(
       refKey
     );
     view.states = statesOf(runtime, keys);
+    checkout.states = statesOf(runtime, [
+      ...new Set([...keys, ...checkout.branchRefs.map(refKey)])
+    ]);
     if (!mode.wait && runtime.cache.stale(keys).length > 0) stale.add(id);
     if (force) {
       const failed = failedForges(runtime, targets.get(id), [
@@ -121,11 +218,6 @@ export async function buildViews(
 
   if (stale.size > 0) refreshInBackground(runtime, session, [...stale]);
   return views;
-}
-
-/** Every ref a session view shows, stored or derived from its branch. */
-function trackedRefsOf(entry: { refs: { links: Array<{ ref: Ref }> }; branchRefs: Ref[] }): Ref[] {
-  return [...entry.refs.links.map((link) => link.ref), ...entry.branchRefs];
 }
 
 /** Drops repeated refs, keeping the first of each key. */
@@ -216,20 +308,19 @@ export async function searchSessions(
     [...infos.values()].map(async (info): Promise<SearchSession> => {
       const refs = readSessionRefs(info.metadata);
       const target = branchTarget(await resolveRepo(runtime, info.location.directory));
-      const branchRefs = target === undefined ? [] : (runtime.branches.get(target) ?? []);
-      const dismissed = new Set(refs.dismissed);
+      const pulls = target === undefined ? undefined : runtime.branches.get(target);
+      const branches = branchRefsOf(refs, info.time.created, target, pulls);
+      const links = visibleLinks(refs, branches.foreign);
       return {
         id: info.id,
         title: info.title ?? '',
         updated: info.time.updated,
-        refs: uniqueRefs([...refs.links.map((link) => link.ref), ...branchRefs])
-          .filter((ref) => !dismissed.has(refKey(ref)))
-          .map((ref) => {
-            const snapshot = runtime.cache.get(refKey(ref));
-            return snapshot !== undefined && 'ref' in snapshot
-              ? { ref, title: snapshot.state.title }
-              : { ref };
-          })
+        refs: uniqueRefs([...links.map((link) => link.ref), ...branches.own]).map((ref) => {
+          const snapshot = runtime.cache.get(refKey(ref));
+          return snapshot !== undefined && 'ref' in snapshot
+            ? { ref, title: snapshot.state.title }
+            : { ref };
+        })
       };
     })
   );

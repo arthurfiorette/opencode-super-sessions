@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { mock } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const directory = process.env.OPENCODE_TEST_ROOT;
 assert.ok(directory, 'This fixture must run through the isolated integration test.');
@@ -87,6 +87,15 @@ git(repo, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'
 git(repo, 'checkout', '-q', '-b', 'fix-titles');
 git(repo, 'update-ref', 'refs/remotes/origin/fix-titles', 'HEAD');
 git(repo, 'branch', '-q', '--set-upstream-to=origin/fix-titles');
+// The session's `git push` lands in a local bare repository, never on GitHub.
+const pushed = path.join(directory, 'widgets-pushed.git');
+git(directory, 'init', '-q', '--bare', pushed);
+git(
+  repo,
+  'config',
+  `url.${pathToFileURL(pushed).href}.pushInsteadOf`,
+  'https://github.com/acme/widgets.git'
+);
 
 // A clone of acme/widgets on its default branch, for a session written before the plugin ran.
 const legacyRepo = path.join(directory, 'legacy');
@@ -174,6 +183,25 @@ try {
     relinked.links.map((link) => link.ref.number),
     [12]
   );
+
+  // PR 34 on the session's branch was opened before the session, so it is another session's
+  // work, and so is the issue it closes, until this session pushes the branch.
+  const foreign = (await rpc.refresh({ sessionIDs: [sessionID], force: true }, { location }))[
+    sessionID
+  ];
+  assert.deepEqual(foreign.branchRefs, []);
+  assert.deepEqual(
+    foreign.links.map((link) => link.ref.number),
+    [12]
+  );
+  // A `!` command reaches the plugin as `session.shell.ended`; git's report names the branch.
+  await host.sessions.shell({ sessionID, command: 'git push' });
+  const afterPush = await until(
+    stored,
+    (metadata) => metadata['super-sessions'].pushed !== undefined
+  );
+  assert.deepEqual(afterPush['super-sessions'].pushed, ['fix-titles']);
+  assert.deepEqual(afterPush['another-plugin'], { keep: true });
 
   // Asked from another Location: the session's own directory decides its repository and branch.
   const views = await rpc.refresh(
@@ -295,6 +323,9 @@ try {
   const newest = (await host.message.list({ sessionID: legacyID, order: 'desc', limit: 1 }))
     .data[0];
   assert.equal(scanned.scanned.lastMessageID, newest.id);
+  // The push is read from git's report, which names the branch the checkout no longer has.
+  assert.deepEqual(scanned.pushed, ['fix-legacy']);
+  assert.equal(scanned.scanned.pushes, true);
 
   // The marker makes the second scan stop at its first call and write nothing.
   const once = await host.sessions.get({ sessionID: legacyID });
@@ -302,6 +333,24 @@ try {
   const twice = await host.sessions.get({ sessionID: legacyID });
   assert.deepEqual(twice.metadata, once.metadata);
   assert.equal(twice.time.updated, once.time.updated);
+
+  // A session a version without push detection scanned gets one pass that records its pushes
+  // and leaves its links alone: the bare #56 is not looked up again.
+  const oldMarker = { scannedAt: 1, lastMessageID: 'msg_old' };
+  const earlierID = await importLegacySession(
+    { 'super-sessions': { v: 1, links: [], dismissed: [], scanned: oldMarker } },
+    2
+  );
+  assert.equal(await scanSession(source, earlierID, { pause: noPause }), 'scanned');
+  const rescanned = (await host.sessions.get({ sessionID: earlierID })).metadata['super-sessions'];
+  assert.deepEqual(rescanned, {
+    v: 1,
+    links: [],
+    dismissed: [],
+    scanned: { ...oldMarker, pushes: true },
+    pushed: ['fix-legacy']
+  });
+  assert.equal(await scanSession(source, earlierID, { pause: noPause }), 'skipped');
 
   console.log('Configured OpenCode integration passed');
 } finally {
@@ -311,11 +360,13 @@ try {
 
 /**
  * Imports a finished session from before the plugin: a prompt naming issue #56 by its bare
- * number, then an agent turn that ran `gh pr create` and printed the new PR's URL.
+ * number, then an agent turn that pushed `fix-legacy` over SSH, whose report holds no URL, and
+ * ran `gh pr create`, which printed the new PR's URL. `metadata` is stored with it, and `ago`
+ * says how many days before now it ran.
  */
-async function importLegacySession() {
+async function importLegacySession(metadata, ago = 1) {
   const { project } = await host.location.get({ location: legacy });
-  const at = Date.now() - 86_400_000;
+  const at = Date.now() - ago * 86_400_000;
   const id = `ses_legacy${at}`;
   await host.experimental.session.import({
     location: legacy,
@@ -326,7 +377,8 @@ async function importLegacySession() {
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: at, updated: at + 3000 },
-      location: legacy
+      location: legacy,
+      ...(metadata === undefined ? {} : { metadata })
     },
     messages: [
       {
@@ -341,6 +393,22 @@ async function importLegacySession() {
         agent: 'build',
         model: { id: 'model', providerID: 'provider' },
         content: [
+          {
+            type: 'tool',
+            id: 'call_0',
+            name: 'shell',
+            state: {
+              status: 'completed',
+              input: { command: 'git push -u origin HEAD' },
+              content: [
+                {
+                  type: 'text',
+                  text: "To github.com:acme/widgets.git\n * [new branch]      fix-legacy -> fix-legacy\nbranch 'fix-legacy' set up to track 'origin/fix-legacy'.\n"
+                }
+              ]
+            },
+            time: { created: at + 500, completed: at + 900 }
+          },
           {
             type: 'tool',
             id: 'call_1',

@@ -240,23 +240,30 @@ The plugin stores the refs it links in the session's metadata, so they survive r
 
 ### Sources
 
-| Source       | How a ref gets in                                                                                                                                                                         |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Your prompts | URLs, `owner/repo#N` and bare `#N` in your messages. A bare number is looked up in the session's repository and kept only once the forge confirms it. On GitLab, `!N` is a merge request. |
-| Created      | The agent's shell tool or a `!` command runs `gh pr create`, `gh issue create`, `glab mr create` or `glab issue create` (or `new`), and the new URL is printed alone on a line            |
-| Branch       | The pull request whose head is the session's current branch. Not stored: it follows the branch. The default branch, a detached HEAD and a branch that was never pushed get none.          |
-| Agent        | The agent calls `link_work`                                                                                                                                                               |
-| Browser      | You press `ctrl+l` in the browser                                                                                                                                                         |
-| Closes       | Issues a tracked pull request closes, such as `Fixes #123` in its description                                                                                                             |
-| Mentioned    | URLs and `owner/repo#N` in the assistant's replies, never a bare `#N`. Mentions count in `+N`, show in the preview and match in search; they never decide Done.                           |
+| Source       | How a ref gets in                                                                                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Your prompts | URLs, `owner/repo#N` and bare `#N` in your messages. A bare number is looked up in the session's repository and kept only once the forge confirms it. On GitLab, `!N` is a merge request.                                      |
+| Created      | The agent's shell tool or a `!` command runs `gh pr create`, `gh issue create`, `glab mr create` or `glab issue create` (or `new`), and the new URL is printed alone on a line                                                 |
+| Branch       | The pull request whose head is the session's current branch, when it came out of this session (see below). Not stored: it follows the branch. The default branch, a detached HEAD and a branch that was never pushed get none. |
+| Agent        | The agent calls `link_work`                                                                                                                                                                                                    |
+| Browser      | You press `ctrl+l` in the browser                                                                                                                                                                                              |
+| Closes       | Issues a tracked pull request closes, such as `Fixes #123` in its description                                                                                                                                                  |
+| Mentioned    | URLs and `owner/repo#N` in the assistant's replies, never a bare `#N`. Mentions count in `+N`, show in the preview and match in search; they never decide Done.                                                                |
 
 For a branch pushed to a fork, the plugin looks the pull request up in the original repository (the `upstream` remote when it exists, else `origin`) and keeps only pull requests whose head is in that fork. Among several, the newest open one wins, else the newest.
+
+A session started in a checkout another session already worked in, such as a worktree whose branch has a pull request, does not take that pull request over. The branch's pull request counts for a session only when:
+
+- it was opened after the session started, or up to two minutes before it, which absorbs clock differences between your machine and the forge;
+- or the session ran `git push` to that branch, through the agent's shell tool or a `!` command. The branch comes from git's push report in the output, else from the command (`git push origin my-branch`, `HEAD:my-branch`), else it is the branch checked out in the session's directory, as for a plain `git push` or `git push -u origin HEAD`. `--dry-run`, `--delete` and `--tags` alone push no branch.
+
+A pull request that does not count for the session is left out of its row, preview, sidebar, search, Done and auto-archive, and so are the issues linked only because that pull request closes them. Refs you or the agent linked are kept, the pull request itself included, and so are refs from your prompts. Worktree cleanup still counts every pull request of the worktree's branch, since it decides for the checkout.
 
 The "Record refs from prompts" and "Record mentioned refs" settings turn off the first and the last source.
 
 ### Older sessions
 
-Detection watches sessions as they run, so sessions from before you installed the plugin, or from while it was not running, start without refs. The first time you select such a session in the browser (its preview loads), peek at it or open it, the plugin reads its whole history in the background and links what detection would have linked: refs in your prompts, PRs and issues created with `gh` or `glab`, and mentions. The same pass adds the session's prompts and replies to message search. Each session is read once; the plugin records that in the session's metadata, and later messages are covered as they come.
+Detection watches sessions as they run, so sessions from before you installed the plugin, or from while it was not running, start without refs. The first time you select such a session in the browser (its preview loads), peek at it or open it, the plugin reads its whole history in the background and links what detection would have linked: refs in your prompts, PRs and issues created with `gh` or `glab`, mentions, and the branches it pushed. The same pass adds the session's prompts and replies to message search. Each session is read once; the plugin records that in the session's metadata, and later messages are covered as they come. A session read by a version that did not look for pushes is read once more for its pushes only, the next time you touch it; until then a pull request opened before the session does not count for it.
 
 Nothing is read until you touch a session. One session is read at a time, in pages of 100 messages with a short pause between pages, and closing the browser stops the read of a session you only selected. "Scan all sessions now" in the [settings](#settings) reads every session in the browser's current scope after asking, with progress in a toast.
 
@@ -293,7 +300,7 @@ The plugin adds these tools for the agent:
 - `link_work` records up to 10 pull requests or issues the session works on, each as a URL, `owner/repo#N`, or a number with an optional repository and kind. A bare number uses the repository of the session's directory.
 - `unlink_work` stops tracking up to 10 refs.
 
-Neither changes anything on GitHub or GitLab. Every request to the model also carries a short instruction: refs in your messages, branch pull requests and refs created with `gh` or `glab` are tracked already, and the agent must call `link_work` for work you did not link, such as an issue it found by searching or a pull request it opened another way. With "Record refs from prompts" off, the instruction asks it to link the refs you name too.
+Neither changes anything on GitHub or GitLab. Every request to the model also carries a short instruction: refs in your messages, the pull request of a branch the agent pushes and refs created with `gh` or `glab` are tracked already, and the agent must call `link_work` for work you did not link, such as an issue it found by searching or a pull request it opened another way. With "Record refs from prompts" off, the instruction asks it to link the refs you name too.
 
 ## Settings
 
@@ -424,13 +431,13 @@ The plugin asks `gh` and `glab` only about github.com, gitlab.com, the hosts in 
 
 ## Data locations
 
-| Data                                                                       | Location                                                                                           |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Linked and unlinked refs, your Done mark, whether the history was read     | Session metadata, under the `super-sessions` key                                                   |
-| Message search index                                                       | `$XDG_DATA_HOME/opencode/plugins/opencode-super-sessions/search.db` (default `~/.local/share/...`) |
-| TUI settings, pins, the `ctrl+a` choice                                    | OpenCode's plugin storage for the TUI                                                              |
-| Server settings, the cleanup confirmation, sessions kept from auto-archive | OpenCode's plugin storage for the server plugin                                                    |
-| Pull request and issue state                                               | Daemon memory only                                                                                 |
+| Data                                                                                    | Location                                                                                           |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Linked and unlinked refs, pushed branches, your Done mark, whether the history was read | Session metadata, under the `super-sessions` key                                                   |
+| Message search index                                                                    | `$XDG_DATA_HOME/opencode/plugins/opencode-super-sessions/search.db` (default `~/.local/share/...`) |
+| TUI settings, pins, the `ctrl+a` choice                                                 | OpenCode's plugin storage for the TUI                                                              |
+| Server settings, the cleanup confirmation, sessions kept from auto-archive              | OpenCode's plugin storage for the server plugin                                                    |
+| Pull request and issue state                                                            | Daemon memory only                                                                                 |
 
 The plugin reads OpenCode's `cli.json` (for `animations` and the session view settings) and, once, the built-in list's pins in `$XDG_STATE_HOME/opencode/session.json`. It never writes either file.
 
@@ -449,6 +456,7 @@ If the browser fails, it closes and opens the built-in list. If the pull request
 - The index fills from live messages, from a background pass over older sessions and from the read of a session's whole history (see [Older sessions](#older-sessions)). The background pass only reads what follows a session's latest compaction, so text from before a compaction becomes searchable once the plugin saw it live or read that session's history. Tool output and reasoning are not indexed.
 - Reading an older session's history needs a terminal: a session nobody selected, peeked, opened or scanned from the settings keeps no refs from before the plugin.
 - For a `!` command, detection reads the first 1 MiB of its output, which is all OpenCode passes to plugins.
+- Only `git push` run by the agent's shell tool or a `!` command counts as the session's push. Pushes from your own terminal, an editor or other tools such as `jj git push` are not seen, and a subagent's push counts for the subagent's session. A pull request opened on the branch after a session started counts for it even when another session in the same checkout opened it.
 - GitLab instances served under a URL path prefix, such as `https://example.com/gitlab`, are not supported.
 - GitHub Enterprise Server hosts without a `github` label in their name are not recognized.
 - Squash and rebase merges are cleaned up only when the pull request's head commit is in your local repository, for example because the branch was pushed from this clone.

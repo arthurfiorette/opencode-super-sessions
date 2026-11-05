@@ -1,7 +1,8 @@
 import type { SessionInfo, SessionMessageInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import { type HistoryEntry, storedHistory } from './host/events.js';
-import { readSessionRefs } from './refs/ref.js';
+import { isPushReportLine, runsPush } from './refs/push.js';
+import { historyScanned, readSessionRefs } from './refs/ref.js';
 import { HISTORY_ITEMS_MAX, HISTORY_TEXT_MAX, type HistoryItem, SuperSessions } from './rpc.js';
 
 // Reads the stored history of sessions the plugin never saw live and hands it to the server's
@@ -133,7 +134,9 @@ function newestID(messages: readonly SessionMessageInfo[]): string | undefined {
 /**
  * The items of a page the server can use. Shell output is cut to the lines that hold a URL:
  * `gh pr create` and the like print the new URL alone on a line, and the other lines can be
- * megabytes of build output. A command without such a line can create nothing and is dropped.
+ * megabytes of build output. A `git push` also keeps git's push report, which names the
+ * branches it wrote, and is sent even without output, since the server then reads its command
+ * line. Any other command without a URL line can create nothing and is dropped.
  */
 export function historyItems(messages: readonly SessionMessageInfo[]): HistoryItem[] {
   return storedHistory(messages).flatMap((entry: HistoryEntry): HistoryItem[] => {
@@ -141,13 +144,16 @@ export function historyItems(messages: readonly SessionMessageInfo[]): HistoryIt
       if (entry.text.trim() === '') return [];
       return [{ ...entry, text: entry.text.slice(0, HISTORY_TEXT_MAX) }];
     }
-    const urls = entry.output.split('\n').filter((line) => line.includes('://'));
-    if (urls.length === 0) return [];
+    const push = runsPush(entry.command);
+    const kept = entry.output
+      .split('\n')
+      .filter((line) => line.includes('://') || (push && isPushReportLine(line)));
+    if (kept.length === 0 && !push) return [];
     return [
       {
         type: 'shell',
         command: entry.command.slice(0, HISTORY_TEXT_MAX),
-        output: urls.join('\n').slice(0, HISTORY_TEXT_MAX),
+        output: kept.join('\n').slice(0, HISTORY_TEXT_MAX),
         created: entry.created
       }
     ];
@@ -232,7 +238,7 @@ export function createHistoryScanner(context: Plugin.Context): HistoryScanner {
   let disposed = false;
 
   const marked = (sessionID: string, info?: SessionInfo) =>
-    readSessionRefs((context.data.session.get(sessionID) ?? info)?.metadata).scanned !== undefined;
+    historyScanned(readSessionRefs((context.data.session.get(sessionID) ?? info)?.metadata));
   const known = (sessionID: string) =>
     finished.has(sessionID) ||
     running?.sessionID === sessionID ||

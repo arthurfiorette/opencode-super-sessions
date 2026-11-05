@@ -1,6 +1,6 @@
 import type { Ref, RefReview, RefState, RefStatus } from '../../refs/ref.js';
 import { commitSha, isRecord } from '../include.js';
-import type { ForgeError, RefCandidate, RepoRef } from '../provider.js';
+import type { BranchPull, ForgeError, RefCandidate, RepoRef } from '../provider.js';
 import type { GraphQLError, GraphQLResponse } from './output.js';
 
 // GitLab rejects a whole document above 200 complexity points when anonymous (250 signed in).
@@ -403,7 +403,7 @@ export function buildBranchQuery(
   const query = `query($path: ID!, $branch: String!) {
   project(fullPath: $path) {
     mergeRequests(sourceBranches: [$branch], first: 20, sort: CREATED_DESC) {
-      nodes { iid state sourceProject { fullPath } }
+      nodes { iid state createdAt sourceProject { fullPath } }
     }
   }
 }`;
@@ -414,13 +414,14 @@ export function buildBranchQuery(
  * Picks the merge request for a branch, following t3code: the newest open one, otherwise the
  * newest of any state. Only merge requests whose source project is `headRepo` count (the user's
  * fork when the branch was pushed there, else `repo` itself); a deleted or hidden fork reports
- * no source project. Returns at most one ref, numbered in `repo`, where the merge request lives.
+ * no source project. Returns at most one merge request, numbered in `repo`, where it lives, with
+ * when it was opened.
  */
 export function parseBranchResponse(
   repo: RepoRef,
   response: GraphQLResponse,
   headRepo: RepoRef = repo
-): Ref[] | ForgeError {
+): BranchPull[] | ForgeError {
   const project = response.data.project;
   if (!isRecord(project)) return reasonOf(response.errors[0]);
   // A fork on another host can never be the source of a merge request here.
@@ -435,12 +436,23 @@ export function parseBranchResponse(
       return [];
     }
     if (!Number.isSafeInteger(number) || number <= 0) return [];
-    return [{ number, open: node.state === 'opened' || node.state === 'locked' }];
+    return [
+      {
+        number,
+        open: node.state === 'opened' || node.state === 'locked',
+        createdAt: epoch(node.createdAt)
+      }
+    ];
   });
   // Nodes arrive newest first, so the first match in each pass is the newest.
   const chosen = own.find((node) => node.open) ?? own[0];
   if (!chosen) return [];
-  return [
-    { provider: 'gitlab', host: repo.host, repo: repo.repo, kind: 'pr', number: chosen.number }
-  ];
+  const ref: Ref = {
+    provider: 'gitlab',
+    host: repo.host,
+    repo: repo.repo,
+    kind: 'pr',
+    number: chosen.number
+  };
+  return [chosen.createdAt === undefined ? { ref } : { ref, createdAt: chosen.createdAt }];
 }

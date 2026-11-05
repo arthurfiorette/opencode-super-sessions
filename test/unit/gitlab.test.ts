@@ -146,20 +146,22 @@ test('a batch resolves states, kinds and closed issues, and isolates missing ref
 });
 
 test('branch lookups keep only merge requests from the checkout own project', () => {
-  const cases: Array<[string, number[] | string, string?]> = [
+  // Each found merge request carries when it was opened, which decides whether it counts for a
+  // session.
+  const cases: Array<[string, Array<[number, string]> | string, string?]> = [
     // The branch lives in a community fork, so the upstream checkout has no merge request...
     ['gitlab-org/cli@8703-preserve-release-notes-on-update', []],
     // ...while the fork checkout gets it, numbered in the upstream project.
     [
       'gitlab-org/cli@8703-preserve-release-notes-on-update',
-      [4270],
+      [[4270, '2026-10-31T19:03:32Z']],
       'gitlab-community/gitlab-org/cli'
     ],
-    ['gitlab-org/cli@claude-transcript-incomplete-line', [4300]],
+    ['gitlab-org/cli@claude-transcript-incomplete-line', [[4300, '2026-11-03T02:24:56Z']]],
     // Newest open one among many merged ones from the same fork.
     [
       'gitlab-org/cli@renovate/gitlab.com-gitlab-org-api-client-go-v3-3.x',
-      [4312],
+      [[4312, '2026-11-03T22:09:04Z']],
       'gitlab-renovate-forks/cli'
     ],
     ['arthurfiorette/does-not-exist-zz@x', 'not-found']
@@ -177,8 +179,12 @@ test('branch lookups keep only merge requests from the checkout own project', ()
 
     const result = parseBranchResponse(repo, response, headRepo);
     assert.deepEqual(
-      Array.isArray(result) ? result.map((ref) => `${ref.repo}!${ref.number}`) : result.reason,
-      Array.isArray(expected) ? expected.map((number) => `${repoName}!${number}`) : expected,
+      Array.isArray(result)
+        ? result.map((pull) => [`${pull.ref.repo}!${pull.ref.number}`, pull.createdAt])
+        : result.reason,
+      Array.isArray(expected)
+        ? expected.map(([number, opened]) => [`${repoName}!${number}`, Date.parse(opened)])
+        : expected,
       `${name} ${head ?? ''}`
     );
   }
