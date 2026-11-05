@@ -1,6 +1,6 @@
 # OpenCode Super Sessions
 
-Standalone OpenCode V2 plugin. User docs live in `README.md`; architecture and rationale in `docs/README.md`. The original plan is `/Users/hzk/.plannotator/plans/opencode-super-sessions-implem-2026-11-03-approved.md`, with follow-ups in `opencode-super-sessions-*.md` next to it. Where a plan and the code disagree, the code wins.
+Standalone OpenCode V2 plugin. User docs live in `README.md`. Contribution guidelines, architecture and rationale live in `CONTRIBUTING.md`. Where the docs and the code disagree, the code wins.
 
 ## Boundaries
 
@@ -9,11 +9,11 @@ Standalone OpenCode V2 plugin. User docs live in `README.md`; architecture and r
 - Never commit credentials or local OpenCode state.
 - Keep all `@opencode/*` dependencies pinned to the same exact version.
 - `./rpc` must stay importable by clients without loading OpenTUI.
-- New host assumptions (command ids, priorities, event fields, payload shapes, API semantics, host file paths) go in `src/host/*` with a link to the host source line, and get a contract test in `test/contract` that reads the host through that accessor. See the Compatibility section of `docs/README.md`.
+- New host assumptions (command ids, priorities, event fields, payload shapes, API semantics, host file paths) go in `src/host/*` with a link to the host source line, and get a contract test in `test/contract` that reads the host through that accessor. See the Compatibility section of `CONTRIBUTING.md`.
 
 ## Invariants
 
-Changes must preserve these. `docs/README.md` explains the reasoning.
+Changes must preserve these. `CONTRIBUTING.md` explains the reasoning.
 
 - Never write OpenCode's database, `cli.json` or the host's `session.json`. The plugin writes only its own key in session metadata (`super-sessions`), its plugin storage and its data directory.
 - Every session metadata write goes through the write queue in `src/server/queue.ts`. `session.update({ metadata })` replaces the whole object, and other metadata keys must survive. A stored `super-sessions` value that does not parse is never overwritten.
@@ -39,6 +39,7 @@ Changes must preserve these. `docs/README.md` explains the reasoning.
 
 ## Documentation
 
-- English and concise. Keep the sponsor block and sentence-case headings. Do not invent badges, assets, or releases.
-- The root README is user-facing only. Development and architecture belong in `docs/README.md`. Mark planned functionality as planned.
-- Keep the README's keys, settings and options tables in step with `src/page/view.ts`, `src/settings/definitions.ts` and `src/config.ts`.
+- English and concise. Keep the sponsor block and sentence-case headings. Do not invent badges, assets, or releases. No em dashes, and no semicolons in the README.
+- The root README is user-facing only and covers what a user needs to install, use and configure the plugin. Implementation detail, development and architecture belong in `CONTRIBUTING.md`. Mark planned functionality as planned.
+- The README is also the npm page, so images use absolute `raw.githubusercontent.com` URLs.
+- Keep the README's keys and options tables in step with `src/page/view.ts` and `src/config.ts`.

@@ -1,6 +1,16 @@
-# Developer guide
+# Contributing
 
-User documentation is in the [root README](../README.md), and contribution rules in [AGENTS.md](../AGENTS.md). A GitHub release tagged `v<package.json version>` publishes to npm through `publish.yml`.
+Bug reports and pull requests are welcome. User documentation is in the [README](README.md). [AGENTS.md](AGENTS.md) lists the boundaries and invariants every change must keep, for people and coding agents alike.
+
+## Pull requests
+
+- Open an issue first for larger changes, so the approach is agreed before the work.
+- Run `pnpm check` before pushing. CI runs it on Linux, macOS and Windows.
+- TUI changes need a native render test (see [Tests](#tests)). A new assumption about OpenCode goes in `src/host/*` with a contract test (see [Compatibility](#compatibility)).
+- Update the README when a key, setting or option changes.
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/), such as `fix(tui): ...` or `feat: ...`.
+
+A GitHub release tagged `v<package.json version>` publishes to npm through `publish.yml`.
 
 ## Development
 
@@ -29,7 +39,7 @@ pnpm check
 
 SDK native parser addons may require Python and a C/C++ build toolchain. Their build scripts are approved in `pnpm-workspace.yaml`.
 
-`pnpm demo` starts a real TUI on fake sessions and forge data for screenshots, isolated from your own OpenCode data; see [demo/README.md](../demo/README.md).
+`pnpm demo` starts a real TUI on fake sessions and forge data for screenshots, isolated from your own OpenCode data; see [demo/README.md](demo/README.md).
 
 ## Tests
 
