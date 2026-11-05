@@ -53,6 +53,8 @@ export interface EventHub {
   attach(context: EventContext): () => void;
   /** The oldest live context, for background jobs; undefined once every Location detached. */
   current(): EventContext | undefined;
+  /** Ends the subscription for good and drops every context; later attaches subscribe nothing. */
+  close(): void;
 }
 
 export interface EventHubOptions {
@@ -76,6 +78,7 @@ export function createEventHub(options: EventHubOptions): EventHub {
   const memory = options.memory ?? 1024;
   let owner: { context: EventContext; abort: AbortController } | undefined;
   let retry: NodeJS.Timeout | undefined;
+  let closed = false;
 
   /** Records an id and reports whether it was new. Evicts the oldest ids past `memory`. */
   const first = (id: string) => {
@@ -128,6 +131,7 @@ export function createEventHub(options: EventHubOptions): EventHub {
 
   return {
     attach(context) {
+      if (closed) return () => {};
       live.push(context);
       start();
       return () => {
@@ -139,6 +143,14 @@ export function createEventHub(options: EventHubOptions): EventHub {
         start();
       };
     },
-    current: () => live[0]
+    current: () => live[0],
+    close() {
+      closed = true;
+      live.length = 0;
+      clearTimeout(retry);
+      retry = undefined;
+      owner?.abort.abort();
+      owner = undefined;
+    }
   };
 }
