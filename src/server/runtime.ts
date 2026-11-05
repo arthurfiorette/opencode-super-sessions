@@ -1,3 +1,5 @@
+import { statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { createSnapshotCache, type SnapshotCache } from '../cache.js';
 import type { Options } from '../config.js';
@@ -63,6 +65,14 @@ export interface Runtime {
   onLifecycle?: (event: LifecycleEvent, context: EventContext) => void;
   /** The process-wide auto-archive and cleanup scheduler; see `getSweeper`. */
   sweeper?: Sweeper;
+  /** Whether {@link dispose} ran: the runtime still answers its Locations but runs nothing process-wide. */
+  readonly disposed: boolean;
+  /**
+   * Stops the event subscriber, the sweeper and the message index, for a newer build of the
+   * plugin taking over the daemon. Refreshes already running finish into this runtime's caches,
+   * which the newer build never reads.
+   */
+  dispose(): void;
 }
 
 /** Handles one subscribed event. Set by the server entry, which owns the detection logic. */
@@ -73,8 +83,13 @@ export type EventHandler = (
 ) => Promise<void>;
 
 interface Shared {
-  runtime: Runtime;
+  /** Runtimes from before `build` was recorded have no `dispose`. */
+  runtime: Omit<Runtime, 'dispose'> & { dispose?: () => void };
   configuration: Options;
+  /** The {@link build} that created `runtime`. */
+  build?: string;
+  /** Builds a newer one took the runtime from. */
+  retired?: Set<string>;
 }
 
 // The daemon loads the plugin module once per Location and module state is not shared between
@@ -82,6 +97,29 @@ interface Shared {
 const key = Symbol.for('opencode-super-sessions');
 const shared = globalThis as typeof globalThis & { [key]?: Shared };
 const warned = new Set<string>();
+
+/**
+ * Identifies the code of this module: the file it was loaded from and when that file was
+ * written. A plugin update installs into a new directory and a local rebuild rewrites the file,
+ * while every Location of one build loads the same unchanged file, so only Locations running the
+ * same code share caches whose entry shapes may change between builds.
+ */
+const build = buildId(import.meta.url);
+
+/** The {@link build} of the module at `url`. */
+function buildId(url: string): string {
+  // Without the query: the host's Node loader gives each Location's load its own
+  // `__opencode_reload` query, even for unchanged files.
+  const file = new URL(url);
+  file.search = '';
+  file.hash = '';
+  try {
+    return `${file.href}@${statSync(fileURLToPath(file)).mtimeMs}`;
+  } catch {
+    // Not a readable file (a bundled or virtual module): the URL alone still tells installs apart.
+    return file.href;
+  }
+}
 
 /** Writes a warning to the daemon log, prefixed with the plugin id. */
 export function warn(message: string, error?: unknown): void {
@@ -101,19 +139,39 @@ export function warnOnce(message: string): void {
  * Returns the process-wide runtime, creating it on first use. The first Location's options win:
  * providers, caches and the event subscriber are shared, so a second configuration cannot apply
  * without a daemon restart.
+ *
+ * A runtime from another build is never handed out, because its caches may hold entries this
+ * code cannot read. The first Location to load a new build disposes that runtime and replaces
+ * it; Locations still on the old code keep their disposed runtime until the host reloads them.
+ * A retired build never takes the runtime back, since the host may set an old module up again
+ * when the new one fails to load in a Location, and two builds would otherwise trade the
+ * subscriber and sweeper on every such setup. It gets a disposed runtime of its own instead.
  */
 export function getRuntime(options: Options, handle: EventHandler): Runtime {
   const existing = shared[key];
-  if (existing !== undefined) {
+  if (existing?.build === build) {
     if (!isDeepStrictEqual(existing.configuration, options)) {
       warnOnce(
         'Another Location passed different options. The first options stay in effect until the daemon restarts.'
       );
     }
-    return existing.runtime;
+    return existing.runtime as Runtime;
   }
+  const retired = new Set(existing?.retired);
   const runtime = createRuntime(options, handle);
-  shared[key] = { runtime, configuration: options };
+  if (retired.has(build)) {
+    warnOnce(
+      'A newer build of the plugin runs this daemon. Locations still on this build get no detection or sweeps until they reload.'
+    );
+    runtime.dispose();
+    return runtime;
+  }
+  if (existing !== undefined) {
+    if (existing.build !== undefined) retired.add(existing.build);
+    // A runtime from before `dispose` existed stops only as its Locations detach.
+    existing.runtime.dispose?.();
+  }
+  shared[key] = { runtime, configuration: options, build, retired };
   return runtime;
 }
 
@@ -168,6 +226,7 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
     }
   };
   let bodyIndex: Promise<BodyIndex> | undefined;
+  let disposed = false;
 
   const runtime: Runtime = {
     get options() {
@@ -209,6 +268,8 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
     }),
     refreshing: new Set(),
     bodyIndex: () => {
+      // Its handle closed on dispose; search falls back to titles and refs.
+      if (disposed) return Promise.resolve(disabledIndex);
       bodyIndex ??= options.search.body
         ? openBodyIndex(bodyIndexPath(), warn)
         : Promise.resolve(disabledIndex);
@@ -218,7 +279,17 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
       index: () => runtime.bodyIndex(),
       context: () => runtime.events.current(),
       warn
-    })
+    }),
+    get disposed() {
+      return disposed;
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      runtime.events.close();
+      runtime.sweeper?.dispose();
+      void bodyIndex?.then((index) => index.close());
+    }
   };
   return runtime;
 }

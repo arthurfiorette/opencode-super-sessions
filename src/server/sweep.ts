@@ -75,6 +75,8 @@ export interface Sweeper {
   }>;
   /** Runs a sweep soon, coalescing with any already scheduled. */
   schedule(delay?: number): void;
+  /** Stops the timers and drops every Location, for a disposed runtime. */
+  dispose(): void;
 }
 
 /**
@@ -466,6 +468,14 @@ function createSweeper(runtime: Runtime): Sweeper {
     const kept: Array<{ directory: string; reason: string }> = [];
     for (const decision of removals) {
       const entry = gathered.facts.get(decision.directory);
+      // A newer build's sweeper took over mid-run; removing alongside it would race.
+      if (runtime.disposed) {
+        kept.push({
+          directory: decision.directory,
+          reason: 'a newer build of the plugin took over'
+        });
+        continue;
+      }
       if (entry === undefined) {
         kept.push({ directory: decision.directory, reason: 'not a worktree OpenCode knows' });
         continue;
@@ -504,6 +514,8 @@ function createSweeper(runtime: Runtime): Sweeper {
 
   const sweeper: Sweeper = {
     attach(context, emit) {
+      // A disposed runtime's sweeper may be created after the dispose, on its first use.
+      if (runtime.disposed) return () => {};
       const entry = { context, emit };
       live.push(entry);
       if (live.length === 1) {
@@ -594,12 +606,19 @@ function createSweeper(runtime: Runtime): Sweeper {
         return { removed: result.removed, kept: [...kept, ...result.kept] };
       }),
     schedule(delay = TRIGGER_DELAY) {
-      if (timer !== undefined) return;
+      if (timer !== undefined || runtime.disposed) return;
       timer = setTimeout(() => {
         timer = undefined;
         exclusive(sweep).catch((error: unknown) => warn('Sweep failed', error));
       }, delay);
       timer.unref?.();
+    },
+    dispose() {
+      live.length = 0;
+      clearTimeout(timer);
+      clearInterval(interval);
+      timer = undefined;
+      interval = undefined;
     }
   };
 
