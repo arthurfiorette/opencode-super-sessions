@@ -638,9 +638,9 @@ test('hovering another row leaves the preview on the selected session', async ()
   await eventually(rendered, () => terminal.pages.length > 0);
   const [shown] = terminal.pages;
   const lines = rendered.captureCharFrame().split('\n');
-  const y = lines.findIndex((line) => line.includes('can you find all merged worktrees'));
-  assert.ok(y > 0 && shown !== 'unread', 'Another session is selected first.');
-  const x = (lines[y] ?? '').indexOf('can you find');
+  const y = lines.findIndex((line) => line.includes('Homelab Mastra triage'));
+  assert.ok(y > 0 && shown !== 'pinned', 'Another session is selected first.');
+  const x = (lines[y] ?? '').indexOf('Homelab');
   await rendered.mockMouse.moveTo(x, y);
   // Longer than the preview's 150 ms follow delay.
   for (let i = 0; i < 10; i++) {
@@ -770,6 +770,38 @@ test('the browser opened over a session whose directory is gone lists its projec
     rendered,
     (frame) => frame.includes('Session in a removed worktree') && frame.includes('#4930')
   );
+});
+
+// Reopening kept the row selected when the browser closed, so a session browsed with the arrows
+// stayed selected over the session the user had open.
+test('a new open selects the session underneath, in the view that lists it', async () => {
+  const terminal = await host();
+  const rendered = await openBrowser(terminal);
+  const press = (bind) =>
+    terminal.layers
+      .filter((layer) => layer.mode === 'super-sessions')
+      .flatMap((layer) => layer.commands)
+      .find((command) => command.bind === bind)
+      .run();
+  const focused = theme.surface('dialog').background.action.primary.focused;
+  /** Whether the row with `title` has the selection's background. */
+  const selected = (title) =>
+    rendered
+      .captureSpans()
+      .lines.flatMap((line) => line.spans)
+      .find((span) => span.text.includes(title))
+      ?.bg.equals(focused) === true;
+  await eventually(rendered, () => selected('can you find all merged'));
+  press('down');
+  await eventually(rendered, () => !selected('can you find all merged'));
+  terminal.dispatch('session.list');
+  terminal.dispatch('session.list');
+  await eventually(rendered, () => selected('can you find all merged'));
+
+  terminal.dispatch('session.list');
+  terminal.navigate({ type: 'session', sessionID: 'archived' });
+  terminal.dispatch('session.list');
+  await eventually(rendered, () => selected('Old spike on Rollup plugins'));
 });
 
 // The search survived closing, so the next open showed a list filtered by a query the user had

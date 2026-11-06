@@ -120,6 +120,13 @@ export function installBrowser(
     if (origin() !== undefined) return;
     if (target === undefined) model.clearSearch();
     const route = copyRoute(router.current());
+    // A new open over a session selects that session, whatever was selected when the browser
+    // closed. Coming back from a peek keeps the peek's cursor instead.
+    model.focus(
+      target === undefined && route.type === 'session'
+        ? context.data.session.root(route.sessionID)
+        : undefined
+    );
     model.setOrigin(route);
     setOrigin(route);
   };
