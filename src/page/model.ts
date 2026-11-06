@@ -180,6 +180,8 @@ export function createBrowserModel(
     (next) => setData(reconcile(next, { key: 'id' }))
   );
   const [data, setData] = createStore<PageData>(structuredClone(controller.snapshot()));
+  // The session the browser opened over, until a list shows it or the next sync settles.
+  const [focusTarget, setFocusTarget] = createSignal<string>();
 
   /** Groups of one view. Reads the host's run state, so a host change can throw here. */
   const groupsFor = (view: PageView): Group[] => {
@@ -252,6 +254,36 @@ export function createBrowserModel(
       }
       return [...newest.values()];
     });
+    /** The pull request listed with the session as its newest one, in the Pull requests view. */
+    const pullOf = (sessionID: string) =>
+      pullGroups()
+        .flatMap((group) => group.pulls)
+        .find((pull) => pull.sessions[0]?.id === sessionID);
+    // Prefers the view on screen, so a pinned Done session stays in Active when Active is open.
+    // Runs again as the lists load, until one of them shows the session.
+    createEffect(() => {
+      const id = focusTarget();
+      if (id === undefined || data.status !== 'ready') return;
+      const sessionGroups = { active: activeGroups, done: doneGroups, archived: archivedGroups };
+      const lists = (view: PageView) =>
+        view === 'pulls'
+          ? pullOf(id) !== undefined
+          : rowsOf(sessionGroups[view]()).some((session) => session.id === id);
+      const view = [memory.view, 'active' as const, 'done' as const, 'archived' as const].find(
+        lists
+      );
+      if (view === undefined) return;
+      setFocusTarget(undefined);
+      const pull = view === 'pulls' ? pullOf(id)?.key : undefined;
+      setMemory((draft) => {
+        if (draft.view !== view) {
+          draft.view = view;
+          draft.scroll = 0;
+        }
+        draft.selected = id;
+        if (pull !== undefined) draft.pull = pull;
+      });
+    });
     return {
       dispose,
       doneGroups,
@@ -289,13 +321,17 @@ export function createBrowserModel(
     );
     // A later sync, such as a ctrl+a during the lookup, decides instead.
     if (token !== syncToken) return;
-    if (key !== undefined && key === loadedFor && !dirty && Date.now() - loadedAt <= FRESH_FOR)
-      return;
-    if (key !== loadedFor && loadedFor !== undefined) controller.reset();
-    loadedFor = key;
-    loadedAt = Date.now();
-    dirty = false;
-    await controller.load(target);
+    if (key === undefined || key !== loadedFor || dirty || Date.now() - loadedAt > FRESH_FOR) {
+      if (key !== loadedFor && loadedFor !== undefined) controller.reset();
+      loadedFor = key;
+      loadedAt = Date.now();
+      dirty = false;
+      await controller.load(target);
+      if (token !== syncToken) return;
+    }
+    // A session the settled lists do not show, such as one past the list limit, keeps the
+    // default selection instead of jumping there on a later reload.
+    setFocusTarget(undefined);
   };
   let reloadTimer: ReturnType<typeof setTimeout> | undefined;
   /** Reloads soon while the browser is open; otherwise the next open reloads. */
@@ -363,6 +399,17 @@ export function createBrowserModel(
       });
     },
     sync,
+    /**
+     * Selects the session once a list shows it, switching to its view when the one on screen
+     * does not list it. `undefined` keeps the remembered selection.
+     */
+    focus(sessionID: string | undefined) {
+      if (sessionID !== undefined)
+        setMemory((draft) => {
+          draft.selected = sessionID;
+        });
+      setFocusTarget(sessionID);
+    },
     /**
      * Starts the next open from an empty search. Coming back from a peek skips this: the user
      * is walking through the results.

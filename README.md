@@ -41,7 +41,7 @@ Restart OpenCode, or run `opencode service restart` if it runs as a service. The
 
 ## Usage
 
-`<leader>l`, `/sessions`, `/resume`, `/continue` and `/super-sessions` open the browser. `/sessions-classic` opens OpenCode's built-in list.
+`<leader>l`, `/sessions`, `/resume`, `/continue` and `/super-sessions` open the browser. `/sessions-classic` opens OpenCode's built-in list. Opened from a session, the browser selects that session and switches to the view that lists it, such as Done or Archived.
 
 `tab` and `shift+tab` switch between the views:
 
