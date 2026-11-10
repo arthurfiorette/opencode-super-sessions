@@ -1,7 +1,7 @@
 import type { SessionInfo } from '@opencode/client';
 import { activityTime } from '../host/session-api.js';
 import { type ProviderId, type Ref, type RefState, refKey } from '../refs/ref.js';
-import { rankSessions } from '../refs/search.js';
+import { rankSessions, searchLinks } from '../refs/search.js';
 import { doneAt, isDone, trackedRefs } from '../refs/summary.js';
 import type { SearchHit, SearchMatch, SessionRefView } from '../rpc.js';
 
@@ -472,8 +472,8 @@ function initialData(): PageData {
 
 /**
  * Ranks the loaded sessions for a query on the client: titles, ref numbers and cached ref titles,
- * with the same rules as the server. URLs and `owner/repo#N` need the forge definitions, so only
- * the server answers those.
+ * and work links, with the same rules as the server. Forge URLs and `owner/repo#N` need the forge
+ * definitions, so only the server answers those.
  */
 export function localSearch(
   query: string,
@@ -495,7 +495,8 @@ export function localSearch(
           refs: all.map((ref) => {
             const title = view?.states[refKey(ref)]?.title;
             return title === undefined ? { ref } : { ref, title };
-          })
+          }),
+          links: searchLinks(view?.urls)
         };
       })
   });

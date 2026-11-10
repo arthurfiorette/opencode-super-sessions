@@ -1,7 +1,8 @@
 import type { Plugin } from '@opencode/plugin';
 import type { RpcHandlers } from '@opencode/plugin/promise/rpc';
 import { refKey } from '../refs/ref.js';
-import { dismissLink, mergeLinks, setDone } from '../refs/store.js';
+import { dismissLink, mergeLinks, mergeWorkLinks, setDone } from '../refs/store.js';
+import { recognizeLink } from '../refs/work-link.js';
 import type { SuperSessions } from '../rpc.js';
 import { scanHistory } from './history.js';
 import { linksOf, parseReference, resolveCandidates, resolveRepo } from './links.js';
@@ -42,7 +43,17 @@ export function rpcHandlers(
       const base = (await resolveRepo(runtime, info.location.directory)).repo;
       const candidate = parseReference(runtime.definitions, reference, base);
       if (candidate === undefined) {
-        return invocation.error('invalid_reference', `Could not read ${reference}.`, {});
+        const info = recognizeLink(reference);
+        if (info === undefined) {
+          return invocation.error('invalid_reference', `Could not read ${reference}.`, {});
+        }
+        // `manual` is explicit, so the merge lifts an earlier dismissal of the key.
+        const next = await runtime.writes.update(context.session, sessionID, (refs) =>
+          mergeWorkLinks(refs, [{ url: info.url, source: 'manual', linkedAt: Date.now() }])
+        );
+        const stored = next.urls?.find((link) => recognizeLink(link.url)?.key === info.key);
+        if (stored === undefined) throw new Error(`Link for ${info.key} was not stored.`);
+        return stored;
       }
       const [resolution] = await resolveCandidates(runtime, [candidate]);
       if (resolution?.status === 'not-found') {

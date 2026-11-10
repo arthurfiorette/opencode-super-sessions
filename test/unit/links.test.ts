@@ -58,22 +58,27 @@ function setup(provider: ForgeProvider, hosts = createForgeHosts({ gitlab: { hos
     readSessionRefs(metadata)
       .links.map((link) => `${link.ref.kind} ${link.ref.number}`)
       .sort();
-  return { runtime, session, linked };
+  /** The stored work links' URLs. */
+  const urls = () => (readSessionRefs(metadata).urls ?? []).map((link) => link.url);
+  return { runtime, session, linked, urls };
 }
 
 test('a bare GitLab number from a prompt is linked only after the forge confirms it', async () => {
   for (const failure of ['missing-tool', 'failed'] as const) {
-    const { runtime, session, linked } = setup(fakeGitLab(failure));
+    const { runtime, session, linked, urls } = setup(fakeGitLab(failure));
     await linkPrompt(
       runtime,
       session,
       'ses_1',
-      'Fix #5, then !7, and see https://gitlab.com/acme/app/-/issues/9',
+      'Fix #5, then !7, and see https://gitlab.com/acme/app/-/issues/9 for ' +
+        'https://linear.app/acme/issue/ENG-1 (docs: https://docs.example.com/x)',
       base
     );
     // #5 is confirmed; !7 could not be checked, and a bare number may name anything; the URL
     // names its project and kind, so it is kept while glab is down.
     assert.deepEqual(linked(), ['issue 5', 'issue 9'], failure);
+    // Tracker pages need no forge; other pages in a prompt are not work.
+    assert.deepEqual(urls(), ['https://linear.app/acme/issue/ENG-1'], failure);
   }
 });
 

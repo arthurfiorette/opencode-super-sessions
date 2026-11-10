@@ -7,9 +7,11 @@ import {
   type RefSource,
   readSessionRefs,
   refKey,
-  type SessionRefs
+  type SessionRefs,
+  type WorkLink
 } from '../refs/ref.js';
-import { addPushed, markScanned, mergeLinks } from '../refs/store.js';
+import { addPushed, markScanned, mergeLinks, mergeWorkLinks } from '../refs/store.js';
+import { recognizeLink, trackerLinks } from '../refs/work-link.js';
 import type { HistoryItem } from '../rpc.js';
 import { resolveCandidates, resolveRepo } from './links.js';
 import type { SessionAccess } from './queue.js';
@@ -55,12 +57,16 @@ export async function scanHistory(
   const pushesOnly = stored.scanned !== undefined;
   if (!pushesOnly) await indexItems(runtime, sessionID, items);
   const links = pushesOnly ? [] : await detectItems(runtime, info.location.directory, items);
+  const work = pushesOnly ? [] : promptWorkLinks(runtime, items);
   const pushed = await detectPushes(runtime, info.location.directory, items);
-  if (links.length === 0 && pushed.length === 0 && !done) return { skipped: false };
+  if (links.length === 0 && work.length === 0 && pushed.length === 0 && !done) {
+    return { skipped: false };
+  }
   await runtime.writes.update(session, sessionID, (refs) => {
     const merged = mergeLinks(refs, keepLinkedAt(refs, links));
-    const recorded = addPushed(merged.next, pushed);
-    const changed = merged.changed || recorded.changed;
+    const linked = mergeWorkLinks(merged.next, keepWorkLinkedAt(merged.next, work));
+    const recorded = addPushed(linked.next, pushed);
+    const changed = merged.changed || linked.changed || recorded.changed;
     if (!done) return { next: recorded.next, changed };
     const marked = markScanned(recorded.next, Date.now(), lastMessageID);
     return { next: marked.next, changed: changed || marked.changed };
@@ -159,6 +165,29 @@ async function detectItems(
       return [{ ref: resolution.ref, source: entry.source, linkedAt: entry.linkedAt }];
     }
     return [];
+  });
+}
+
+/** Tracker URLs in the chunk's prompts, as live detection links them, when `detect.prompts` is on. */
+function promptWorkLinks(runtime: Runtime, items: HistoryItem[]): WorkLink[] {
+  if (!runtime.options.detect.prompts) return [];
+  return items.flatMap((item) =>
+    item.type === 'prompt'
+      ? trackerLinks(item.text).map(
+          (info): WorkLink => ({ url: info.url, source: 'prompt', linkedAt: item.created })
+        )
+      : []
+  );
+}
+
+/** {@link keepLinkedAt} for work links, by their key. */
+function keepWorkLinkedAt(refs: SessionRefs, links: WorkLink[]): WorkLink[] {
+  const stored = new Map(
+    (refs.urls ?? []).map((link) => [recognizeLink(link.url)?.key, link.linkedAt])
+  );
+  return links.map((link) => {
+    const linkedAt = stored.get(recognizeLink(link.url)?.key);
+    return linkedAt === undefined ? link : { ...link, linkedAt };
   });
 }
 

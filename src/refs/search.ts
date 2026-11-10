@@ -1,6 +1,7 @@
 import type { ForgeDefinition, RefCandidate, RepoRef } from '../providers/provider.js';
 import type { SearchHit, SearchMatch } from '../rpc.js';
-import { type Ref, refKey } from './ref.js';
+import { type Ref, refKey, type WorkLink } from './ref.js';
+import { recognizeLink } from './work-link.js';
 
 /** A search query reduced to what the ranking compares. */
 export interface NormalizedQuery {
@@ -10,6 +11,16 @@ export interface NormalizedQuery {
   number?: number;
   /** Set when the whole query is a ref URL or `owner/repo#N`. */
   exact?: RefCandidate;
+  /** The work link key of a query that is a whole web URL. */
+  link?: string;
+}
+
+/** A work link as the ranking sees it (see {@link searchLinks}). */
+export interface SearchLink {
+  key: string;
+  url: string;
+  name?: string;
+  title?: string;
 }
 
 /** A session as the ranking sees it. `refs` carry cached titles when known. */
@@ -19,6 +30,24 @@ export interface SearchSession {
   /** The session's latest activity (`activityTime`), which orders ties. */
   updated: number;
   refs: Array<{ ref: Ref; title?: string }>;
+  links?: SearchLink[];
+}
+
+/** Stored work links as the ranking reads them: the stored title over the URL's. */
+export function searchLinks(urls: readonly WorkLink[] | undefined): SearchLink[] {
+  return (urls ?? []).flatMap((link): SearchLink[] => {
+    const info = recognizeLink(link.url);
+    if (info === undefined) return [];
+    const title = link.title ?? info.title;
+    return [
+      {
+        key: info.key,
+        url: info.url,
+        ...(info.name === undefined ? {} : { name: info.name }),
+        ...(title === undefined ? {} : { title })
+      }
+    ];
+  });
 }
 
 /** Input of {@link rankSessions}. */
@@ -59,7 +88,9 @@ export function normalizeQuery(
     const exact = definition.parseReference(trimmed, base);
     if (exact !== undefined) return { text, exact };
   }
-  return { text };
+  // Not lowercased: a generic link's path may be case-sensitive.
+  const link = recognizeLink(trimmed)?.key;
+  return link === undefined ? { text } : { text, link };
 }
 
 /**
@@ -95,10 +126,24 @@ function bestTier(
     exact === undefined ? ref.number === number : sameRef(ref, exact)
   );
   if (named) return { tier: TIERS['ref-number'], match: 'ref-number', ref: refKey(named.ref) };
+  // A work link's id, such as `COR-1466` or Azure's `140208`, or its whole URL, counts as its
+  // number.
+  const links = session.links ?? [];
+  const id = query.number === undefined ? query.text : String(query.number);
+  const linked = links.find(
+    (link) =>
+      link.name?.toLowerCase() === id || (query.link !== undefined && link.key === query.link)
+  );
+  if (linked) return { tier: TIERS['ref-number'], match: 'ref-number', ref: linked.key };
   const titled = session.refs.find(({ title: refTitle }) =>
     refTitle?.toLowerCase().includes(query.text)
   );
   if (titled) return { tier: TIERS['ref-title'], match: 'ref-title', ref: refKey(titled.ref) };
+  // Part of a work link's id, title or URL, such as `linear`, a project or a word of a slug.
+  const partial = links.find((link) =>
+    [link.name, link.title, link.url].some((text) => text?.toLowerCase().includes(query.text))
+  );
+  if (partial) return { tier: TIERS['ref-title'], match: 'ref-title', ref: partial.key };
   return undefined;
 }
 

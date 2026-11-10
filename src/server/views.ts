@@ -10,7 +10,7 @@ import {
   refKey,
   type SessionRefs
 } from '../refs/ref.js';
-import { rankSessions, type SearchSession } from '../refs/search.js';
+import { rankSessions, type SearchSession, searchLinks } from '../refs/search.js';
 import type { RepoInfo } from '../repo.js';
 import type { SearchHit, SearchScope, SessionRefView } from '../rpc.js';
 import { type BranchTarget, sessionBranchPulls } from './branches.js';
@@ -191,6 +191,7 @@ export async function collectViews(
         : { defaultBranch: entry.repo.defaultBranch }),
       branchRefs: entry.branches.own,
       states: {},
+      ...(refs.urls === undefined || refs.urls.length === 0 ? {} : { urls: refs.urls }),
       ...(refs.done === undefined ? {} : { done: refs.done }),
       ...(refs.doneAt === undefined ? {} : { doneAt: refs.doneAt })
     };
@@ -321,7 +322,8 @@ export async function searchSessions(
           return snapshot !== undefined && 'ref' in snapshot
             ? { ref, title: snapshot.state.title }
             : { ref };
-        })
+        }),
+        links: searchLinks(refs.urls)
       };
     })
   );

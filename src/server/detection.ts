@@ -4,7 +4,9 @@ import { shellCall } from '../host/tool-hook.js';
 import type { RepoRef } from '../providers/provider.js';
 import { detectCreated, detectInPrompt, detectInText, isCloseCommand } from '../refs/detect.js';
 import { pushedBranches, runsPush } from '../refs/push.js';
-import { addPushed } from '../refs/store.js';
+import type { WorkLink } from '../refs/ref.js';
+import { addPushed, mergeWorkLinks } from '../refs/store.js';
+import { trackerLinks } from '../refs/work-link.js';
 import type { EventContext, HandledEvent } from './events.js';
 import { linkDetected, resolveRepo } from './links.js';
 import type { SessionAccess } from './queue.js';
@@ -108,7 +110,10 @@ export async function handleEvent(
   await linkDetected(runtime, context.session, text.sessionID, candidates, 'mention');
 }
 
-/** Links the refs in a user prompt, resolving bare numbers against `base`, the session's repository. */
+/**
+ * Links the refs in a user prompt, resolving bare numbers against `base`, the session's
+ * repository, and its tracker URLs (see `trackerLinks`).
+ */
 export async function linkPrompt(
   runtime: Runtime,
   session: SessionAccess,
@@ -117,7 +122,16 @@ export async function linkPrompt(
   base: RepoRef | undefined
 ): Promise<void> {
   const { candidates, bare } = detectInPrompt(runtime.definitions, text, base);
-  await linkDetected(runtime, session, sessionID, candidates, 'prompt', bare);
+  const linkedAt = Date.now();
+  const work = trackerLinks(text).map(
+    (info): WorkLink => ({ url: info.url, source: 'prompt', linkedAt })
+  );
+  await Promise.all([
+    linkDetected(runtime, session, sessionID, candidates, 'prompt', bare),
+    work.length === 0
+      ? undefined
+      : runtime.writes.update(session, sessionID, (refs) => mergeWorkLinks(refs, work))
+  ]);
 }
 
 /** Keeps the message index current, under the keys the backfill derives from stored messages. */

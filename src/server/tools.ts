@@ -6,9 +6,11 @@ import {
   type RefSource,
   readSessionRefs,
   refKey,
-  type SessionRefs
+  type SessionRefs,
+  type WorkLink
 } from '../refs/ref.js';
-import { dismissLink, mergeLinks, type RefsUpdate } from '../refs/store.js';
+import { dismissLink, mergeLinks, mergeWorkLinks, type RefsUpdate } from '../refs/store.js';
+import { LINK_PROVIDER_NAMES, type LinkInfo, recognizeLink } from '../refs/work-link.js';
 import {
   linksOf,
   parseReference,
@@ -22,17 +24,35 @@ import {
 import type { Runtime } from './runtime.js';
 
 const LINK_DESCRIPTION =
-  'Record a pull request or issue this session works on so the user can track its status in ' +
-  'their session list. Changes nothing on GitHub or GitLab. Call it when you start on an issue, when you ' +
-  'open or find the pull request for your work, and when you switch to another one. Pass full ' +
-  'URLs when you have them; a bare number uses the repository of the current directory.';
+  'Record a pull request, issue or other piece of work this session works on so the user can ' +
+  'track it in their session list. Changes nothing on GitHub, GitLab or any tracker. Call it ' +
+  'when you start on an issue, when you open or find the pull request for your work, and when ' +
+  'you switch to another one. Pass full URLs when you have them; a bare number uses the ' +
+  'repository of the current directory. Any other web page is accepted too, such as a Linear, ' +
+  'Jira, Azure Boards, Sentry, Notion, Trello, ClickUp, Shortcut or Asana item or a Slack ' +
+  'thread; give its title when you know it.';
 
 const UNLINK_DESCRIPTION =
-  'Stop tracking a pull request or issue in this session, for example one linked by mistake or ' +
-  'work you dropped. Changes nothing on GitHub or GitLab, and the ref is not linked again automatically.';
+  'Stop tracking a pull request, issue or other link in this session, for example one linked ' +
+  'by mistake or work you dropped. Changes nothing on GitHub, GitLab or any tracker, and the ' +
+  'link is not added again automatically.';
 
-const url = z.strictObject({
-  url: z.string().min(1).describe('Pull request or issue URL, or `owner/repo#123`.')
+const urlText = z
+  .string()
+  .min(1)
+  .max(2000)
+  .describe('Pull request, issue or other work URL, or `owner/repo#123`.');
+const url = z.strictObject({ url: urlText });
+const titledUrl = z.strictObject({
+  url: urlText,
+  title: z
+    .string()
+    .min(1)
+    .max(300)
+    .optional()
+    .describe(
+      'Title of the work at a URL that is not a GitHub or GitLab pull request or issue, as you know it.'
+    )
 });
 const number = z.number().int().positive().describe('Pull request or issue number.');
 const repo = z
@@ -45,7 +65,7 @@ const linkInput = z.strictObject({
   refs: z
     .array(
       z.union([
-        url,
+        titledUrl,
         z.strictObject({
           number,
           repo,
@@ -69,35 +89,58 @@ const unlinkInput = z.strictObject({
 
 type Item = z.output<typeof linkInput>['refs'][number];
 
+// Trackers whose URLs a prompt links on its own (see `trackerLinks`).
+const TRACKERS =
+  'Linear, Jira, Azure Boards, Sentry, Notion, Slack, Trello, ClickUp, Shortcut or Asana';
+// The rule for work outside the forges, which needs no forge and no prompt detection.
+const ELSEWHERE =
+  'when the work is tracked somewhere else, such as a Jira or Linear issue, an Azure Boards ' +
+  'work item, a Sentry error or a Slack thread';
+const PASS = 'pass its URL and the title you know.';
+
 // What detection already links, so the agent calls link_work only for what it cannot see. Without
-// it the agent re-links refs from the prompt and believes it forgot them.
-const INSTRUCTION =
-  'Issue and pull request links in user messages, the pull request of a branch you push with ' +
-  'git push, and pull requests or issues you create with gh or glab are tracked automatically. ' +
-  'You MUST call link_work when you start working on an issue or pull request that the user ' +
-  'did not link, for example one you found by searching, and when you open a pull request by ' +
-  'any other means. Do not call it for refs the user already linked.';
-// The same rule while "Record refs from prompts" is off, when user messages link nothing.
-const INSTRUCTION_WITHOUT_PROMPTS =
-  'The pull request of a branch you push with git push, and pull requests or issues you create ' +
-  'with gh or glab are tracked automatically. You MUST call link_work when you start working ' +
-  'on an issue or pull request, including one the user named, and when you open a pull request ' +
-  'by any other means.';
+// it the agent re-links refs from the prompt and believes it forgot them. Keyed by whether GitHub
+// or GitLab is enabled and whether "Record refs from prompts" is on.
+const INSTRUCTIONS = {
+  forgesPrompts:
+    `Pull request and issue links in user messages, ${TRACKERS} links in user messages, the ` +
+    'pull request of a branch you push with git push, and pull requests or issues you create ' +
+    'with gh or glab are tracked automatically. You MUST call link_work when you start working ' +
+    'on an issue or pull request that the user did not link, for example one you found by ' +
+    `searching, when you open a pull request by any other means, and ${ELSEWHERE} the user did ` +
+    `not paste: ${PASS} Do not call it for links the user already gave.`,
+  forges:
+    'The pull request of a branch you push with git push, and pull requests or issues you create ' +
+    'with gh or glab are tracked automatically. You MUST call link_work when you start working ' +
+    'on an issue or pull request, including one the user named, when you open a pull request by ' +
+    `any other means, and ${ELSEWHERE}: ${PASS}`,
+  prompts:
+    `${TRACKERS} links in user messages are tracked automatically. You MUST call link_work ` +
+    `${ELSEWHERE} the user did not paste: ${PASS} Do not call it for links the user already gave.`,
+  none: `You MUST call link_work ${ELSEWHERE}: ${PASS}`
+};
 
 /**
  * Tells the agent what the plugin tracks on its own, through the `context` hook the host itself
  * uses for its tool instructions (packages/core/src/tool/plugin/opencode.ts:102 in OpenCode
  * v2.2.5). The hook runs once per model request on a system array rebuilt for each step, so the
- * part never piles up. Read at request time, so the settings dialog applies at once; with no
- * provider enabled there is nothing to link and the part is left out.
+ * part never piles up. Read at request time, so the settings dialog applies at once. Work links
+ * need no forge, so the part stays when no forge is enabled.
  */
 export async function registerInstructions(
   runtime: Runtime,
   context: Plugin.Context
 ): Promise<void> {
   await context.session.hook('context', (event) => {
-    if (runtime.definitions.length === 0) return;
-    const text = runtime.options.detect.prompts ? INSTRUCTION : INSTRUCTION_WITHOUT_PROMPTS;
+    const forges = runtime.definitions.length > 0;
+    const prompts = runtime.options.detect.prompts;
+    const text = forges
+      ? prompts
+        ? INSTRUCTIONS.forgesPrompts
+        : INSTRUCTIONS.forges
+      : prompts
+        ? INSTRUCTIONS.prompts
+        : INSTRUCTIONS.none;
     event.system.push({ type: 'text', text });
   });
 }
@@ -127,14 +170,20 @@ export async function registerTools(runtime: Runtime, context: Plugin.Context): 
   });
 }
 
-/** Turns a tool item into a candidate, or explains why it cannot. */
+/**
+ * Turns a tool item into a forge candidate, a work link for a URL no forge reads, or explains
+ * why it can be neither.
+ */
 function candidateOf(
   runtime: Runtime,
   item: Item,
   base: RepoRef | undefined
-): RefCandidate | string {
+): RefCandidate | { link: LinkInfo } | string {
   if ('url' in item) {
-    return parseReference(runtime.definitions, item.url, base) ?? `Could not read ${item.url}.`;
+    const candidate = parseReference(runtime.definitions, item.url, base);
+    if (candidate !== undefined) return candidate;
+    const link = recognizeLink(item.url);
+    return link === undefined ? `Could not read ${item.url}: pass a web URL.` : { link };
   }
   if (item.repo === undefined && base === undefined) {
     return `#${item.number} needs a repository: the current directory has no GitHub or GitLab remote. Pass a URL or repo.`;
@@ -202,22 +251,57 @@ async function linkWork(
   items: Item[]
 ): Promise<string> {
   const base = await sessionBase(runtime, context, sessionID);
-  const parsed = items.map((item) => candidateOf(runtime, item, base));
-  const candidates = parsed.filter((value) => typeof value !== 'string');
+  const parsed = items.map((item) => ({ item, found: candidateOf(runtime, item, base) }));
+  const candidates = parsed.flatMap(({ found }) =>
+    typeof found === 'string' || 'link' in found ? [] : [found]
+  );
+  const work = parsed.flatMap(({ item, found }) =>
+    typeof found !== 'string' && 'link' in found
+      ? [{ info: found.link, title: 'title' in item ? item.title : undefined }]
+      : []
+  );
   const resolutions = await resolveCandidates(runtime, candidates);
   const links = linksOf(usableRefs(resolutions), 'agent');
+  const linkedAt = Date.now();
+  const workLinks = work.map(
+    ({ info, title }): WorkLink => ({
+      url: info.url,
+      source: 'agent',
+      linkedAt,
+      ...(title === undefined ? {} : { title })
+    })
+  );
   // Read inside the queued write, so a link detection added a moment ago still counts as earlier.
   const sources = new Map<string, RefSource>();
-  if (links.length > 0) {
+  if (links.length > 0 || workLinks.length > 0) {
     await runtime.writes.update(context.session, sessionID, (refs) => {
       for (const link of refs.links) sources.set(refKey(link.ref), link.source);
-      // `agent` is an explicit source, so mergeLinks lifts any earlier dismissal of these keys.
-      return mergeLinks(refs, links);
+      for (const link of refs.urls ?? []) {
+        const key = recognizeLink(link.url)?.key;
+        if (key !== undefined) sources.set(key, link.source);
+      }
+      // `agent` is an explicit source, so both merges lift any earlier dismissal of these keys.
+      const merged = mergeLinks(refs, links);
+      const added = mergeWorkLinks(merged.next, workLinks);
+      return { next: added.next, changed: merged.changed || added.changed };
     });
   }
   const previous = (ref: Ref) => sources.get(refKey(ref));
-  const errors = parsed.filter((value) => typeof value === 'string');
-  return [...resolutions.map((resolution) => linkLine(resolution, previous)), ...errors].join('\n');
+  const errors = parsed.flatMap(({ found }) => (typeof found === 'string' ? [found] : []));
+  return [
+    ...resolutions.map((resolution) => linkLine(resolution, previous)),
+    ...work.map(({ info, title }) => {
+      const source = sources.get(info.key);
+      const named = title ?? info.title;
+      return `${(source && ALREADY[source]) ?? 'Linked'} ${describeLink(info)}${named ? `: ${named}` : ''}`;
+    }),
+    ...errors
+  ].join('\n');
+}
+
+/** `Linear COR-1466`, or `link example.com` for a page no tracker claims. */
+function describeLink(info: LinkInfo): string {
+  return `${LINK_PROVIDER_NAMES[info.provider]} ${info.name ?? info.url}`;
 }
 
 /** Whether a stored ref is the one a candidate names; kind only counts when the candidate has one. */
@@ -249,6 +333,12 @@ async function unlinkWork(
     const candidate = candidateOf(runtime, item, base);
     if (typeof candidate === 'string') {
       lines.push(candidate);
+      continue;
+    }
+    if ('link' in candidate) {
+      // Dismissed even when not linked yet, so a prompt does not add it later.
+      keys.push(candidate.link.key);
+      lines.push(`Unlinked ${describeLink(candidate.link)}.`);
       continue;
     }
     const matched = current.links.filter((link) => names(candidate, link.ref));
