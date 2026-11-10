@@ -15,17 +15,18 @@ import { createStore, reconcile } from 'solid-js/store';
 import { useCliSettings } from './cli-settings.js';
 import { createMarquee } from './marquee.js';
 import { type Ref, refKey } from './refs/ref.js';
-import { sidebarRefs } from './refs/summary.js';
+import { type ShownLink, sidebarRefs, workLinks } from './refs/summary.js';
 import { type SessionRefView, SuperSessions } from './rpc.js';
 import { tuiSettingsFor } from './settings/store.js';
 import type { SidebarProps } from './sidebar.js';
 import { createSidebarState } from './sidebar-state.js';
-import { createFailedChecks, workRow, workStatus } from './work-row.js';
+import { createFailedChecks, linkRow, workRow, workStatus } from './work-row.js';
 
 const REFRESH_INTERVAL = 60_000;
 
 /**
- * The session's tracked pull requests and issues at the top of the sidebar, without a heading.
+ * The session's tracked pull requests, issues and work links at the top of the sidebar, without a
+ * heading.
  * Earlier versions stored an expanded flag under `sidebar`; nothing reads it any more.
  */
 export default function Sidebar(props: SidebarProps) {
@@ -64,7 +65,8 @@ export default function Sidebar(props: SidebarProps) {
   const listed = createMemo(() =>
     data.view ? sidebarRefs(data.view) : { refs: [] as Ref[], mentioned: 0 }
   );
-  const shown = () => listed().refs.length > 0 || listed().mentioned > 0;
+  const links = createMemo(() => (data.view ? workLinks(data.view) : []));
+  const shown = () => listed().refs.length > 0 || links().length > 0 || listed().mentioned > 0;
   const stateOf = (ref: Ref) => data.view?.states[refKey(ref)];
 
   createEffect(on(props.sessionID, (sessionID) => void controller.show(sessionID)));
@@ -135,6 +137,20 @@ export default function Sidebar(props: SidebarProps) {
           return listed().refs;
         },
         children: row
+      }),
+      createComponent(Index, {
+        get each() {
+          return links();
+        },
+        children: (link: () => ShownLink, index: number) =>
+          linkRow({
+            context,
+            theme,
+            link,
+            width,
+            marquee,
+            id: `super-sessions-sidebar-link-${index}`
+          })
       }),
       jsx('box', {
         get visible() {

@@ -8,9 +8,9 @@ import { createComponent, createMemo, For, type JSX, Show, untrack } from 'solid
 import type { Options } from '../config.js';
 import { type createMarquee, marqueeText } from '../marquee.js';
 import { type PullDetails, type Ref, refKey } from '../refs/ref.js';
-import { pullRequests, trackedRefs } from '../refs/summary.js';
+import { pullRequests, type ShownLink, trackedRefs, workLinks } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
-import { createFailedChecks, hasWorkStatus, workRow, workStatus } from '../work-row.js';
+import { createFailedChecks, hasWorkStatus, linkRow, workRow, workStatus } from '../work-row.js';
 import { fitText } from './row.js';
 
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -256,6 +256,16 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
       },
       children: (item: WorkLine) => {
         if (item.kind === 'label') return line(() => item.text);
+        if (item.kind === 'link') {
+          return linkRow({
+            context,
+            theme,
+            link: () => item.link,
+            width: () => props.width(),
+            marquee: props.marquee,
+            selected: () => props.selectedRef() === item.link.key
+          });
+        }
         const state = () => props.refs()?.states[refKey(item.ref)];
         if (item.kind === 'status') {
           return workStatus({
@@ -315,13 +325,15 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
 export type WorkLine =
   | { kind: 'label'; text: string }
   | { kind: 'ref'; ref: Ref }
-  | { kind: 'status'; ref: Ref };
+  | { kind: 'status'; ref: Ref }
+  | { kind: 'link'; link: ShownLink };
 
 /**
  * Tracked refs: pull requests in the rows' order (see `pullRequests`), so an open one is always
  * above the merged and closed ones, each followed by its status line when it has one and the
- * issues it closes right under it, in the same columns; then the other tracked issues, then
- * mentioned refs under a label. Each ref appears once, so its key names its row.
+ * issues it closes right under it, in the same columns; then the other tracked issues, then work
+ * links, newest first, then mentioned refs under a label. Each ref and link appears once, so its
+ * key names its row.
  */
 export function workLines(view: SessionRefView): WorkLine[] {
   const tracked = trackedRefs(view);
@@ -350,6 +362,7 @@ export function workLines(view: SessionRefView): WorkLine[] {
   for (const ref of tracked) {
     if (ref.kind === 'issue' && !nestedKeys.has(refKey(ref))) lines.push({ kind: 'ref', ref });
   }
+  for (const link of workLinks(view)) lines.push({ kind: 'link', link });
   const mentioned = view.links.filter(
     (link) =>
       link.source === 'mention' &&

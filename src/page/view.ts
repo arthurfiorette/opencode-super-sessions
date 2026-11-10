@@ -39,7 +39,7 @@ import {
 import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.js';
 import { copyLink } from '../link.js';
 import { type ProviderId, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
-import { rowRefs } from '../refs/summary.js';
+import { rowRefs, workLinks } from '../refs/summary.js';
 import { LINK_PROVIDER_NAMES, recognizeLink } from '../refs/work-link.js';
 import { excludeFromAutoArchive } from '../settings/maintenance.js';
 import { tuiSettingsFor } from '../settings/store.js';
@@ -519,7 +519,7 @@ export default function SessionBrowser(props: PageProps) {
     const session = selected();
     if (!session) return;
     const reference = await context.ui.dialog.prompt({
-      title: 'Link pull request or issue',
+      title: 'Link pull request, issue or URL',
       placeholder: 'URL, owner/repo#N or #N'
     });
     if (!reference?.trim()) return;
@@ -628,12 +628,16 @@ export default function SessionBrowser(props: PageProps) {
     const summary = view ? rowRefs(view) : undefined;
     // The row's first line: an open PR whenever the session has one.
     const primary = summary?.prs[0] ?? summary?.issues[0];
-    if (!view || !primary) {
-      toast('No pull request or issue on this session.');
+    const url = primary
+      ? refUrl(primary, view?.states[refKey(primary)])
+      : view
+        ? workLinks(view)[0]?.url
+        : undefined;
+    if (url === undefined) {
+      toast('No pull request, issue or link on this session.');
       return;
     }
-    if (!openUrl(refUrl(primary, view.states[refKey(primary)])))
-      toast('Could not open the browser.', 'error');
+    if (!openUrl(url)) toast('Could not open the browser.', 'error');
   };
 
   /** The forge the selected row's refs live on, for the reload's title and messages. */
@@ -709,19 +713,35 @@ export default function SessionBrowser(props: PageProps) {
   const focusList = () => {
     setFocus('list');
   };
-  const workRefs = createMemo(() => {
+  /** The selected session's Work rows that the keys can select: refs and work links. */
+  const workItems = createMemo((): WorkItem[] => {
     const session = selected();
     const view = session ? data.refs[session.id] : undefined;
     if (!view) return [];
-    return workLines(view).flatMap((line) => (line.kind === 'ref' ? [line.ref] : []));
+    return workLines(view).flatMap((line): WorkItem[] => {
+      if (line.kind === 'ref') {
+        return [
+          {
+            key: refKey(line.ref),
+            url: refUrl(line.ref, view.states[refKey(line.ref)]),
+            label: `${refKind(line.ref)} ${refNumber(line.ref)}`
+          }
+        ];
+      }
+      if (line.kind === 'link') {
+        return [{ key: line.link.key, url: line.link.url, label: linkLabel(line.link.url) }];
+      }
+      return [];
+    });
   });
   /** The Work row the keyboard selected, while the Work rows have the keys. */
-  const workRef = () => (focus() === 'work' && !pullView() ? workRefs()[workIndex()] : undefined);
+  const workItem = () => (focus() === 'work' && !pullView() ? workItems()[workIndex()] : undefined);
   /**
    * Rows `right` moves the arrow keys to: the preview's Work rows, or in the Pull requests view
    * the sessions that worked on the selected pull request.
    */
-  const workCount = () => (pullView() ? (selectedPull()?.sessions.length ?? 0) : workRefs().length);
+  const workCount = () =>
+    pullView() ? (selectedPull()?.sessions.length ?? 0) : workItems().length;
   // The Work rows belong to the selected row; another row or search hands the keys back.
   createEffect(
     on(() => [memory.selected, memory.pull, memory.query, memory.view], focusList, {
@@ -757,17 +777,13 @@ export default function SessionBrowser(props: PageProps) {
       if (session) open(session.id);
       return;
     }
-    const ref = workRef();
-    const session = selected();
-    if (!ref || !session) return;
-    if (!openUrl(refUrl(ref, data.refs[session.id]?.states[refKey(ref)])))
-      toast('Could not open the browser.', 'error');
+    const item = workItem();
+    if (item && !openUrl(item.url)) toast('Could not open the browser.', 'error');
   };
-  /** `c` in the Work rows: copies the selected ref's URL. */
+  /** `c` in the Work rows: copies the selected row's URL. */
   const copyWork = () => {
-    const ref = workRef();
-    const session = selected();
-    if (ref && session) copyLink(context, refUrl(ref, data.refs[session.id]?.states[refKey(ref)]));
+    const item = workItem();
+    if (item) copyLink(context, item.url);
   };
   /**
    * `d` in the Work rows: unlinks the selected ref. No confirmation, since `ctrl+l` links it
@@ -776,12 +792,12 @@ export default function SessionBrowser(props: PageProps) {
    * the ref's place.
    */
   const unlinkWork = async () => {
-    const ref = workRef();
+    const item = workItem();
     const session = selected();
-    if (!ref || !session) return;
-    const label = `${refKind(ref)} ${refNumber(ref)}`;
+    if (!item || !session) return;
+    const label = item.label;
     try {
-      await model.rpc().unlink({ sessionID: session.id, key: refKey(ref) }, model.rpcOptions());
+      await model.rpc().unlink({ sessionID: session.id, key: item.key }, model.rpcOptions());
     } catch {
       toast(`Could not unlink ${label}.`, 'error');
       return;
@@ -867,7 +883,7 @@ export default function SessionBrowser(props: PageProps) {
           ]
         : []),
       {
-        title: 'Link pull request or issue',
+        title: 'Link pull request, issue or URL',
         key: shortcut('super-sessions.link', 'ctrl+l'),
         run: link
       },
@@ -877,13 +893,13 @@ export default function SessionBrowser(props: PageProps) {
         run: openRef
       },
       { title: reloadTitle(), key: RELOAD_KEY, run: reload },
-      ...(wide() && workRefs().length > 0
+      ...(wide() && workItems().length > 0
         ? [{ title: 'Focus the preview links', key: 'right', run: focusWork }]
         : []),
-      ...(workRef() !== undefined
+      ...(workItem() !== undefined
         ? [
             { title: 'Copy the selected link', key: 'c', run: copyWork },
-            { title: 'Unlink pull request or issue', key: 'd', run: unlinkWork }
+            { title: 'Unlink the selected link', key: 'd', run: unlinkWork }
           ]
         : []),
       {
@@ -986,15 +1002,15 @@ export default function SessionBrowser(props: PageProps) {
     {
       bind: 'c',
       title: 'Copy the selected link',
-      enabled: () => workRef() !== undefined,
+      enabled: () => workItem() !== undefined,
       run: copyWork
     },
     // Same rule as `c`. Not backspace: it edits the search, and a press meant for the query
     // would unlink the selected ref.
     ...['d', 'delete'].map((bind) => ({
       bind,
-      title: 'Unlink pull request or issue',
-      enabled: () => workRef() !== undefined,
+      title: 'Unlink the selected link',
+      enabled: () => workItem() !== undefined,
       run: () => void unlinkWork()
     })),
     { bind: 'pageup', title: 'Page up', run: () => move(-pageRows()) },
@@ -1099,7 +1115,7 @@ export default function SessionBrowser(props: PageProps) {
     },
     {
       id: 'super-sessions.link',
-      title: 'Link pull request or issue',
+      title: 'Link pull request, issue or URL',
       bind: 'ctrl+l',
       enabled: sessionRows,
       run: () => void link()
@@ -1676,10 +1692,7 @@ export default function SessionBrowser(props: PageProps) {
     branch: branchOf,
     project: () => (scope() === 'project' ? projectID() : undefined),
     running: model.running,
-    selectedRef: () => {
-      const ref = workRef();
-      return ref ? refKey(ref) : undefined;
-    },
+    selectedRef: () => workItem()?.key,
     // The session view's surface, not the dialog's, so the transcript looks as it does there.
     theme: () => context.theme,
     onLoaded: (sessionID, page) => props.history.preview(sessionID, page),
@@ -1986,6 +1999,13 @@ function tabLabel(view: PageView, icons: boolean): string {
 function matchLabel(reason: SearchReason | undefined, refs: Parameters<typeof findRef>[0]): string {
   // Body hits sit under the "In messages" header, which already says why they matched.
   if (reason === undefined || reason.match === 'title' || reason.match === 'body') return '';
+  const link = refs ? workLinks(refs).find((item) => item.key === reason.ref) : undefined;
+  if (link !== undefined) {
+    const provider = LINK_PROVIDER_NAMES[link.provider];
+    return reason.match === 'ref-number' && link.name !== undefined
+      ? `${provider} ${link.name}`
+      : provider;
+  }
   const ref = reason.ref === undefined ? undefined : findRef(refs, reason.ref);
   const kind = ref === undefined ? 'ref' : refKind(ref);
   if (reason.match === 'ref-title') return `${kind} title`;
@@ -1996,6 +2016,14 @@ function matchLabel(reason: SearchReason | undefined, refs: Parameters<typeof fi
 function refKind(ref: Ref): string {
   if (ref.kind === 'issue') return 'issue';
   return ref.provider === 'gitlab' ? 'MR' : 'PR';
+}
+
+/** A Work row the keys can select: a ref or a work link, with what `enter`, `c` and `d` need. */
+interface WorkItem {
+  key: string;
+  url: string;
+  /** How toasts name it, such as `PR #12` or `Linear COR-1466`. */
+  label: string;
 }
 
 /** How a work link reads in a toast: its provider and id, such as `Linear COR-1466`. */

@@ -18,7 +18,7 @@ import type { Options } from './config.js';
 import { clickLink } from './link.js';
 import { type createMarquee, marqueeText } from './marquee.js';
 import { checkLook, hasListedChecks, listedChecks } from './page/checks.js';
-import { refColor, refIcon } from './page/icons.js';
+import { linkColor, linkIcon, refColor, refIcon } from './page/icons.js';
 import { badgeSegments, cells, fitText } from './page/row.js';
 import {
   type PullCheck,
@@ -29,6 +29,7 @@ import {
   refKey,
   refNumber
 } from './refs/ref.js';
+import type { ShownLink } from './refs/summary.js';
 
 // Cells taken by a ref glyph and its trailing space (see `ICONS`).
 const ICON = 2;
@@ -263,22 +264,80 @@ export function workStatus(input: {
  * so updates change properties, never the tree.
  */
 export function workRow(input: WorkRowInput): JSX.Element {
+  return lineRow({
+    ...input,
+    key: () => refKey(input.ref()),
+    icon: () => refIcon(input.ref().kind, input.state()?.status),
+    iconFg: () =>
+      refColor(input.options, input.state()?.status, input.theme(), input.context.themeMode),
+    number: () => refNumber(input.ref()),
+    title: () => input.state()?.title ?? '',
+    url: () => refUrl(input.ref(), input.state())
+  });
+}
+
+/** Inputs of {@link linkRow}. */
+export interface LinkRowInput
+  extends Pick<WorkRowInput, 'context' | 'theme' | 'width' | 'marquee' | 'selected' | 'id'> {
+  link(): ShownLink;
+}
+
+/**
+ * A work link's line in a Work section, laid out like {@link workRow}: the provider's glyph in
+ * the info color, the id, then the muted title. A link without an id, such as a Notion page,
+ * starts its title right after the glyph.
+ */
+export function linkRow(input: LinkRowInput): JSX.Element {
+  return lineRow({
+    ...input,
+    key: () => input.link().key,
+    icon: () => linkIcon(input.link().provider),
+    iconFg: () => linkColor(input.theme()),
+    number: () => input.link().name ?? '',
+    title: () => input.link().title ?? '',
+    url: () => input.link().url
+  });
+}
+
+/** What {@link lineRow} draws: one ref or work link, and the page a click opens. */
+interface LineInput
+  extends Pick<
+    WorkRowInput,
+    'context' | 'theme' | 'width' | 'marquee' | 'selected' | 'marker' | 'id'
+  > {
+  key(): string;
+  icon(): string;
+  iconFg(): string | RGBA;
+  /** The number or id; empty for a link that has none. */
+  number(): string;
+  title(): string;
+  url(): string;
+}
+
+/** The line {@link workRow} and {@link linkRow} share. */
+function lineRow(input: LineInput): JSX.Element {
   const context = input.context;
   const theme = input.theme;
   const [hovered, setHovered] = createSignal(false);
   const id = (part: string) => (input.id === undefined ? {} : { id: `${input.id}-${part}` });
-  const key = () => refKey(input.ref());
-  const number = () => refNumber(input.ref());
-  const title = () => input.state()?.title ?? '';
+  const key = input.key;
+  const number = input.number;
+  const title = input.title;
   const selected = () => input.selected?.() ?? false;
   /** Selection foreground over every part, or undefined for the parts' own colors. */
   const selectedFg = () => (selected() ? theme().text.action.primary.focused : undefined);
   const marker = () => input.marker?.();
+  // The space between the number and the title; a line without a number needs none.
+  const gap = () => (number() ? ' ' : '');
   /** Cells left for the title after the icon, the number, the marker and the spaces between. */
   const room = () => {
     const note = marker();
     return (
-      Math.floor(input.width()) - ICON - cells(number()) - 1 - (note ? cells(note) + MARKER_GAP : 0)
+      Math.floor(input.width()) -
+      ICON -
+      cells(number()) -
+      gap().length -
+      (note ? cells(note) + MARKER_GAP : 0)
     );
   };
   return jsx('box', {
@@ -298,7 +357,7 @@ export function workRow(input: WorkRowInput): JSX.Element {
       input.marquee.leave(key());
     },
     onMouseUp: (event: MouseEvent) => {
-      clickLink(context, refUrl(input.ref(), input.state()), event);
+      clickLink(context, input.url(), event);
     },
     children: [
       jsx('text', {
@@ -306,13 +365,10 @@ export function workRow(input: WorkRowInput): JSX.Element {
         flexShrink: 0,
         wrapMode: 'none',
         get fg() {
-          return (
-            selectedFg() ??
-            refColor(input.options, input.state()?.status, theme(), context.themeMode)
-          );
+          return selectedFg() ?? input.iconFg();
         },
         get children() {
-          return `${refIcon(input.ref().kind, input.state()?.status)} `;
+          return `${input.icon()} `;
         }
       }),
       jsx('text', {
@@ -343,8 +399,8 @@ export function workRow(input: WorkRowInput): JSX.Element {
         get children() {
           if (!title() || room() <= 0) return '';
           return input.marquee.active() === key() && input.marquee.offset() > 0
-            ? ` ${marqueeText(title(), room(), input.marquee.offset())}`
-            : ` ${fitText(title(), room())}`;
+            ? `${gap()}${marqueeText(title(), room(), input.marquee.offset())}`
+            : `${gap()}${fitText(title(), room())}`;
         }
       }),
       jsx('text', {

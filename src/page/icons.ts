@@ -2,6 +2,7 @@ import type { ResolvedTheme } from '@opencode/theme/tui';
 import { RGBA } from '@opentui/core';
 import { type Options, stateColor } from '../config.js';
 import type { RefKind, RefStatus } from '../refs/ref.js';
+import type { LinkProvider } from '../refs/work-link.js';
 
 /**
  * Nerd Font octicons. Every glyph is drawn in a 2-cell slot (glyph and a space) so fonts that draw
@@ -32,6 +33,38 @@ export const ICONS = {
   conflicts: '\uf421',
   threads: '\uf41f'
 } as const;
+
+/**
+ * Glyph of a work link: the tracker's logo where Nerd Fonts has one (Material Design icons, and
+ * the devicons of Nerd Fonts 3.3 for Notion and Sentry), a task list for trackers without one,
+ * and a chain link for any other page.
+ */
+const LINK_ICONS: Record<LinkProvider, string> = {
+  linear: '\uf4a0',
+  jira: '\u{F0303}',
+  'azure-boards': '\u{F0FD5}',
+  sentry: '\ue89f',
+  notion: '\ue848',
+  slack: '\u{F04B1}',
+  trello: '\u{F0532}',
+  clickup: '\uf4a0',
+  shortcut: '\uf4a0',
+  asana: '\uf4a0',
+  url: '\uf44c'
+};
+
+/** Glyph of a work link's provider. */
+export function linkIcon(provider: LinkProvider): string {
+  return LINK_ICONS[provider];
+}
+
+/**
+ * Color of a work link's glyph and id. Nothing reports a work link's state, so it takes the
+ * theme's info color instead of a state color.
+ */
+export function linkColor(theme: ResolvedTheme): RGBA {
+  return theme.text.feedback.info.base;
+}
 
 /** A word per ref state, for the sidebar's summary counts. */
 export const STATE_WORDS: Record<RefStatus, string> = {

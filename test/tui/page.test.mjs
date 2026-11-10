@@ -485,6 +485,51 @@ test('rows list each issue on its own line up to five, and "Group issues" joins 
   assert.doesNotMatch(rendered.captureCharFrame(), /Rspack issue/);
 });
 
+test('work links take lines under the issues and in the preview, and a search finds their id', async () => {
+  refViews.linked = {
+    links: [],
+    branchRefs: [],
+    states: {},
+    urls: [
+      {
+        url: 'https://linear.app/acme/issue/COR-1466/evented-engine-retries',
+        source: 'agent',
+        linkedAt: 2
+      },
+      {
+        url: 'https://www.notion.so/acme/Launch-plan-0123456789abcdef0123456789abcdef',
+        source: 'manual',
+        linkedAt: 1
+      }
+    ]
+  };
+  const terminal = await host(undefined, undefined, [
+    session('linked', 'Engine retry fix', { updated: NOW - 30 * MINUTE })
+  ]);
+  const rendered = await testRender(() => terminal.overlay.render({}), { width: 140, height: 40 });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  await eventually(rendered, (frame) => frame.includes('COR-1466'));
+  const lines = rendered.captureCharFrame().split('\n');
+  const title = lines.findIndex((line) => line.includes('Engine retry fix'));
+  // Newest first; a Notion page has no id, so its title takes the id's place.
+  assert.match(lines[title + 1] ?? '', /\uf4a0 COR-1466 Evented engine retries/);
+  assert.match(lines[title + 2] ?? '', /\ue848 Launch plan/);
+
+  await rendered.mockInput.typeText('cor-1466');
+  // The only hit is selected, so the preview's Work section lists its links too.
+  await eventually(
+    rendered,
+    (frame) =>
+      !frame.includes('Mastra build') &&
+      frame.includes('Linear COR-1466') &&
+      frame.split('Launch plan').length - 1 === 2
+  );
+  delete refViews.linked;
+});
+
 // A merged branch PR used to take the row's only PR line and hide the session's open PR.
 test('a row lists every pull request, the open one above the merged branch PR', async () => {
   const merged = { ...pr4930, number: 29169 };

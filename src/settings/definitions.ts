@@ -111,9 +111,9 @@ export const SETTINGS: readonly SettingRow[] = [
     key: 'refLine',
     group: 'List',
     title: 'PR and issue line',
-    description: 'Whether rows show the pull requests and issues of the session',
+    description: 'Whether rows show the pull requests, issues and links of the session',
     ...onOff,
-    keywords: ['pull request', 'refs']
+    keywords: ['pull request', 'refs', 'links']
   },
   {
     side: 'tui',
@@ -121,7 +121,7 @@ export const SETTINGS: readonly SettingRow[] = [
     group: 'List',
     title: 'Group issues',
     description:
-      'Whether rows list their issues on one line, as #1, #2 and #3, instead of one line per issue with its title',
+      'Whether rows list their issues and links on one line, as #1, #2 and #3, instead of one line each with its title',
     ...onOff,
     keywords: ['issues', 'refs', 'compact']
   },
@@ -203,9 +203,10 @@ export const SETTINGS: readonly SettingRow[] = [
     key: 'trackPrompts',
     group: 'Tracking',
     title: 'Record refs from prompts',
-    description: 'Whether pull requests and issues named in your prompts are tracked',
+    description:
+      'Whether pull requests, issues and tracker links such as Linear or Jira in your prompts are tracked',
     ...onOff,
-    keywords: ['prompts', 'issues']
+    keywords: ['prompts', 'issues', 'links']
   },
   {
     side: 'server',

@@ -23,35 +23,28 @@ import {
 } from './links.js';
 import type { Runtime } from './runtime.js';
 
+// When to call is in the system instruction below and the descriptions only say what the tools
+// take, so the two never repeat or disagree.
 const LINK_DESCRIPTION =
-  'Record a pull request, issue or other piece of work this session works on so the user can ' +
-  'track it in their session list. Changes nothing on GitHub, GitLab or any tracker. Call it ' +
-  'when you start on an issue, when you open or find the pull request for your work, and when ' +
-  'you switch to another one. Pass full URLs when you have them; a bare number uses the ' +
-  'repository of the current directory. Any other web page is accepted too, such as a Linear, ' +
-  'Jira, Azure Boards, Sentry, Notion, Trello, ClickUp, Shortcut or Asana item or a Slack ' +
-  'thread; give its title when you know it.';
+  "Adds a pull request, issue, ticket or other work page to this session's list. Nothing " +
+  'changes on GitHub, GitLab or any tracker.';
 
 const UNLINK_DESCRIPTION =
-  'Stop tracking a pull request, issue or other link in this session, for example one linked ' +
-  'by mistake or work you dropped. Changes nothing on GitHub, GitLab or any tracker, and the ' +
-  'link is not added again automatically.';
+  "Removes work from this session's list only, for example a mistaken link or work the user " +
+  'dropped. Automatic linking does not add it back; link_work does.';
 
-const urlText = z
-  .string()
-  .min(1)
-  .max(2000)
-  .describe('Pull request, issue or other work URL, or `owner/repo#123`.');
-const url = z.strictObject({ url: urlText });
+const url = z.strictObject({
+  url: z.string().min(1).max(2000).describe('The linked URL, or `owner/repo#123`.')
+});
 const titledUrl = z.strictObject({
-  url: urlText,
+  url: z.string().min(1).max(2000).describe('Any http(s) URL, or `owner/repo#123`.'),
   title: z
     .string()
     .min(1)
     .max(300)
     .optional()
     .describe(
-      'Title of the work at a URL that is not a GitHub or GitLab pull request or issue, as you know it.'
+      'Pass it for a URL outside GitHub and GitLab: nothing fetches titles there, so the list shows what you pass.'
     )
 });
 const number = z.number().int().positive().describe('Pull request or issue number.');
@@ -59,7 +52,7 @@ const repo = z
   .string()
   .min(1)
   .optional()
-  .describe('`owner/repo`. Defaults to the repository of the current directory.');
+  .describe("`owner/repo`. Defaults to the current directory's repository.");
 
 const linkInput = z.strictObject({
   refs: z
@@ -72,7 +65,7 @@ const linkInput = z.strictObject({
           kind: z
             .enum(['pr', 'issue'])
             .optional()
-            .describe('Whether it is a pull request or an issue. Looked up when omitted.')
+            .describe('`pr` or `issue`. Looked up when omitted.')
         })
       ])
     )
@@ -89,36 +82,51 @@ const unlinkInput = z.strictObject({
 
 type Item = z.output<typeof linkInput>['refs'][number];
 
-// Trackers whose URLs a prompt links on its own (see `trackerLinks`).
+// Pages a prompt links on its own (see `trackerLinks`). Named in full, since an agent told "and
+// similar" cannot tell which pasted links still need a call.
 const TRACKERS =
-  'Linear, Jira, Azure Boards, Sentry, Notion, Slack, Trello, ClickUp, Shortcut or Asana';
-// The rule for work outside the forges, which needs no forge and no prompt detection.
-const ELSEWHERE =
-  'when the work is tracked somewhere else, such as a Jira or Linear issue, an Azure Boards ' +
-  'work item, a Sentry error or a Slack thread';
-const PASS = 'pass its URL and the title you know.';
+  'Linear, Jira, Azure Boards, Sentry, Notion, Slack, Trello, ClickUp, Shortcut or Asana pages';
 
-// What detection already links, so the agent calls link_work only for what it cannot see. Without
-// it the agent re-links refs from the prompt and believes it forgot them. Keyed by whether GitHub
-// or GitLab is enabled and whether "Record refs from prompts" is on.
-const INSTRUCTIONS = {
-  forgesPrompts:
-    `Pull request and issue links in user messages, ${TRACKERS} links in user messages, the ` +
-    'pull request of a branch you push with git push, and pull requests or issues you create ' +
-    'with gh or glab are tracked automatically. You MUST call link_work when you start working ' +
-    'on an issue or pull request that the user did not link, for example one you found by ' +
-    `searching, when you open a pull request by any other means, and ${ELSEWHERE} the user did ` +
-    `not paste: ${PASS} Do not call it for links the user already gave.`,
-  forges:
-    'The pull request of a branch you push with git push, and pull requests or issues you create ' +
-    'with gh or glab are tracked automatically. You MUST call link_work when you start working ' +
-    'on an issue or pull request, including one the user named, when you open a pull request by ' +
-    `any other means, and ${ELSEWHERE}: ${PASS}`,
-  prompts:
-    `${TRACKERS} links in user messages are tracked automatically. You MUST call link_work ` +
-    `${ELSEWHERE} the user did not paste: ${PASS} Do not call it for links the user already gave.`,
-  none: `You MUST call link_work ${ELSEWHERE}: ${PASS}`
-};
+/**
+ * What detection already links, so the agent calls link_work only for what it cannot see.
+ * Without it the agent re-links refs from the prompt and believes it forgot them. `forges` says
+ * whether GitHub or GitLab is enabled, `prompts` whether "Record refs from prompts" is on.
+ */
+export function instructionText(forges: boolean, prompts: boolean): string {
+  const automatic = [
+    ...(prompts
+      ? [
+          forges
+            ? `links in user messages to GitHub or GitLab pull requests and issues or to ${TRACKERS}`
+            : `links in user messages to ${TRACKERS}`
+        ]
+      : []),
+    ...(forges
+      ? [
+          'the pull request of a branch you push',
+          'pull requests and issues you create with gh or glab'
+        ]
+      : [])
+  ];
+  const cases = [
+    ...(prompts ? ['one you found yourself', 'one the user named without a link'] : []),
+    ...(!prompts && forges ? ['ones the user named'] : []),
+    ...(forges ? ['a pull request you opened another way'] : [])
+  ];
+  const rule =
+    `You MUST call link_work when you start on ${automatic.length > 0 ? 'any other' : 'an'} ` +
+    `issue, pull request, ticket, error report or thread${cases.length > 0 ? `, including ${joined(cases)}` : ''}.`;
+  return automatic.length > 0
+    ? `Linked to this session automatically: ${automatic.join('; ')}. ${rule}`
+    : rule;
+}
+
+/** `a`, `a and b`, or `a, b and c`. */
+function joined(items: string[]): string {
+  return items.length < 2
+    ? (items[0] ?? '')
+    : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
+}
 
 /**
  * Tells the agent what the plugin tracks on its own, through the `context` hook the host itself
@@ -132,15 +140,7 @@ export async function registerInstructions(
   context: Plugin.Context
 ): Promise<void> {
   await context.session.hook('context', (event) => {
-    const forges = runtime.definitions.length > 0;
-    const prompts = runtime.options.detect.prompts;
-    const text = forges
-      ? prompts
-        ? INSTRUCTIONS.forgesPrompts
-        : INSTRUCTIONS.forges
-      : prompts
-        ? INSTRUCTIONS.prompts
-        : INSTRUCTIONS.none;
+    const text = instructionText(runtime.definitions.length > 0, runtime.options.detect.prompts);
     event.system.push({ type: 'text', text });
   });
 }
