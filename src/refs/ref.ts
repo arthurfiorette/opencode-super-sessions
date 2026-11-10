@@ -45,10 +45,25 @@ export const refLinkSchema = z.strictObject({
   via: z.string().optional()
 });
 
+/**
+ * A web page the session works on outside the forges, such as a Linear issue or any URL (see
+ * `src/refs/work-link.ts`). Only explicit links and tracker URLs in prompts are stored; assistant
+ * text never adds one. `title` is what the agent or user gave, which wins over the URL's slug.
+ */
+export const workLinkSchema = z.strictObject({
+  url: z.string().min(1).max(2000),
+  source: z.enum(['agent', 'manual', 'prompt']),
+  linkedAt: z.number().int().nonnegative(),
+  title: z.string().min(1).max(300).optional()
+});
+
 /** Value stored under {@link METADATA_KEY} in session metadata. */
 export const sessionRefsSchema = z.strictObject({
   v: z.literal(1),
   links: z.array(refLinkSchema),
+  // Work links. Optional, so values written before they existed stay valid; versions without it
+  // read a value that has it as unparseable and never overwrite it.
+  urls: z.array(workLinkSchema).optional(),
   // Keys the user or agent unlinked. Detection must never add these back.
   dismissed: z.array(z.string()),
   // The user's Done override: `true` is Done whatever the refs say, `false` never Done, unset
@@ -179,6 +194,7 @@ export type RefKind = z.output<typeof refKindSchema>;
 export type Ref = z.output<typeof refSchema>;
 export type RefSource = z.output<typeof refSourceSchema>;
 export type RefLink = z.output<typeof refLinkSchema>;
+export type WorkLink = z.output<typeof workLinkSchema>;
 export type SessionRefs = z.output<typeof sessionRefsSchema>;
 export type RefStatus = z.output<typeof refStatusSchema>;
 export type RefReview = z.output<typeof refReviewSchema>;

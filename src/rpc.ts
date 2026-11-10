@@ -5,7 +5,8 @@ import {
   pullDetailsSchema,
   refLinkSchema,
   refSchema,
-  refStateSchema
+  refStateSchema,
+  workLinkSchema
 } from './refs/ref.js';
 
 export const availabilitySchema = z.enum(['ok', 'missing-tool', 'unauthenticated']);
@@ -21,6 +22,11 @@ export const sessionRefViewSchema = z.strictObject({
   branchRefs: z.array(refSchema),
   /** Live state by `refKey`. Missing entries are unknown (not fetched yet, or the fetch failed). */
   states: z.record(z.string(), refStateSchema),
+  /**
+   * Work links that are not dismissed. Left out when there are none, so a TUI from before work
+   * links still reads the view.
+   */
+  urls: z.array(workLinkSchema).optional(),
   /** The user's Done override (see `done.set`); absent follows the refs. */
   done: z.boolean().optional(),
   /** When the user marked the session Done. */
@@ -159,10 +165,13 @@ export const SuperSessions = Rpc.define({
       }),
       output: z.array(searchHitSchema)
     },
-    /** Links a pasted URL, `owner/repo#N` or `#N` (resolved against the session's repository). */
+    /**
+     * Links a pasted URL, `owner/repo#N` or `#N` (resolved against the session's repository). A
+     * URL no forge reads is stored as a work link.
+     */
     link: {
-      input: z.strictObject({ sessionID: z.string(), reference: z.string().min(1).max(500) }),
-      output: refLinkSchema,
+      input: z.strictObject({ sessionID: z.string(), reference: z.string().min(1).max(2000) }),
+      output: z.union([refLinkSchema, workLinkSchema]),
       errors: {
         invalid_reference: z.strictObject({}),
         not_found: z.strictObject({}),

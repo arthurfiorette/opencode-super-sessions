@@ -1,5 +1,13 @@
 import type { SessionRefView } from '../rpc.js';
-import { type Ref, type RefLink, type RefSource, refKey, TRACKED_SOURCES } from './ref.js';
+import {
+  type Ref,
+  type RefLink,
+  type RefSource,
+  refKey,
+  TRACKED_SOURCES,
+  type WorkLink
+} from './ref.js';
+import { type LinkInfo, recognizeLink } from './work-link.js';
 
 /**
  * Refs drawn on a session row: the first {@link ROW_PRS} pull requests in {@link pullRequests}
@@ -146,6 +154,33 @@ export function sidebarRefs(view: SessionRefView): SidebarRefs {
       .filter((key) => !refs.has(key))
   );
   return { refs: [...refs.values()], mentioned: mentioned.size };
+}
+
+/** A work link as rows draw it: what its URL says, with the stored title over the URL's. */
+export interface ShownLink extends LinkInfo {
+  source: WorkLink['source'];
+  linkedAt: number;
+}
+
+/**
+ * The session's work links, newest link first. Links whose URL no longer parses are left out.
+ * They never decide Done: nothing reports their state.
+ */
+export function workLinks(view: SessionRefView): ShownLink[] {
+  return (view.urls ?? [])
+    .flatMap((link): ShownLink[] => {
+      const info = recognizeLink(link.url);
+      if (info === undefined) return [];
+      return [
+        {
+          ...info,
+          ...(link.title === undefined ? {} : { title: link.title }),
+          source: link.source,
+          linkedAt: link.linkedAt
+        }
+      ];
+    })
+    .sort((a, b) => b.linkedAt - a.linkedAt);
 }
 
 /**

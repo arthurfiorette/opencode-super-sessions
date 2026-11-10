@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Ref, RefLink, RefSource, SessionRefs } from '../../src/refs/ref.js';
 import { refKey } from '../../src/refs/ref.js';
-import { dismissLink, mergeLinks } from '../../src/refs/store.js';
+import { dismissLink, mergeLinks, mergeWorkLinks } from '../../src/refs/store.js';
 
 const pr: Ref = { provider: 'github', host: 'github.com', repo: 'acme/app', kind: 'pr', number: 1 };
 const issue: Ref = { ...pr, kind: 'issue', number: 2 };
@@ -90,4 +90,25 @@ test('dismissing a PR drops its closes links without dismissing those issues', (
   // The issue was not dismissed, so a prompt may still link it.
   assert.equal(mergeLinks(next, [link(issue, 'prompt', 4)]).next.links.length, 2);
   assert.deepEqual(dismissLink(next, refKey(pr)), { next, changed: false });
+});
+
+test('an unlinked work link comes back only from an explicit link, under its first URL', () => {
+  const first = 'https://linear.app/acme/issue/ENG-1/crash';
+  const again = 'https://linear.app/acme/issue/eng-1';
+  const linked = mergeWorkLinks(refs([]), [{ url: first, source: 'prompt', linkedAt: 1 }]).next;
+  // Another URL of the same issue, now with the agent's title, is the same link.
+  const titled = mergeWorkLinks(linked, [
+    { url: again, source: 'agent', linkedAt: 2, title: 'Crash on start' }
+  ]).next;
+  assert.deepEqual(titled.urls, [
+    { url: first, source: 'agent', linkedAt: 1, title: 'Crash on start' }
+  ]);
+
+  const dismissed = dismissLink(titled, 'link:linear:acme/eng-1').next;
+  assert.deepEqual(dismissed.urls, []);
+  const fromPrompt = mergeWorkLinks(dismissed, [{ url: again, source: 'prompt', linkedAt: 3 }]);
+  assert.deepEqual(fromPrompt, { next: dismissed, changed: false });
+  const relinked = mergeWorkLinks(dismissed, [{ url: again, source: 'manual', linkedAt: 4 }]).next;
+  assert.deepEqual(relinked.urls, [{ url: again, source: 'manual', linkedAt: 4 }]);
+  assert.deepEqual(relinked.dismissed, []);
 });

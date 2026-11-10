@@ -40,6 +40,7 @@ import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.j
 import { copyLink } from '../link.js';
 import { type ProviderId, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
 import { rowRefs } from '../refs/summary.js';
+import { LINK_PROVIDER_NAMES, recognizeLink } from '../refs/work-link.js';
 import { excludeFromAutoArchive } from '../settings/maintenance.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import { ICONS, titleGradient } from './icons.js';
@@ -527,7 +528,7 @@ export default function SessionBrowser(props: PageProps) {
         .rpc()
         .link({ sessionID: session.id, reference: reference.trim() }, model.rpcOptions());
       toast(
-        `Linked ${linked.ref.kind === 'pr' ? 'PR' : 'issue'} ${refNumber(linked.ref)}`,
+        `Linked ${'ref' in linked ? `${refKind(linked.ref)} ${refNumber(linked.ref)}` : linkLabel(linked.url)}`,
         'success'
       );
       void controller.refresh([session.id]);
@@ -1995,6 +1996,13 @@ function matchLabel(reason: SearchReason | undefined, refs: Parameters<typeof fi
 function refKind(ref: Ref): string {
   if (ref.kind === 'issue') return 'issue';
   return ref.provider === 'gitlab' ? 'MR' : 'PR';
+}
+
+/** How a work link reads in a toast: its provider and id, such as `Linear COR-1466`. */
+function linkLabel(url: string): string {
+  const info = recognizeLink(url);
+  if (info === undefined) return url;
+  return `${LINK_PROVIDER_NAMES[info.provider]} ${info.name ?? info.title ?? ''}`.trim();
 }
 
 /** Whether a renderable is still in the tree under `root`. */

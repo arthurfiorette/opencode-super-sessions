@@ -1,4 +1,12 @@
-import { METADATA_KEY, type RefLink, type RefSource, refKey, type SessionRefs } from './ref.js';
+import {
+  METADATA_KEY,
+  type RefLink,
+  type RefSource,
+  refKey,
+  type SessionRefs,
+  type WorkLink
+} from './ref.js';
+import { recognizeLink } from './work-link.js';
 
 /** Result of a pure update. `changed` is false when `next` equals the input, so callers skip the write. */
 export interface RefsUpdate {
@@ -80,19 +88,71 @@ export function mergeLinks(current: SessionRefs, incoming: RefLink[]): RefsUpdat
 }
 
 /**
+ * Adds work links, deduped by their {@link recognizeLink} key, like {@link mergeLinks}: the
+ * earliest `linkedAt` stays, the source only moves up, and a dismissed key comes back only
+ * through an explicit `agent` or `manual` link. A given title replaces the stored one, since the
+ * latest one the agent or user gave is the best they know. URLs that do not parse are skipped.
+ */
+export function mergeWorkLinks(current: SessionRefs, incoming: WorkLink[]): RefsUpdate {
+  const urls = [...(current.urls ?? [])];
+  const dismissed = new Set(current.dismissed);
+  const keyOf = (link: WorkLink) => recognizeLink(link.url)?.key;
+  let changed = false;
+  for (const link of incoming) {
+    const key = keyOf(link);
+    if (key === undefined) continue;
+    if (dismissed.has(key)) {
+      if (!EXPLICIT.has(link.source)) continue;
+      dismissed.delete(key);
+      changed = true;
+    }
+    const index = urls.findIndex((existing) => keyOf(existing) === key);
+    const existing = urls[index];
+    if (existing === undefined) {
+      urls.push(link);
+      changed = true;
+      continue;
+    }
+    const upgrade = PRIORITY[link.source] > PRIORITY[existing.source];
+    const title = link.title ?? existing.title;
+    const next: WorkLink = {
+      url: existing.url,
+      source: upgrade ? link.source : existing.source,
+      linkedAt: Math.min(existing.linkedAt, link.linkedAt),
+      ...(title === undefined ? {} : { title })
+    };
+    if (
+      next.source !== existing.source ||
+      next.linkedAt !== existing.linkedAt ||
+      next.title !== existing.title
+    ) {
+      urls[index] = next;
+      changed = true;
+    }
+  }
+  return changed
+    ? { next: { ...current, urls, dismissed: [...dismissed] }, changed }
+    : { next: current, changed };
+}
+
+/**
  * Removes a link and records its key as dismissed. Dismissing a PR also drops the `closes`
- * links derived from it, without dismissing those issues: the user may still link them.
+ * links derived from it, without dismissing those issues: the user may still link them. A work
+ * link's key (`link:...`) removes the work link instead.
  */
 export function dismissLink(current: SessionRefs, key: string): RefsUpdate {
   const links = current.links.filter(
     (link) => refKey(link.ref) !== key && !(link.source === 'closes' && link.via === key)
   );
+  const urls = current.urls?.filter((link) => recognizeLink(link.url)?.key !== key);
+  const removed = links.length !== current.links.length || urls?.length !== current.urls?.length;
   const alreadyDismissed = current.dismissed.includes(key);
-  if (alreadyDismissed && links.length === current.links.length) {
-    return { next: current, changed: false };
-  }
+  if (alreadyDismissed && !removed) return { next: current, changed: false };
   const dismissed = alreadyDismissed ? current.dismissed : [...current.dismissed, key];
-  return { next: { ...current, links, dismissed }, changed: true };
+  return {
+    next: { ...current, links, ...(urls === undefined ? {} : { urls }), dismissed },
+    changed: true
+  };
 }
 
 /**
