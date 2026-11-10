@@ -49,9 +49,14 @@ export interface LinkInfo {
   title?: string;
 }
 
+/** Longest URL a work link stores, matching `workLinkSchema`. */
+export const URL_MAX = 2000;
+
 const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9_]*-\d+$/u;
 const DIGITS = /^\d+$/u;
 const NOTION_ID = /([0-9a-f]{32})$/iu;
+const NOTION_SUFFIX =
+  /-?(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/iu;
 
 /**
  * Reads a work link from a URL. Undefined for anything that is not an http(s) URL with a host;
@@ -68,10 +73,15 @@ export function recognizeLink(text: string): LinkInfo | undefined {
     return undefined;
   }
   parsed.hash = '';
+  // Credentials in a URL must not be stored or drawn.
+  parsed.username = '';
+  parsed.password = '';
   if (parsed.pathname.length > 1 && parsed.pathname.endsWith('/')) {
     parsed.pathname = parsed.pathname.replace(/\/+$/u, '') || '/';
   }
   const url = parsed.href;
+  // Encoding can make a URL several times longer; a stored one must fit `workLinkSchema`.
+  if (url.length > URL_MAX) return undefined;
   const host = parsed.hostname.toLowerCase();
   const segments = parsed.pathname
     .split('/')
@@ -80,27 +90,58 @@ export function recognizeLink(text: string): LinkInfo | undefined {
   for (const recognize of RECOGNIZERS) {
     const found = recognize(host, segments, parsed.searchParams);
     if (found !== undefined) {
+      const title = found.title === undefined ? undefined : cleanTitle(found.title);
       return {
         provider: found.provider,
-        key: `link:${found.provider}:${found.id}`.toLowerCase(),
+        key: `link:${found.provider}:${found.id}`,
         url,
         ...(found.name === undefined ? {} : { name: found.name }),
-        ...(found.title === undefined ? {} : { title: found.title })
+        ...(title ? { title } : {})
       };
     }
   }
-  const path = `${safeDecode(parsed.pathname)}${parsed.search}`;
+  const path = cleanTitle(`${safeDecode(parsed.pathname)}${safeDecode(parsed.search)}`);
   return {
     provider: 'url',
-    // The host is case-insensitive; paths and queries may not be.
-    key: `link:url:${host}${parsed.pathname === '/' ? '' : parsed.pathname}${parsed.search}`,
+    key: plainKey(parsed),
     url,
-    name: host.replace(/^www\./u, ''),
-    ...(path === '/' ? {} : { title: path })
+    name: parsed.host.toLowerCase().replace(/^www\./u, ''),
+    ...(path === '/' || path === '' ? {} : { title: path })
   };
 }
 
-/** What one recognizer found: `id` is unique within the provider. */
+/**
+ * The key of a URL read as a plain link. The host and port are case-insensitive; paths and
+ * queries may not be.
+ */
+function plainKey(parsed: URL): string {
+  const path = parsed.pathname === '/' ? '' : parsed.pathname;
+  return `link:url:${parsed.host.toLowerCase()}${path}${parsed.search}`;
+}
+
+/**
+ * A title fit for one terminal line: control characters, which a decoded slug or a title from
+ * the agent may hold, become spaces, and runs of whitespace collapse.
+ */
+export function cleanTitle(text: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are the target.
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\s]+/gu, ' ').trim();
+}
+
+/**
+ * Every key a stored URL may have been dismissed under: its key now, and its plain-link key,
+ * which it had before a recognizer for its site existed. A recognizer added later then never
+ * brings back a link the user unlinked.
+ */
+export function dismissalKeys(info: LinkInfo): string[] {
+  const plain = plainKey(new URL(info.url));
+  return plain === info.key ? [info.key] : [info.key, plain];
+}
+
+/**
+ * What one recognizer found. `id` is unique within the provider and keeps the case of the parts
+ * that are case-sensitive, so it can be the key as is.
+ */
 interface Found {
   provider: Exclude<LinkProvider, 'url'>;
   id: string;
@@ -113,9 +154,14 @@ type Recognizer = (host: string, segments: string[], query: URLSearchParams) => 
 const RECOGNIZERS: Recognizer[] = [
   // linear.app/<workspace>/issue/COR-1466/<slug>
   (host, [workspace, kind, id, slug]) => {
-    if (host !== 'linear.app' || kind !== 'issue' || !id || !ISSUE_KEY.test(id)) return undefined;
+    if (host !== 'linear.app' || !workspace || kind !== 'issue' || !id || !ISSUE_KEY.test(id)) {
+      return undefined;
+    }
     const name = id.toUpperCase();
-    return withTitle({ provider: 'linear', id: `${workspace}/${name}`, name }, slugTitle(slug));
+    return withTitle(
+      { provider: 'linear', id: `${workspace.toLowerCase()}/${name}`, name },
+      slugTitle(slug)
+    );
   },
   // <site>.atlassian.net/browse/ABC-12, or a board with ?selectedIssue=ABC-12
   (host, segments, query) => {
@@ -131,70 +177,88 @@ const RECOGNIZERS: Recognizer[] = [
   (host, segments, query) => {
     const legacy = host.endsWith('.visualstudio.com');
     if (host !== 'dev.azure.com' && !legacy) return undefined;
-    const org = legacy ? host.split('.')[0] : segments[0];
-    const project = legacy ? segments[0] : segments[1];
+    const org = legacy ? host.split('.')[0] : segments[0]?.toLowerCase();
+    // `_workitems` right after the organization means the URL names no project, and
+    // `DefaultCollection` is the collection of old `visualstudio.com` URLs.
+    const project = (legacy ? segments : segments.slice(1)).find(
+      (segment) => segment !== 'DefaultCollection'
+    );
     const edit = segments.indexOf('_workitems');
     const id =
       edit !== -1 && segments[edit + 1] === 'edit' ? segments[edit + 2] : query.get('workitem');
     if (!org || !id || !DIGITS.test(id)) return undefined;
     // The project is all the URL says beyond the number; it reads better than a bare id.
-    return withTitle({ provider: 'azure-boards', id: `${org}/${id}`, name: id }, project);
+    return withTitle(
+      { provider: 'azure-boards', id: `${org}/${id}`, name: id },
+      project?.startsWith('_') ? undefined : project
+    );
   },
   // <org>.sentry.io/issues/123 or sentry.io/organizations/<org>/issues/123
   (host, segments) => {
     const hosted = host.endsWith('.sentry.io') && segments[0] === 'issues';
     const legacy =
       host === 'sentry.io' && segments[0] === 'organizations' && segments[2] === 'issues';
-    const org = hosted ? host.split('.')[0] : legacy ? segments[1] : undefined;
+    const org = hosted ? host.split('.')[0] : legacy ? segments[1]?.toLowerCase() : undefined;
     const id = hosted ? segments[1] : legacy ? segments[3] : undefined;
     if (!org || !id || !DIGITS.test(id)) return undefined;
     return { provider: 'sentry', id: `${org}/${id}`, name: id };
   },
-  // notion.so/<workspace>/Page-Title-<32 hex>, <workspace>.notion.site/..., or ?p=<32 hex>
+  // notion.so/<workspace>/Page-Title-<32 hex>, <workspace>.notion.site/..., or ?p=<32 hex>. The
+  // id may also be written as a dashed UUID.
   (host, segments, query) => {
     if (host !== 'notion.so' && host !== 'www.notion.so' && !host.endsWith('.notion.site')) {
       return undefined;
     }
     const peeked = query.get('p');
-    const last = (peeked ?? segments.at(-1) ?? '').replace(/-/gu, '');
-    const id = NOTION_ID.exec(last)?.[1];
+    const last = peeked ?? segments.at(-1) ?? '';
+    const id = NOTION_ID.exec(last.replace(/-/gu, ''))?.[1]?.toLowerCase();
     if (id === undefined) return undefined;
-    const slug = peeked === null ? segments.at(-1)?.replace(/-?[0-9a-f]{32}$/iu, '') : undefined;
+    const slug = peeked === null ? last.replace(NOTION_SUFFIX, '') : undefined;
     return withTitle({ provider: 'notion', id }, slugTitle(slug) ?? 'Notion page');
   },
-  // <team>.slack.com/archives/<channel>/p1712345678901234
-  (host, [archives, channel, message]) => {
+  // <team>.slack.com/archives/<channel>/p1712345678901234. A reply's link names its thread in
+  // `thread_ts`, so the whole thread is one link.
+  (host, [archives, channel, message], query) => {
     if (!host.endsWith('.slack.com') || archives !== 'archives' || !channel) return undefined;
     if (!message || !/^p\d+$/u.test(message)) return undefined;
     const team = host.split('.')[0];
-    return { provider: 'slack', id: `${team}/${channel}/${message}`, title: 'Slack thread' };
+    const thread = query.get('thread_ts')?.replace('.', '');
+    const id = thread && DIGITS.test(thread) ? `p${thread}` : message;
+    return {
+      provider: 'slack',
+      id: `${team}/${channel.toUpperCase()}/${id}`,
+      title: 'Slack thread'
+    };
   },
   // trello.com/c/<short id>/12-card-title
   (host, [kind, id, slug]) => {
     if (host !== 'trello.com' || kind !== 'c' || !id) return undefined;
     return withTitle({ provider: 'trello', id }, slugTitle(slug?.replace(/^\d+-/u, '')));
   },
-  // app.clickup.com/t/<task id> or app.clickup.com/t/<team>/<custom id>
-  (host, [kind, ...rest]) => {
-    const id = rest.at(-1);
+  // app.clickup.com/t/<task id> or app.clickup.com/t/<team>/<custom id>. Custom ids such as
+  // `ENG-12` repeat across workspaces, so they keep their team.
+  (host, [kind, first, second]) => {
+    const id = second ?? first;
     if (host !== 'app.clickup.com' || kind !== 't' || !id) return undefined;
-    return { provider: 'clickup', id, name: id };
+    return { provider: 'clickup', id: second === undefined ? id : `${first}/${id}`, name: id };
   },
   // app.shortcut.com/<org>/story/123/<slug>
   (host, [org, kind, id, slug]) => {
-    if (host !== 'app.shortcut.com' || kind !== 'story' || !id || !DIGITS.test(id)) {
+    if (host !== 'app.shortcut.com' || !org || kind !== 'story' || !id || !DIGITS.test(id)) {
       return undefined;
     }
     return withTitle(
-      { provider: 'shortcut', id: `${org}/${id}`, name: `sc-${id}` },
+      { provider: 'shortcut', id: `${org.toLowerCase()}/${id}`, name: `sc-${id}` },
       slugTitle(slug)
     );
   },
-  // app.asana.com/0/<project>/<task>, or app.asana.com/1/<workspace>/project/<p>/task/<task>
+  // app.asana.com/0/<project>/<task>, or app.asana.com/1/<workspace>/project/<p>/task/<task>.
+  // Home, inbox and portfolio pages also start with `/0/` and name no task.
   (host, segments) => {
     if (host !== 'app.asana.com') return undefined;
     const task = segments.indexOf('task');
-    const id = task !== -1 ? segments[task + 1] : segments[0] === '0' ? segments[2] : undefined;
+    const legacy = segments[0] === '0' && DIGITS.test(segments[1] ?? '');
+    const id = task !== -1 ? segments[task + 1] : legacy ? segments[2] : undefined;
     if (!id || !DIGITS.test(id)) return undefined;
     return { provider: 'asana', id, title: 'Asana task' };
   }

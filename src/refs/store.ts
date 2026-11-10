@@ -6,7 +6,7 @@ import {
   type SessionRefs,
   type WorkLink
 } from './ref.js';
-import { recognizeLink } from './work-link.js';
+import { dismissalKeys, recognizeLink } from './work-link.js';
 
 /** Result of a pure update. `changed` is false when `next` equals the input, so callers skip the write. */
 export interface RefsUpdate {
@@ -87,23 +87,29 @@ export function mergeLinks(current: SessionRefs, incoming: RefLink[]): RefsUpdat
     : { next: current, changed };
 }
 
+// A session tracks a handful of links; the cap only bounds a prompt that pastes a long list.
+const URLS_MAX = 50;
+
 /**
  * Adds work links, deduped by their {@link recognizeLink} key, like {@link mergeLinks}: the
  * earliest `linkedAt` stays, the source only moves up, and a dismissed key comes back only
  * through an explicit `agent` or `manual` link. A given title replaces the stored one, since the
- * latest one the agent or user gave is the best they know. URLs that do not parse are skipped.
+ * latest one the agent or user gave is the best they know. URLs that do not parse are skipped,
+ * and only the newest {@link URLS_MAX} links are kept.
  */
 export function mergeWorkLinks(current: SessionRefs, incoming: WorkLink[]): RefsUpdate {
-  const urls = [...(current.urls ?? [])];
+  let urls = [...(current.urls ?? [])];
   const dismissed = new Set(current.dismissed);
   const keyOf = (link: WorkLink) => recognizeLink(link.url)?.key;
   let changed = false;
   for (const link of incoming) {
-    const key = keyOf(link);
-    if (key === undefined) continue;
-    if (dismissed.has(key)) {
+    const info = recognizeLink(link.url);
+    if (info === undefined) continue;
+    const key = info.key;
+    const blocked = dismissalKeys(info).filter((dismissal) => dismissed.has(dismissal));
+    if (blocked.length > 0) {
       if (!EXPLICIT.has(link.source)) continue;
-      dismissed.delete(key);
+      for (const dismissal of blocked) dismissed.delete(dismissal);
       changed = true;
     }
     const index = urls.findIndex((existing) => keyOf(existing) === key);
@@ -129,6 +135,9 @@ export function mergeWorkLinks(current: SessionRefs, incoming: WorkLink[]): Refs
       urls[index] = next;
       changed = true;
     }
+  }
+  if (urls.length > URLS_MAX) {
+    urls = [...urls].sort((a, b) => a.linkedAt - b.linkedAt).slice(-URLS_MAX);
   }
   return changed
     ? { next: { ...current, urls, dismissed: [...dismissed] }, changed }
@@ -176,14 +185,19 @@ export function markScanned(
   scannedAt: number,
   lastMessageID: string | undefined
 ): RefsUpdate {
-  if (current.scanned?.pushes === true) return { next: current, changed: false };
+  if (current.scanned?.pushes === true && current.scanned.links === true) {
+    return { next: current, changed: false };
+  }
   if (current.scanned !== undefined) {
-    return { next: { ...current, scanned: { ...current.scanned, pushes: true } }, changed: true };
+    return {
+      next: { ...current, scanned: { ...current.scanned, pushes: true, links: true } },
+      changed: true
+    };
   }
   const scanned =
     lastMessageID === undefined
-      ? { scannedAt, pushes: true as const }
-      : { scannedAt, lastMessageID, pushes: true as const };
+      ? { scannedAt, pushes: true as const, links: true as const }
+      : { scannedAt, lastMessageID, pushes: true as const, links: true as const };
   return { next: { ...current, scanned }, changed: true };
 }
 

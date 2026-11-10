@@ -48,6 +48,12 @@ export function createWriteQueue(warn: (message: string) => void = () => {}): Wr
         // times, so the value it had is kept for `activityTime`.
         const stamp = activityStamp(info);
         const next = stamp === undefined ? result.next : { ...result.next, activeAt: stamp };
+        // A value that does not parse would hide every link and block every later write.
+        if (!sessionRefsSchema.safeParse(next).success) {
+          const message = `A change to the links of session ${sessionID} was invalid and not written`;
+          warn(message);
+          throw new Error(message);
+        }
         await session.update({
           sessionID,
           // SessionRefs is plain JSON, which the schema-typed metadata cannot infer.

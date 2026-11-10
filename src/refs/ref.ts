@@ -48,7 +48,7 @@ export const refLinkSchema = z.strictObject({
 /**
  * A web page the session works on outside the forges, such as a Linear issue or any URL (see
  * `src/refs/work-link.ts`). Only explicit links and tracker URLs in prompts are stored; assistant
- * text never adds one. `title` is what the agent or user gave, which wins over the URL's slug.
+ * text never adds one. `title` is what the agent gave, which wins over the URL's slug.
  */
 export const workLinkSchema = z.strictObject({
   url: z.string().min(1).max(2000),
@@ -72,13 +72,15 @@ export const sessionRefsSchema = z.strictObject({
   doneAt: z.number().int().nonnegative().optional(),
   // Set when the history scan finished reading the session's stored messages (`history.scan`),
   // so it runs once per session. `lastMessageID` is the newest message it read; live detection
-  // covers the ones after it. `pushes` says the scan also looked for `git push`; a marker
-  // without it is from a version that did not, and earns one more pass for pushes only.
+  // covers the ones after it. `pushes` says the scan also looked for `git push`, and `links` for
+  // work links in prompts; a marker without one is from a version that did not, and earns one
+  // more pass for what it missed.
   scanned: z
     .strictObject({
       scannedAt: z.number().int().nonnegative(),
       lastMessageID: z.string().optional(),
-      pushes: z.literal(true).optional()
+      pushes: z.literal(true).optional(),
+      links: z.literal(true).optional()
     })
     .optional(),
   // Branches the session pushed with `git push`, oldest first. A branch pull request opened
@@ -226,11 +228,12 @@ export function refNumber(ref: Pick<Ref, 'provider' | 'number'> & { kind?: RefKi
 }
 
 /**
- * Whether the history scan is done with a session: it read every stored message, pushes
- * included. The TUI skips such sessions without a request, and the server answers `skipped`.
+ * Whether the history scan is done with a session: it read every stored message, pushes and work
+ * links included. The TUI skips such sessions without a request, and the server answers
+ * `skipped`.
  */
 export function historyScanned(refs: SessionRefs): boolean {
-  return refs.scanned?.pushes === true;
+  return refs.scanned?.pushes === true && refs.scanned.links === true;
 }
 
 /** Empty metadata value for sessions that have no links yet. */

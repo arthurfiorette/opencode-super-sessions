@@ -24,7 +24,7 @@ export const sessionRefViewSchema = z.strictObject({
   states: z.record(z.string(), refStateSchema),
   /**
    * Work links that are not dismissed. Left out when there are none, so a TUI from before work
-   * links still reads the view.
+   * links still reads the views of sessions without any.
    */
   urls: z.array(workLinkSchema).optional(),
   /** The user's Done override (see `done.set`); absent follows the refs. */

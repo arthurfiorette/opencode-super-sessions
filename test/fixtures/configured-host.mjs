@@ -325,6 +325,10 @@ try {
   assert.equal(scanned.scanned.lastMessageID, newest.id);
   // The push is read from git's report, which names the branch the checkout no longer has.
   assert.deepEqual(scanned.pushed, ['fix-legacy']);
+  assert.deepEqual(
+    scanned.urls.map((link) => [link.url, link.source]),
+    [['https://linear.app/acme/issue/ENG-56', 'prompt']]
+  );
   assert.equal(scanned.scanned.pushes, true);
 
   // The marker makes the second scan stop at its first call and write nothing.
@@ -334,8 +338,9 @@ try {
   assert.deepEqual(twice.metadata, once.metadata);
   assert.equal(twice.time.updated, once.time.updated);
 
-  // A session a version without push detection scanned gets one pass that records its pushes
-  // and leaves its links alone: the bare #56 is not looked up again.
+  // A session a version without push detection or work links scanned gets one pass that records
+  // its pushes and tracker links and leaves its forge links alone: the bare #56 is not looked up
+  // again.
   const oldMarker = { scannedAt: 1, lastMessageID: 'msg_old' };
   const earlierID = await importLegacySession(
     { 'super-sessions': { v: 1, links: [], dismissed: [], scanned: oldMarker } },
@@ -347,8 +352,16 @@ try {
   assert.deepEqual(rescanned, {
     v: 1,
     links: [],
+    urls: [
+      {
+        url: 'https://linear.app/acme/issue/ENG-56',
+        source: 'prompt',
+        // The prompt's time, which the import encodes in the session id.
+        linkedAt: Number(earlierID.slice('ses_legacy'.length))
+      }
+    ],
     dismissed: [],
-    scanned: { ...oldMarker, pushes: true },
+    scanned: { ...oldMarker, pushes: true, links: true },
     pushed: ['fix-legacy'],
     // The imported session has no run times, so the write keeps the activity time it moves.
     activeAt: unscanned.time.updated
@@ -387,7 +400,7 @@ async function importLegacySession(metadata, ago = 1) {
       {
         id: `msg_legacy${at}a`,
         type: 'user',
-        text: 'Please fix #56, the list cuts titles off.',
+        text: 'Please fix #56, the list cuts titles off. https://linear.app/acme/issue/ENG-56',
         time: { created: at }
       },
       {

@@ -2044,13 +2044,16 @@ function attached(root: Renderable, node: Renderable): boolean {
 /** Turns an RPC `link` failure into a short message. */
 function linkError(error: unknown): string {
   const { type, data } = rpcError(error);
-  if (type === 'invalid_reference') return 'Not a pull request or issue reference.';
+  if (type === 'invalid_reference') return 'Not a URL or a pull request or issue reference.';
   if (type === 'not_found') return 'Pull request or issue not found.';
   if (type === 'unavailable') {
-    const provider =
-      typeof data === 'object' && data !== null && 'provider' in data ? data.provider : undefined;
+    const record = typeof data === 'object' && data !== null ? data : {};
+    const provider = 'provider' in record ? record.provider : undefined;
     const forge =
       provider === 'gitlab' || provider === 'github' ? FORGE_NAMES[provider] : 'The forge';
+    if ('reason' in record && record.reason === 'disabled') {
+      return `${forge} is not enabled. Turn it on in the settings to link it.`;
+    }
     return `${forge} is unavailable. Run /super-sessions status for details.`;
   }
   return 'Could not link. Enable the opencode-super-sessions server plugin.';

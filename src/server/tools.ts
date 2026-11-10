@@ -1,7 +1,9 @@
 import type { Plugin } from '@opencode/plugin';
 import { z } from 'zod';
 import type { RefCandidate, RepoRef } from '../providers/provider.js';
+import { parseUrl } from '../providers/registry.js';
 import {
+  type ProviderId,
   type Ref,
   type RefSource,
   readSessionRefs,
@@ -10,7 +12,12 @@ import {
   type WorkLink
 } from '../refs/ref.js';
 import { dismissLink, mergeLinks, mergeWorkLinks, type RefsUpdate } from '../refs/store.js';
-import { LINK_PROVIDER_NAMES, type LinkInfo, recognizeLink } from '../refs/work-link.js';
+import {
+  cleanTitle,
+  LINK_PROVIDER_NAMES,
+  type LinkInfo,
+  recognizeLink
+} from '../refs/work-link.js';
 import {
   linksOf,
   parseReference,
@@ -23,15 +30,18 @@ import {
 } from './links.js';
 import type { Runtime } from './runtime.js';
 
-// When to call is in the system instruction below and the descriptions only say what the tools
-// take, so the two never repeat or disagree.
+const FORGE_NAMES: Record<ProviderId, string> = { github: 'GitHub', gitlab: 'GitLab' };
+
+// When to call link_work is said once, in the system instruction below; the descriptions say
+// what the tools take, so the two never repeat or disagree.
 const LINK_DESCRIPTION =
-  "Adds a pull request, issue, ticket or other work page to this session's list. Nothing " +
-  'changes on GitHub, GitLab or any tracker.';
+  'Adds a pull request, issue, ticket or other work page to what the user sees for this ' +
+  'session in their session list. Nothing changes on GitHub, GitLab or any tracker.';
 
 const UNLINK_DESCRIPTION =
-  "Removes work from this session's list only, for example a mistaken link or work the user " +
-  'dropped. Automatic linking does not add it back; link_work does.';
+  'Removes work from what the user sees for this session, for example a mistaken link or work ' +
+  'the user dropped. Nothing changes elsewhere. Automatic linking does not add it back; ' +
+  'link_work does.';
 
 const url = z.strictObject({
   url: z.string().min(1).max(2000).describe('The linked URL, or `owner/repo#123`.')
@@ -94,13 +104,10 @@ const TRACKERS =
  */
 export function instructionText(forges: boolean, prompts: boolean): string {
   const automatic = [
-    ...(prompts
-      ? [
-          forges
-            ? `links in user messages to GitHub or GitLab pull requests and issues or to ${TRACKERS}`
-            : `links in user messages to ${TRACKERS}`
-        ]
+    ...(prompts && forges
+      ? ['GitHub or GitLab pull requests and issues in user messages, as links, owner/repo#N or #N']
       : []),
+    ...(prompts ? [`links in user messages to ${TRACKERS}`] : []),
     ...(forges
       ? [
           'the pull request of a branch you push',
@@ -109,8 +116,10 @@ export function instructionText(forges: boolean, prompts: boolean): string {
       : [])
   ];
   const cases = [
-    ...(prompts ? ['one you found yourself', 'one the user named without a link'] : []),
-    ...(!prompts && forges ? ['ones the user named'] : []),
+    ...(prompts
+      ? ['one you found yourself', 'a ticket the user named only by its id (OPS-12)']
+      : []),
+    ...(!prompts && forges ? ['one the user named'] : []),
     ...(forges ? ['a pull request you opened another way'] : [])
   ];
   const rule =
@@ -182,6 +191,12 @@ function candidateOf(
   if ('url' in item) {
     const candidate = parseReference(runtime.definitions, item.url, base);
     if (candidate !== undefined) return candidate;
+    // A pull request or issue of a forge that is turned off would become a plain link here, and
+    // a second entry once the forge is on again.
+    const disabled = parseUrl(item.url);
+    if (disabled !== undefined) {
+      return `Not linked: ${item.url} is on ${FORGE_NAMES[disabled.provider]}, which is not enabled.`;
+    }
     const link = recognizeLink(item.url);
     return link === undefined ? `Could not read ${item.url}: pass a web URL.` : { link };
   }
@@ -257,7 +272,12 @@ async function linkWork(
   );
   const work = parsed.flatMap(({ item, found }) =>
     typeof found !== 'string' && 'link' in found
-      ? [{ info: found.link, title: 'title' in item ? item.title : undefined }]
+      ? [
+          {
+            info: found.link,
+            title: 'title' in item && item.title ? cleanTitle(item.title) || undefined : undefined
+          }
+        ]
       : []
   );
   const resolutions = await resolveCandidates(runtime, candidates);
@@ -336,9 +356,15 @@ async function unlinkWork(
       continue;
     }
     if ('link' in candidate) {
-      // Dismissed even when not linked yet, so a prompt does not add it later.
-      keys.push(candidate.link.key);
-      lines.push(`Unlinked ${describeLink(candidate.link)}.`);
+      const stored = (current.urls ?? []).some(
+        (link) => recognizeLink(link.url)?.key === candidate.link.key
+      );
+      if (stored) {
+        keys.push(candidate.link.key);
+        lines.push(`Unlinked ${describeLink(candidate.link)}.`);
+      } else {
+        lines.push(`Not unlinked: ${describeLink(candidate.link)} is not linked to this session.`);
+      }
       continue;
     }
     const matched = current.links.filter((link) => names(candidate, link.ref));

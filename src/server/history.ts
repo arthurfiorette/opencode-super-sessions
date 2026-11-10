@@ -40,10 +40,10 @@ interface Found {
  * Runs live detection and indexing over one chunk of a session's stored messages, for sessions
  * older than the plugin or written while it was not running. A session the scan is done with
  * (see {@link historyScanned}) is skipped whole, so the TUI stops paging it. A session scanned
- * before push detection existed gets one more pass that only records pushes: its links and
- * index entries are in place, and redoing them would cost forge lookups for nothing. All links
- * and pushes of a chunk, and the marker on the last one, go through the write queue in one
- * update that writes only when something changed.
+ * by a version without push detection or work links gets one more pass for only what that
+ * version missed: its forge links and index entries are in place, and redoing them would cost
+ * forge lookups for nothing. All links and pushes of a chunk, and the marker on the last one, go
+ * through the write queue in one update that writes only when something changed.
  */
 export async function scanHistory(
   runtime: Runtime,
@@ -54,11 +54,14 @@ export async function scanHistory(
   const info = await session.get({ sessionID });
   const stored = readSessionRefs(info.metadata);
   if (historyScanned(stored)) return { skipped: true };
-  const pushesOnly = stored.scanned !== undefined;
-  if (!pushesOnly) await indexItems(runtime, sessionID, items);
-  const links = pushesOnly ? [] : await detectItems(runtime, info.location.directory, items);
-  const work = pushesOnly ? [] : promptWorkLinks(runtime, items);
-  const pushed = await detectPushes(runtime, info.location.directory, items);
+  const full = stored.scanned === undefined;
+  if (full) await indexItems(runtime, sessionID, items);
+  const links = full ? await detectItems(runtime, info.location.directory, items) : [];
+  const work = full || stored.scanned?.links !== true ? promptWorkLinks(runtime, items) : [];
+  const pushed =
+    full || stored.scanned?.pushes !== true
+      ? await detectPushes(runtime, info.location.directory, items)
+      : [];
   if (links.length === 0 && work.length === 0 && pushed.length === 0 && !done) {
     return { skipped: false };
   }

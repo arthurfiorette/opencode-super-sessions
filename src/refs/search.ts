@@ -139,9 +139,14 @@ function bestTier(
     refTitle?.toLowerCase().includes(query.text)
   );
   if (titled) return { tier: TIERS['ref-title'], match: 'ref-title', ref: refKey(titled.ref) };
-  // Part of a work link's id, title or URL, such as `linear`, a project or a word of a slug.
+  // Part of a work link's id or title, such as a project or a word of a slug. A plain link's URL
+  // counts too, past its scheme; a tracker URL's fixed words such as `issue` would match them all.
   const partial = links.find((link) =>
-    [link.name, link.title, link.url].some((text) => text?.toLowerCase().includes(query.text))
+    [
+      link.name,
+      link.title,
+      link.key.startsWith('link:url:') ? link.url.replace(/^https?:\/\//u, '') : undefined
+    ].some((text) => text?.toLowerCase().includes(query.text))
   );
   if (partial) return { tier: TIERS['ref-title'], match: 'ref-title', ref: partial.key };
   return undefined;

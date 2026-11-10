@@ -104,11 +104,18 @@ test('an unlinked work link comes back only from an explicit link, under its fir
     { url: first, source: 'agent', linkedAt: 1, title: 'Crash on start' }
   ]);
 
-  const dismissed = dismissLink(titled, 'link:linear:acme/eng-1').next;
+  const dismissed = dismissLink(titled, 'link:linear:acme/ENG-1').next;
   assert.deepEqual(dismissed.urls, []);
   const fromPrompt = mergeWorkLinks(dismissed, [{ url: again, source: 'prompt', linkedAt: 3 }]);
   assert.deepEqual(fromPrompt, { next: dismissed, changed: false });
   const relinked = mergeWorkLinks(dismissed, [{ url: again, source: 'manual', linkedAt: 4 }]).next;
   assert.deepEqual(relinked.urls, [{ url: again, source: 'manual', linkedAt: 4 }]);
   assert.deepEqual(relinked.dismissed, []);
+
+  // Unlinked while no recognizer knew its site, so under its plain-link key.
+  const plain = refs([], ['link:url:linear.app/acme/issue/eng-1']);
+  assert.equal(
+    mergeWorkLinks(plain, [{ url: again, source: 'prompt', linkedAt: 5 }]).changed,
+    false
+  );
 });

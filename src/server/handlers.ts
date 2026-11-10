@@ -1,5 +1,6 @@
 import type { Plugin } from '@opencode/plugin';
 import type { RpcHandlers } from '@opencode/plugin/promise/rpc';
+import { parseUrl } from '../providers/registry.js';
 import { refKey } from '../refs/ref.js';
 import { dismissLink, mergeLinks, mergeWorkLinks, setDone } from '../refs/store.js';
 import { recognizeLink } from '../refs/work-link.js';
@@ -43,16 +44,28 @@ export function rpcHandlers(
       const base = (await resolveRepo(runtime, info.location.directory)).repo;
       const candidate = parseReference(runtime.definitions, reference, base);
       if (candidate === undefined) {
-        const info = recognizeLink(reference);
-        if (info === undefined) {
+        // A pull request or issue of a forge that is turned off stays out, as `link_work` does.
+        const disabled = parseUrl(reference);
+        if (disabled !== undefined) {
+          return invocation.error(
+            'unavailable',
+            `${reference} is on a forge that is not enabled.`,
+            {
+              reason: 'disabled',
+              provider: disabled.provider
+            }
+          );
+        }
+        const work = recognizeLink(reference);
+        if (work === undefined) {
           return invocation.error('invalid_reference', `Could not read ${reference}.`, {});
         }
         // `manual` is explicit, so the merge lifts an earlier dismissal of the key.
         const next = await runtime.writes.update(context.session, sessionID, (refs) =>
-          mergeWorkLinks(refs, [{ url: info.url, source: 'manual', linkedAt: Date.now() }])
+          mergeWorkLinks(refs, [{ url: work.url, source: 'manual', linkedAt: Date.now() }])
         );
-        const stored = next.urls?.find((link) => recognizeLink(link.url)?.key === info.key);
-        if (stored === undefined) throw new Error(`Link for ${info.key} was not stored.`);
+        const stored = next.urls?.find((link) => recognizeLink(link.url)?.key === work.key);
+        if (stored === undefined) throw new Error(`Link for ${work.key} was not stored.`);
         return stored;
       }
       const [resolution] = await resolveCandidates(runtime, [candidate]);
