@@ -3,3 +3,7 @@ allowBuilds:
   esbuild: true
   tree-sitter-bash: true
   tree-sitter-powershell: true
+# The plugin tracks the host it runs in, which users update as soon as it ships; the release age
+# check would hold every OpenCode release back by a day.
+minimumReleaseAgeExclude:
+  - '@opencode/*'
