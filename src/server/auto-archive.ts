@@ -1,5 +1,5 @@
 // Auto-archive decides on the server, where ref states live, and archives in a TUI: the server
-// plugin's `session.update` ignores `archived` (OpenCode 2.2.5, packages/core/src/plugin/host.ts),
+// plugin's `session.update` ignores `archived` (OpenCode 2.2.7, packages/core/src/plugin/host.ts:594),
 // and the daemon's HTTP credentials never reach plugins. A TUI claims due sessions over RPC and
 // archives them with its HTTP client, so nothing is archived while no TUI is open.
 

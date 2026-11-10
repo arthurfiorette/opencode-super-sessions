@@ -139,8 +139,8 @@ function joined(items: string[]): string {
 
 /**
  * Tells the agent what the plugin tracks on its own, through the `context` hook the host itself
- * uses for its tool instructions (packages/core/src/tool/plugin/opencode.ts:102 in OpenCode
- * v2.2.5). The hook runs once per model request on a system array rebuilt for each step, so the
+ * uses for its tool instructions (packages/core/src/tool/plugin/opencode.ts:104 in OpenCode
+ * v2.2.7). The hook runs once per model request on a system array rebuilt for each step, so the
  * part never piles up. Read at request time, so the settings dialog applies at once. Work links
  * need no forge, so the part stays when no forge is enabled.
  */

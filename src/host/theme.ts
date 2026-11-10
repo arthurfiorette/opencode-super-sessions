@@ -5,7 +5,7 @@ import { RGBA, type SyntaxStyle } from '@opentui/core';
 // Theme surfaces and styles the browser borrows so it looks like the host's own dialogs and
 // session view. The tokens are typed; these say which surface the host draws what on. Imported
 // only by lazily loaded views, so `./tui` still loads without OpenTUI. Line numbers refer to the
-// OpenCode repository at v2.2.5.
+// OpenCode repository at v2.2.7.
 
 /** The dimmed backdrop behind host dialogs (packages/tui/src/ui/dialog.tsx:70). */
 export const DIALOG_BACKDROP = RGBA.fromInts(0, 0, 0, 150);

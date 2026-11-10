@@ -2,7 +2,7 @@ import type { OpenCodeEvent } from '@opencode/client';
 
 // Questions (forms) waiting on the user, seen from the server plugin. The TUI reads them from
 // `context.data.session.form`, but the server plugin context has no form domain, so the server
-// follows the form events instead (packages/schema/src/form.ts:173 at v2.2.5). They are ephemeral:
+// follows the form events instead (packages/schema/src/form.ts:173 at v2.2.7). They are ephemeral:
 // a form lives in the daemon's memory, so none outlives the daemon, and the events seen since the
 // plugin subscribed cover every form there is.
 

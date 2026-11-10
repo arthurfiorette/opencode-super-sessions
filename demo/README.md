@@ -20,7 +20,7 @@ Press `<leader>l` (`ctrl+x l`) to open the browser.
 | `--keep`       | Reuse the existing state instead of seeding again                     |
 | `--no-running` | Start on the home screen without prompting the running session        |
 | Anything else  | Passed to `opencode`                                                  |
-| `OPENCODE_BIN` | The `opencode` binary to run, `opencode` on `PATH` by default (2.2.5) |
+| `OPENCODE_BIN` | The `opencode` binary to run, `opencode` on `PATH` by default (2.2.7) |
 
 It needs Node.js 24.16+, git and a terminal with a Nerd Font. The fake `gh` and `glab` are POSIX shell scripts. On Windows the plugin cannot run them, so the TUI starts but shows no pull request or issue state.
 

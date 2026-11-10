@@ -4,7 +4,7 @@ import type { Plugin } from '@opencode/plugin';
 // `unknown` in the plugin types, so a change there would pass the typecheck and only stop ref
 // detection. test/contract runs a real agent shell call through this reader.
 
-/** Name of the host's shell tool (packages/core/src/tool/plugin/shell.ts:21 in OpenCode v2.2.5). */
+/** Name of the host's shell tool (packages/core/src/tool/plugin/shell.ts:21 in OpenCode v2.2.7). */
 export const SHELL_TOOL = 'shell';
 
 // `hook` is generic over every tool hook; `execute.after` is the payload with a status.

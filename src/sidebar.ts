@@ -26,8 +26,8 @@ export function installSidebar(context: Plugin.Context, options: Options): () =>
   return context.ui.slot({
     prepend: SLOTS.sidebar,
     // A failing section hides itself instead of reaching the host's slot boundary, which would
-    // toast a crash in the middle of the user's session (packages/tui/src/plugin/render.tsx:27 in
-    // OpenCode v2.2.5).
+    // toast a crash in the middle of the user's session (packages/tui/src/plugin/api.tsx:452 in
+    // OpenCode v2.2.7).
     render: (input) =>
       createComponent(ErrorBoundary, {
         fallback: (error: unknown) => {

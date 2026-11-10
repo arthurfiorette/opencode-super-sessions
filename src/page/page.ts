@@ -173,7 +173,7 @@ export function installBrowser(
    * which on an untested host is the likely way a host change shows. Without its own boundary
    * the browser would hit the host's boundary around the `app` slot, which only toasts and
    * then draws nothing for that claim until a restart
-   * (packages/tui/src/plugin/render.tsx:27 in OpenCode v2.2.5), while `<leader>l` kept toggling
+   * (packages/tui/src/plugin/api.tsx:452 in OpenCode v2.2.7), while `<leader>l` kept toggling
    * an invisible browser.
    */
   const fail = (error: unknown) => {

@@ -3,7 +3,7 @@ import path from 'node:path';
 
 // Paths of files OpenCode owns or would own. The plugin reads the host's files and never writes
 // them; a host that moves one leaves the plugin on its defaults instead of failing. Line numbers
-// refer to the OpenCode repository at v2.2.5.
+// refer to the OpenCode repository at v2.2.7.
 
 /**
  * `cli.json` in the host's config directory: `OPENCODE_CONFIG_DIR`, else

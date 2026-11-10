@@ -33,7 +33,7 @@ const BATCH_SIZE = 25;
  * that have not changed since, and anything newer than the cursor is covered by live indexing or
  * the next run. The cursor stays on `time.updated`, not `activityTime`: the host moves it on the
  * writes that add indexed text (an enqueued prompt, every step's start and end), while
- * `activityTime` covers them only because 2.2.5 delivers prompts and writes text inside a run. A
+ * `activityTime` covers them only because 2.2.7 delivers prompts and writes text inside a run. A
  * plugin metadata write moves it too, which costs one extra `session.context` read of that
  * session on the next start; a cursor that skipped a changed session would lose its hits for good.
  *

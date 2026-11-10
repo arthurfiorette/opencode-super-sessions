@@ -119,7 +119,7 @@ const DONE_KEY = 'ctrl+q';
 // Letters type into the search and ctrl+f is the host's pin. ctrl+b is only the search input's
 // cursor-left here (OpenTUI's input bindings), which `left` also does; the host's ctrl+b,
 // `session.background` (packages/tui/src/config/keybind.ts:129), sits in the session view's
-// base-mode layer (packages/tui/src/routes/session/index.tsx:1457), which the browser's mode
+// base-mode layer (packages/tui/src/routes/session/index.tsx:1459), which the browser's mode
 // turns off.
 const FORK_KEY = 'ctrl+b';
 // ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e and ctrl+k edit the search, ctrl+h is backspace in

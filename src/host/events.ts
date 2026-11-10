@@ -4,7 +4,7 @@ import { SHELL_TOOL } from './tool-hook.js';
 // Where the server finds text and commands in host events and stored messages. The fields are
 // typed, so a rename fails the typecheck; what the types cannot say is which event carries what,
 // and that live events and stored messages key the same text the same way. test/contract checks
-// both against a real host. Line numbers refer to the OpenCode repository at v2.2.5.
+// both against a real host. Line numbers refer to the OpenCode repository at v2.2.7.
 
 type Event<Type extends OpenCodeEvent['type']> = Extract<OpenCodeEvent, { type: Type }>;
 
@@ -146,7 +146,7 @@ export function storedHistory(messages: readonly SessionMessageInfo[]): HistoryE
 
 /**
  * Time of the user's last message in `session.context`, the only message read a server plugin
- * has. The context starts at the latest compaction (packages/core/src/session/history.ts:184), so
+ * has. The context starts at the latest compaction (packages/core/src/session/history.ts:193), so
  * a compaction with no user message after it says nothing about when the user last wrote: null
  * then, which is unknown. Undefined when the user never wrote.
  */

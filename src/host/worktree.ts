@@ -2,7 +2,7 @@ import type { Plugin } from '@opencode/plugin';
 
 // The worktrees OpenCode knows and how it removes them, as cleanup relies on. Removal has no
 // undo, so test/contract checks both against a real host and a real git repository. Line numbers
-// refer to the OpenCode repository at v2.2.5.
+// refer to the OpenCode repository at v2.2.7.
 
 /** A worktree of a project, as `context.worktree.list` reports it. */
 export interface ProjectWorktree {

@@ -236,6 +236,7 @@ function userMessage(props: TranscriptProps, row: () => Row<'user'>): JSX.Elemen
       paddingTop: 1,
       paddingBottom: 1,
       paddingLeft: 2,
+      paddingRight: 2,
       flexShrink: 0,
       get backgroundColor() {
         return theme().background.raised.base;
@@ -955,6 +956,7 @@ function blockTool(props: TranscriptProps, input: BlockToolInput): JSX.Element {
     paddingTop: 1,
     paddingBottom: 1,
     paddingLeft: 2,
+    paddingRight: 2,
     gap: 1,
     customBorderChars: SPLIT_BORDER,
     get borderColor() {
@@ -1014,7 +1016,7 @@ function shellBlock(props: TranscriptProps, input: ShellInput): JSX.Element {
       command,
       output,
       SHELL_LINES,
-      SHELL_LINES * Math.max(20, props.width() - 6 - (running ? 2 : 0))
+      SHELL_LINES * Math.max(20, props.width() - 8 - (running ? 2 : 0))
     )
   );
   const shownOutput = () => (expanded() ? output : collapsed().output);
@@ -1170,7 +1172,7 @@ function diffView(props: TranscriptProps, file: PatchFile): JSX.Element {
   const theme = props.theme;
   return jsx('box', {
     paddingLeft: 1,
-    paddingRight: 3,
+    paddingRight: 1,
     children: jsx('diff', {
       diff: file.patch,
       get view() {
@@ -1330,7 +1332,7 @@ function questionTool(
 
 /**
  * One line naming the subagent and its task, with the host's exact label and its em dash
- * (`Subagent`, packages/tui/src/routes/session/index.tsx:3325).
+ * (`Subagent`, packages/tui/src/routes/session/index.tsx:3294).
  */
 function subagentTool(
   props: TranscriptProps,

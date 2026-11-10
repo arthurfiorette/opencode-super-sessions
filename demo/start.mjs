@@ -332,8 +332,8 @@ async function seed() {
   write(path.join(hostState, 'session.json'), `${JSON.stringify({ pinned: pins })}\n`);
   // Hides the host's "Getting started" card, which asks to connect a provider in every session
   // sidebar; the scripted model needs none. TUI plugin stores are files named after the plugin
-  // id and key (packages/tui/src/plugin/api.tsx:201, feature-plugins/sidebar/footer.tsx:11 at
-  // v2.2.5), under the release channel `latest`.
+  // id and key (packages/tui/src/plugin/api.tsx:219, feature-plugins/sidebar/footer.tsx:11 at
+  // v2.2.7), under the release channel `latest`.
   write(
     path.join(hostState, 'latest', 'tui', 'plugin.opencode.sidebar.footer.getting-started.json'),
     '{"dismissed":true}\n'

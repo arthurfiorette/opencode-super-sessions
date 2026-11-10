@@ -5,7 +5,7 @@ import type { SearchScope } from '../rpc.js';
 
 // Session API calls whose meaning the types do not carry: which route archives, what an empty
 // title does, how a project scope filters. test/contract checks each against a real host. Line
-// numbers refer to the OpenCode repository at v2.2.5.
+// numbers refer to the OpenCode repository at v2.2.7.
 
 /** The part of an HTTP client (the TUI's `context.client`) that updates sessions. */
 interface SessionUpdater {
@@ -96,8 +96,8 @@ export function forkSession(
 /**
  * "This project" for a Location, the way the built-in list scopes it
  * (packages/tui/src/component/dialog-session-list.tsx:63): the host's `global` project by
- * directory, any other project by id and the directory's path inside it. In 2.2.5 a directory
- * outside version control gets a project of its own (packages/core/src/project.ts:453), so the
+ * directory, any other project by id and the directory's path inside it. In 2.2.7 a directory
+ * outside version control gets a project of its own (packages/core/src/project.ts:471), so the
  * `global` branch is for hosts that still use it.
  */
 export function projectScope(info: LocationPublicInfo): Exclude<SearchScope, { type: 'all' }> {
@@ -166,14 +166,14 @@ export type ActivityInfo = Pick<SessionInfo, 'time' | 'metadata'>;
  * When the user or the agent last worked in a session: its creation, or the start or end of its
  * latest run, whichever is newest. The list, its day groups and ages, search ties and the cleanup
  * inactivity rule use it instead of `time.updated`, which every `session.update({ metadata })`
- * moves (packages/core/src/session/projector.ts:685), so the plugin's own bookkeeping (the history
+ * moves (packages/core/src/session/projector.ts:985), so the plugin's own bookkeeping (the history
  * scan marker, `pushed`, `closes` links, unlinks, Done marks) would read as activity.
  *
- * In 2.2.5, `time.busy` is set when an execution starts (projector.ts:793) and `time.idle` when it
- * succeeds, fails or is interrupted by the user (projector.ts:527); both keep `time.updated` as it
+ * In 2.2.7, `time.busy` is set when an execution starts (projector.ts:1064) and `time.idle` when
+ * it succeeds, fails or is interrupted by the user (projector.ts:857); both keep `time.updated` as it
  * was. Every prompt the TUI sends starts a run (packages/tui/src/component/prompt/index.tsx:1367),
  * and so do compaction (packages/core/src/session/session.ts:275) and a run resumed after a
- * restart. A fork's `time.created` is when it was forked (projector.ts:177). Not counted: a `!`
+ * restart. A fork's `time.created` is when it was forked (projector.ts:186). Not counted: a `!`
  * command, which records its messages without a run (session.ts:192) and moves only
  * `time.updated`, and a prompt sent with `resume: false`, until the next run; renames, moves,
  * archiving, agent and model picks, permission changes and reverts, which are not work in the

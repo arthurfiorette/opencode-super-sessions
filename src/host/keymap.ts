@@ -1,8 +1,8 @@
 // Command ids, modes and priorities of the host TUI keymap that the takeover and the peek keys
 // depend on. None of them is a documented plugin API: they are what packages/tui does in OpenCode
-// v2.2.5, and test/contract/tui.test.ts drives the real TUI to check that they still win. A
+// v2.2.7, and test/contract/tui.test.ts drives the real TUI to check that they still win. A
 // keymap `run` must return a literal `false` to fall through to the next layer; a returned
-// Promise counts as handled (packages/tui/src/context/keymap.tsx:245).
+// Promise counts as handled (packages/tui/src/context/keymap.tsx:247).
 
 /** The host's session list command (packages/tui/src/app.tsx:765). */
 export const SESSION_LIST = 'session.list';
@@ -49,7 +49,7 @@ export const OVER_PROMPT = 2;
 /** The keymap mode with no dialog open (packages/tui/src/context/keymap.tsx:41). */
 export const BASE_MODE = 'base';
 
-/** The mode every host dialog pushes (packages/tui/src/ui/dialog.tsx:322). */
+/** The mode every host dialog pushes (packages/tui/src/ui/dialog.tsx:354). */
 export const DIALOG_MODE = 'modal';
 
 /**
