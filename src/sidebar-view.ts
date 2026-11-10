@@ -13,10 +13,11 @@ import {
 } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { useCliSettings } from './cli-settings.js';
+import { pluginRpc } from './host/rpc.js';
 import { createMarquee } from './marquee.js';
 import { type Ref, refKey } from './refs/ref.js';
 import { type ShownLink, sidebarRefs, workLinks } from './refs/summary.js';
-import { type SessionRefView, SuperSessions } from './rpc.js';
+import type { SessionRefView } from './rpc.js';
 import { tuiSettingsFor } from './settings/store.js';
 import type { SidebarProps } from './sidebar.js';
 import { createSidebarState } from './sidebar-state.js';
@@ -40,7 +41,7 @@ export default function Sidebar(props: SidebarProps) {
   const marquee = createMarquee({ animated: () => settings.titleScroll(cli.animations) });
   let box: BoxRenderable | undefined;
 
-  const rpc = context.client.rpc(SuperSessions);
+  const rpc = pluginRpc(context.client);
   /**
    * RPC options for a session. Its own Location answers for it, like on the page; the TUI's
    * Location is only a fallback for a session this client has not synced yet.

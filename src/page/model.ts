@@ -3,9 +3,10 @@ import type { Plugin } from '@opencode/plugin/tui';
 import type { Route } from '@opencode/plugin/tui/context';
 import { createEffect, createMemo, createRoot, createSignal, on } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
+import { pluginRpc } from '../host/rpc.js';
 import { listFilters, projectScope, sessionScope } from '../host/session-api.js';
 import type { Pins } from '../pins.js';
-import { type SearchScope, SuperSessions } from '../rpc.js';
+import type { SearchScope } from '../rpc.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import {
   createPageController,
@@ -116,7 +117,7 @@ export function createBrowserModel(
   const searchScope = async (target: PageScope): Promise<SearchScope> =>
     target === 'all' ? { type: 'all' } : projectOf();
   const listScope = async (target: PageScope) => listFilters(await searchScope(target));
-  const rpc = () => context.client.rpc(SuperSessions);
+  const rpc = () => pluginRpc(context.client);
   /** The Location the plugin's RPCs go through: the one under the browser, if it resolves. */
   const rpcOptions = () => {
     const directory = location().directory;

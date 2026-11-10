@@ -40,8 +40,7 @@ if (process.platform === 'win32') {
 process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
 
 const { OpenCode } = await import('@opencode/sdk');
-const { SuperSessions } = await import('opencode-super-sessions/rpc');
-const { rpcError } = await import('../../dist/host/rpc.js');
+const { pluginRpc, rpcError } = await import('../../dist/host/rpc.js');
 
 /** Runs git without the developer's hooks or signing. */
 function git(cwd, ...args) {
@@ -137,7 +136,9 @@ try {
   });
   await host.sessions.create({ location: other });
   const sessionID = session.id;
-  const rpc = host.rpc(SuperSessions);
+  // The host answers calls on a Location whose plugins are still loading with `rpc.unavailable`;
+  // the TUI's client waits for them, and so does this one.
+  const rpc = pluginRpc(host);
   const stored = async () => (await host.sessions.get({ sessionID })).metadata ?? {};
 
   assert.deepEqual(await rpc.status({}, { location }), { providers: { github: 'ok' } });

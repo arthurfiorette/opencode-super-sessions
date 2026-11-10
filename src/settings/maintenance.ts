@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Plugin } from '@opencode/plugin/tui';
 import { createEffect, createRoot, createSignal, on } from 'solid-js';
+import { pluginRpc } from '../host/rpc.js';
 import { setArchived } from '../host/session-api.js';
 import type { Pins } from '../pins.js';
-import { SuperSessions, type WorktreeDecision } from '../rpc.js';
+import type { WorktreeDecision } from '../rpc.js';
 import type { ServerSettingsClient, TuiSettings } from './store.js';
 
 // The TUI half of auto-archive and cleanup. The server decides; this side reports what the TUI
@@ -42,7 +43,7 @@ export function installMaintenance(
 ): Maintenance {
   const clientID = randomUUID();
   /** The server plugin's RPC client. */
-  const rpc = () => context.client.rpc(SuperSessions);
+  const rpc = () => pluginRpc(context.client);
   /** RPC call options: this TUI's Location, else the host's default one. */
   const options = () => ({ location: context.location ?? context.data.location.default() });
   /** Shows a toast. */
@@ -314,12 +315,10 @@ export function excludeFromAutoArchive(
 ): Promise<void> {
   return Promise.resolve()
     .then(() =>
-      context.client
-        .rpc(SuperSessions)
-        ['archive.exclude'](
-          { sessionIDs: [...sessionIDs] },
-          { location: context.location ?? context.data.location.default() }
-        )
+      pluginRpc(context.client)['archive.exclude'](
+        { sessionIDs: [...sessionIDs] },
+        { location: context.location ?? context.data.location.default() }
+      )
     )
     .then(
       () => {},

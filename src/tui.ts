@@ -12,11 +12,12 @@ import {
   quickSwitchCommand,
   SESSION_LIST
 } from './host/keymap.js';
+import { pluginRpc } from './host/rpc.js';
 import { setArchived } from './host/session-api.js';
 import { installBrowser } from './page/page.js';
 import { createPins, type Pins } from './pins.js';
 import type { ProviderId } from './refs/ref.js';
-import { type Availability, SuperSessions } from './rpc.js';
+import type { Availability } from './rpc.js';
 import { installSettings } from './settings/install.js';
 import { excludeFromAutoArchive } from './settings/maintenance.js';
 import type { TuiSettings } from './settings/store.js';
@@ -277,7 +278,7 @@ async function showStatus(context: Plugin.Context) {
   let message: string;
   try {
     const location = context.location ?? context.data.location.default();
-    const status = await context.client.rpc(SuperSessions).status({}, { location });
+    const status = await pluginRpc(context.client).status({}, { location });
     const lines = (Object.entries(status.providers) as Array<[ProviderId, Availability]>).map(
       ([provider, state]) => availability(provider, state)
     );

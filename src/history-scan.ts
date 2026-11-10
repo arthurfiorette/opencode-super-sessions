@@ -1,9 +1,10 @@
 import type { SessionInfo, SessionMessageInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import { type HistoryEntry, storedHistory } from './host/events.js';
+import { pluginRpc } from './host/rpc.js';
 import { isPushReportLine, runsPush } from './refs/push.js';
 import { historyScanned, readSessionRefs } from './refs/ref.js';
-import { HISTORY_ITEMS_MAX, HISTORY_TEXT_MAX, type HistoryItem, SuperSessions } from './rpc.js';
+import { HISTORY_ITEMS_MAX, HISTORY_TEXT_MAX, type HistoryItem } from './rpc.js';
 
 // Reads the stored history of sessions the plugin never saw live and hands it to the server's
 // `history.scan`. No OpenTUI imports: `./tui` loads this from Node, and the integration test
@@ -27,7 +28,7 @@ export interface HistoryPage {
 }
 
 /** The part of an HTTP client (the TUI's `context.client`, or an SDK host) a scan uses. */
-export type HistoryClient = Pick<Plugin.Context['client'], 'message' | 'rpc'>;
+export type HistoryClient = Pick<Plugin.Context['client'], 'message' | 'rpc' | 'plugin'>;
 
 /** Where a scan reads pages and sends chunks. */
 export interface HistorySource {
@@ -59,7 +60,7 @@ export function historySource(
       );
       return { messages: page.data, cursor: page.cursor.next ?? undefined };
     },
-    send: (input) => client.rpc(SuperSessions)['history.scan'](input, { location: location() })
+    send: (input) => pluginRpc(client)['history.scan'](input, { location: location() })
   };
 }
 

@@ -2,7 +2,8 @@ import type { Plugin } from '@opencode/plugin/tui';
 import { createSignal } from 'solid-js';
 import type { Options } from '../config.js';
 import { isUntested } from '../host/compat.js';
-import { type ServerSettings, type ServerSettingsView, SuperSessions } from '../rpc.js';
+import { pluginRpc } from '../host/rpc.js';
+import type { ServerSettings, ServerSettingsView } from '../rpc.js';
 import { readTuiOverrides, type TuiValues, tuiDefaults } from './definitions.js';
 
 /**
@@ -103,7 +104,7 @@ export interface ServerSettingsClient {
 export function createServerSettings(context: Plugin.Context): ServerSettingsClient {
   const [view, setView] = createSignal<ServerSettingsView>();
   const [error, setError] = createSignal<string>();
-  const rpc = () => context.client.rpc(SuperSessions);
+  const rpc = () => pluginRpc(context.client);
   const location = () => ({ location: context.location ?? context.data.location.default() });
   /** Runs one call, keeping its view or its error. */
   const call = async (request: () => Promise<ServerSettingsView>) => {

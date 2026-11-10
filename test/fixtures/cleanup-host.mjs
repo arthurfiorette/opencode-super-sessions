@@ -27,7 +27,7 @@ mock.module('node:child_process', {
 });
 
 const { OpenCode } = await import('@opencode/sdk');
-const { SuperSessions } = await import('opencode-super-sessions/rpc');
+const { pluginRpc } = await import('../../dist/host/rpc.js');
 
 /** Runs git without the developer's hooks or signing. */
 function git(cwd, ...args) {
@@ -82,7 +82,8 @@ const host = await OpenCode.create({
 
 try {
   const location = { directory: repo };
-  const rpc = host.rpc(SuperSessions);
+  // Waits for the Location's plugins, like the TUI's client.
+  const rpc = pluginRpc(host);
   const main = await host.sessions.create({ location });
   const projectID = main.projectID;
 
