@@ -22,13 +22,14 @@ It replaces OpenCode's session list with a larger overlay where you can:
 - archive, restore, pin, rename, fork and delete sessions
 - peek into a session and come back to the list with `esc`
 - see each session's pull requests and issues with their state, review, CI and failed checks, from GitHub or GitLab
+- link any other work to a session, such as a Linear, Jira or Azure Boards item, a Sentry issue or a Slack thread
 - find finished work in a Done view, filled as pull requests merge and issues close
 - auto-archive Done sessions and remove worktrees you no longer need, if you turn it on
 
 ## Requirements
 
 - OpenCode 2.2.5 or a later 2.2 patch release.
-- A [Nerd Font](https://www.nerdfonts.com/) in your terminal. A Mono variant keeps the columns aligned.
+- A [Nerd Font](https://www.nerdfonts.com/) in your terminal. A Mono variant keeps the columns aligned. The Notion and Sentry icons need Nerd Fonts 3.3 or later.
 - `gh` for GitHub or `glab` for GitLab, logged in (see [Forge support](#forge-support)). Without them the browser still works, without pull requests and issues.
 
 ## Install
@@ -58,26 +59,26 @@ On terminals at least 120 columns wide, a preview on the right shows the selecte
 
 The footer shows the common keys, and `ctrl+/` (or `?` while the search is empty) lists them all.
 
-| Key                 | Action                                                                                 |
-| ------------------- | -------------------------------------------------------------------------------------- |
-| `enter`             | Open the session                                                                       |
-| `space`             | Peek at the session. `up` and `down` switch sessions, `esc` returns to the list        |
-| `tab` / `shift+tab` | Next or previous view                                                                  |
-| `ctrl+a`            | Switch between this project and all projects                                           |
-| `ctrl+s`            | Archive, or restore in the Archived view                                               |
-| `ctrl+q`            | Mark Done, or not Done                                                                 |
-| `ctrl+f`            | Pin or unpin. `<leader>1` to `<leader>9` open the first nine pins                      |
-| `ctrl+r`            | Rename                                                                                 |
-| `ctrl+t`            | Generate a new title                                                                   |
-| `ctrl+d`            | Delete, press twice                                                                    |
-| `ctrl+b`            | Fork the whole session, or from before one of your prompts                             |
-| `ctrl+l`            | Link a pull request or issue by URL, `owner/repo#N` or `#N`                            |
-| `ctrl+g`            | Open the session's pull request or issue in the web browser                            |
-| `right`             | Move to the preview's pull requests and issues. `enter` opens, `c` copies, `d` unlinks |
-| `f5`                | Reload the selected row from GitHub or GitLab, skipping the cache                      |
-| `ctrl+y`            | Archive every Done session, in the Done view                                           |
-| `ctrl+o`            | Settings                                                                               |
-| `esc`               | Close the browser                                                                      |
+| Key                 | Action                                                                          |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `enter`             | Open the session                                                                |
+| `space`             | Peek at the session. `up` and `down` switch sessions, `esc` returns to the list |
+| `tab` / `shift+tab` | Next or previous view                                                           |
+| `ctrl+a`            | Switch between this project and all projects                                    |
+| `ctrl+s`            | Archive, or restore in the Archived view                                        |
+| `ctrl+q`            | Mark Done, or not Done                                                          |
+| `ctrl+f`            | Pin or unpin. `<leader>1` to `<leader>9` open the first nine pins               |
+| `ctrl+r`            | Rename                                                                          |
+| `ctrl+t`            | Generate a new title                                                            |
+| `ctrl+d`            | Delete, press twice                                                             |
+| `ctrl+b`            | Fork the whole session, or from before one of your prompts                      |
+| `ctrl+l`            | Link a pull request, issue or any web page by URL, `owner/repo#N` or `#N`       |
+| `ctrl+g`            | Open the session's pull request, issue or link in the web browser               |
+| `right`             | Move to the preview's Work links. `enter` opens, `c` copies, `d` unlinks        |
+| `f5`                | Reload the selected row from GitHub or GitLab, skipping the cache               |
+| `ctrl+y`            | Archive every Done session, in the Done view                                    |
+| `ctrl+o`            | Settings                                                                        |
+| `esc`               | Close the browser                                                               |
 
 Rename, pin and delete follow your own keybinds for `session.rename`, `session.pin.toggle` and `session.delete`.
 
@@ -85,7 +86,7 @@ With the mouse, a click selects a row and a double click opens it. A click on a 
 
 ### Search
 
-Typing filters the list by session title and by pull request or issue number and title. `123`, `#123`, `pr 123` and `!12` find sessions tracking that number in any repository. `owner/repo#123` and full URLs find that exact ref.
+Typing filters the list by session title and by pull request or issue number and title. `123`, `#123`, `pr 123` and `!12` find sessions tracking that number in any repository. `owner/repo#123` and full URLs find that exact ref. Work links match by id, such as `COR-1466`, title and any part of their URL.
 
 Sessions that match only in their message text appear a moment later, in an `In messages` group at the bottom.
 
@@ -106,7 +107,26 @@ Sessions from before you installed the plugin are read for refs the first time y
 
 A session is Done when it is idle and every tracked pull request is merged or closed after your last message. With no pull requests, its issues decide. `ctrl+q` overrides this either way.
 
-`d` on a pull request or issue in the preview unlinks it, and asking the agent works too. An unlinked ref is never added back automatically.
+`d` on a pull request, issue or link in the preview unlinks it, and asking the agent works too. An unlinked ref is never added back automatically.
+
+### Work links
+
+Work outside GitHub and GitLab can be linked by URL. These are read from the URL alone, with no login or network call, and show their id and title from the URL:
+
+| Service      | URL                                                                          |
+| ------------ | ---------------------------------------------------------------------------- |
+| Linear       | `linear.app/<workspace>/issue/<ID>`                                          |
+| Jira         | `<site>.atlassian.net/browse/<KEY>` or a board with `?selectedIssue=`        |
+| Azure Boards | `dev.azure.com/<org>/<project>/_workitems/edit/<ID>` or `?workitem=`         |
+| Sentry       | `<org>.sentry.io/issues/<ID>` or `sentry.io/organizations/<org>/issues/<ID>` |
+| Notion       | A page URL ending in its id                                                  |
+| Slack        | `<team>.slack.com/archives/<channel>/p<message>`                             |
+| Trello       | `trello.com/c/<card>`                                                        |
+| ClickUp      | `app.clickup.com/t/<ID>`                                                     |
+| Shortcut     | `app.shortcut.com/<org>/story/<ID>`                                          |
+| Asana        | `app.asana.com/0/<project>/<task>` and `.../task/<task>`                     |
+
+Links to these in your prompts are tracked like pull requests. Any other web page is tracked only when you link it with `ctrl+l` or the agent links it with `link_work`, which also takes the title the agent knows. Work links have no state, so they never make a session Done. They share the issues' lines on the rows, five at most.
 
 Forge state is kept in memory only: open pull requests for 2 minutes, closed ones for 15 minutes, merged ones for good.
 
@@ -123,10 +143,10 @@ Options go in the plugin entry's `options`, as in the [GitLab example](#gitlab).
 | `scope`                   | `"project"`     | Sessions the browser lists at first: `"project"` or `"all"`                           |
 | `preview`                 | `true`          | Show the preview pane                                                                 |
 | `previewWidth`            | `0.4`           | Preview share of the browser width, from `0.2` to `0.7`                               |
-| `rows.refs`               | `true`          | Show pull request and issue lines under each session                                  |
-| `rows.groupIssues`        | `false`         | Join a session's issues on one line instead of one line each                          |
+| `rows.refs`               | `true`          | Show pull request, issue and link lines under each session                            |
+| `rows.groupIssues`        | `false`         | Join a session's issues and links on one line instead of one line each                |
 | `titleScroll`             | `"auto"`        | Scroll cut titles on hover: `"auto"` follows OpenCode's `animations`, `"on"`, `"off"` |
-| `detect.prompts`          | `true`          | Track refs from your prompts                                                          |
+| `detect.prompts`          | `true`          | Track refs and work links from your prompts                                           |
 | `detect.mentions`         | `true`          | Record refs mentioned in the assistant's replies                                      |
 | `search.body`             | `true`          | Index message text for search                                                         |
 | `closeTabOnArchive`       | `true`          | Close a session's tab when archiving it                                               |
