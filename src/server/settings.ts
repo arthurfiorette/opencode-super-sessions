@@ -37,6 +37,7 @@ export function serverDefaults(options: Options): ServerSettings {
     autoArchiveDays: options.autoArchiveDays ?? null,
     trackMentions: options.detect.mentions,
     trackPrompts: options.detect.prompts,
+    linkNotices: options.notices,
     providers: providerChoice(options.providers),
     cleanupDeleted: options.cleanup.deletedSessions,
     cleanupMerged: options.cleanup.merged,
@@ -65,7 +66,8 @@ export function applySettings(options: Options, settings: ServerSettings): Optio
   return {
     ...options,
     providers: providerList(settings.providers),
-    detect: { mentions: settings.trackMentions, prompts: settings.trackPrompts }
+    detect: { mentions: settings.trackMentions, prompts: settings.trackPrompts },
+    notices: settings.linkNotices
   };
 }
 

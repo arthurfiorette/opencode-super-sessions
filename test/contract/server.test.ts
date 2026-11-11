@@ -16,8 +16,10 @@ import {
   activityTime,
   forkSession,
   listFilters,
+  postNotice,
   projectScope,
   regenerateTitle,
+  sendsNow,
   sessionPrompts,
   sessionScope,
   setArchived
@@ -46,6 +48,9 @@ import {
 // The tests read host payloads through the same src/host accessors the plugin uses, so a failure
 // here names the accessor to fix.
 
+const NOTICE_PROMPT = 'Is this related?';
+const NOTICE = { text: 'Linked to this session automatically: issue 7', description: 'Linked 7' };
+
 const hooks: Parameters<typeof shellCall>[0][] = [];
 const events = new Map<string, OpenCodeEvent>();
 let probe: Plugin.Context | undefined;
@@ -58,6 +63,11 @@ const recorder = Plugin.define({
     probe ??= context;
     await context.tool.hook('execute.after', (event) => {
       hooks.push(structuredClone(event));
+    });
+    // What src/server/notices.ts does, for prompts of the notice test only.
+    await context.session.hook('prompt', async (event) => {
+      if (event.prompt.text !== NOTICE_PROMPT || !sendsNow(event)) return;
+      await postNotice(context.session, event.sessionID, NOTICE);
     });
     const abort = new AbortController();
     void (async () => {
@@ -133,6 +143,31 @@ test('the plugin tells every agent step, once, what it tracks without link_work'
     const system = step.system.join('\n');
     assert.equal(system.split('You MUST call link_work').length - 1, 1, system);
   }
+});
+
+// A notice that reached the model on its own would spend a request the user never asked for, and
+// one shown as a user message would read as the user's words.
+test('a notice posted from the prompt hook reaches the model with the prompt and adds no request', {
+  timeout: 60_000
+}, async () => {
+  const before = model.requests.length;
+  const sessionID = await agentRun('notice', NOTICE_PROMPT);
+  const steps = model.requests.slice(before);
+  assert.equal(steps.length, 2);
+  assert.deepEqual(steps[0]?.user.slice(-2), [NOTICE.text, NOTICE_PROMPT]);
+
+  const shown = (await messages(sessionID)).filter(
+    (message) => message.type === 'synthetic' || message.type === 'user'
+  );
+  assert.deepEqual(
+    shown.map((message) =>
+      message.type === 'synthetic' ? ['synthetic', message.description] : ['user', message.text]
+    ),
+    [
+      ['synthetic', NOTICE.description],
+      ['user', NOTICE_PROMPT]
+    ]
+  );
 });
 
 test('prompt and text events carry the text detection reads and the ids the backfill derives', {

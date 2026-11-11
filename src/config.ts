@@ -50,6 +50,8 @@ export const optionsSchema = z
         prompts: z.boolean().default(true)
       })
       .default({ mentions: true, prompts: true }),
+    /** Tell the agent, with the user's next message, what was linked without it. */
+    notices: z.boolean().default(true),
     search: z
       .strictObject({
         /** Index message text in the plugin's data directory and match it in search. */
@@ -107,6 +109,7 @@ export const optionsSchema = z
     providers: ['github'],
     gitlab: { hosts: [] },
     detect: { mentions: true, prompts: true },
+    notices: true,
     search: { body: true },
     closeTabOnArchive: true,
     previewWidth: 0.4,

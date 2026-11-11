@@ -89,7 +89,11 @@ export const sessionRefsSchema = z.strictObject({
   // A session's activity time before the plugin first wrote it, for sessions without run times,
   // whose only activity record is `time.updated` and which that write moves. The write queue
   // stamps it; `activityTime` in src/host/session-api.ts reads it.
-  activeAt: z.number().int().nonnegative().optional()
+  activeAt: z.number().int().nonnegative().optional(),
+  // When the agent was last told what got linked without it (src/server/notices.ts). Links of
+  // the user, the user's messages and closing pull requests linked after it are told next.
+  // Without it, everything since the session was created is.
+  noticedAt: z.number().int().nonnegative().optional()
 });
 
 /**

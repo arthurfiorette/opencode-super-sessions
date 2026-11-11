@@ -75,6 +75,8 @@ interface ChatRequest {
 export interface AgentRequest {
   /** Text of every system message, in order. */
   system: string[];
+  /** Text of every user message, in order. */
+  user: string[];
 }
 
 /**
@@ -117,16 +119,17 @@ async function respond(
   for await (const chunk of request) raw += chunk;
   const body = JSON.parse(raw) as ChatRequest;
   if (body.tools?.length) {
-    const system = (body.messages ?? []).filter((message) => message.role === 'system');
     // Chat messages carry a string or an array of text parts.
+    const text = (message: { content?: unknown }) =>
+      typeof message.content === 'string'
+        ? message.content
+        : Array.isArray(message.content)
+          ? message.content.map((part: { text?: string }) => part.text ?? '').join('')
+          : '';
+    const messages = body.messages ?? [];
     requests.push({
-      system: system.map((message) =>
-        typeof message.content === 'string'
-          ? message.content
-          : Array.isArray(message.content)
-            ? message.content.map((part: { text?: string }) => part.text ?? '').join('')
-            : ''
-      )
+      system: messages.filter((message) => message.role === 'system').map(text),
+      user: messages.filter((message) => message.role === 'user').map(text)
     });
   }
   response.writeHead(200, { 'content-type': 'text/event-stream' });

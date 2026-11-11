@@ -264,6 +264,19 @@ try {
       [56, 'prompt']
     ]
   );
+  // The prompt carried a notice of what the user and the pull request linked before it; the
+  // pull request itself came from the branch, and the agent knows its own branch. Nothing runs the
+  // prompt here, so the notice waits in the inbox beside it, as does the host's own notice of the
+  // `!` command above.
+  const notices = async () =>
+    (await host.sessions.inbox.list({ sessionID })).filter(
+      (item) => item.type === 'synthetic' && item.payload.metadata?.source === 'super-sessions'
+    );
+  const [notice] = await notices();
+  assert.deepEqual(notice.payload.text.split('\n').slice(1, -1).sort(), [
+    '- issue acme/widgets#12 (open, the user linked it): Login fails on Safari',
+    '- issue acme/widgets#56 (open, PR acme/widgets#34 closes it): Session list cuts titles off'
+  ]);
 
   // The same subscriber indexes the prompt text; these words appear in no title or ref.
   const bodyHits = await until(
@@ -287,6 +300,9 @@ try {
       [34, 'created']
     ]
   );
+  // Nothing new came from the user since: the agent created PR 34, and #56 was already told.
+  await host.sessions.prompt({ sessionID, text: 'Thanks.', resume: false });
+  assert.equal((await notices()).length, 1);
 
   // The index lives under the isolated data home, never the developer's.
   assert.ok(

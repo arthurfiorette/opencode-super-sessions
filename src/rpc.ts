@@ -66,6 +66,7 @@ export const serverSettingsSchema = z.strictObject({
   autoArchiveDays: days.nullable(),
   trackMentions: z.boolean(),
   trackPrompts: z.boolean(),
+  linkNotices: z.boolean(),
   providers: providerChoiceSchema,
   cleanupDeleted: z.boolean(),
   cleanupMerged: z.boolean(),

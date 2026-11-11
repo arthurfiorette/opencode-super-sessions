@@ -37,6 +37,57 @@ export function regenerateTitle(client: SessionUpdater, sessionID: string): Prom
   return client.session.update({ sessionID, title: '' });
 }
 
+/** What the server plugin's `prompt` hook carries that {@link sendsNow} reads. */
+export interface PromptEvent {
+  readonly sessionID: string;
+  readonly delivery: string;
+}
+
+/**
+ * Whether a prompt reaches the model at the next step boundary, so a notice admitted from the
+ * `prompt` hook reaches it in the same request. The hook runs before the prompt is admitted
+ * (packages/core/src/session/session.ts:171, prompt.ts:42), and a boundary delivers every pending
+ * steer at once (packages/core/src/session/inbox.ts:576). A queued prompt waits for its own turn,
+ * and a notice queued or steered beside it would make a request of its own: a pending steer keeps
+ * a finishing turn going one more step (packages/core/src/session/runner/llm.ts:178).
+ */
+export function sendsNow(event: PromptEvent): boolean {
+  return event.delivery === 'steer';
+}
+
+/** The part of the server plugin's session API {@link postNotice} needs. */
+interface SyntheticPoster {
+  synthetic(input: {
+    sessionID: string;
+    text: string;
+    description?: string;
+    metadata?: Record<string, string>;
+    delivery?: 'steer' | 'queue';
+    resume?: boolean;
+  }): Promise<unknown>;
+}
+
+/**
+ * Posts a notice the user sees as a `◈ description` row and the model reads as `text`, a user
+ * message (packages/core/src/session/runner/to-llm-message.ts:255). It never wakes the session
+ * (packages/core/src/session/session.ts:323): the host posts its own `!` command results the
+ * same way (session.ts:226).
+ */
+export function postNotice(
+  session: SyntheticPoster,
+  sessionID: string,
+  notice: { text: string; description: string }
+): Promise<unknown> {
+  return session.synthetic({
+    sessionID,
+    text: notice.text,
+    description: notice.description,
+    metadata: { source: 'super-sessions' },
+    delivery: 'steer',
+    resume: false
+  });
+}
+
 /** User messages per `message.list` page when the fork dialog reads a session's prompts. */
 const PROMPT_PAGE = 100;
 

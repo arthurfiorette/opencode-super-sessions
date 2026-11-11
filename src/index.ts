@@ -3,6 +3,7 @@ import { type Options, parseOptions } from './config.js';
 import { SuperSessions } from './rpc.js';
 import { handleEvent, registerShellHook } from './server/detection.js';
 import { rpcHandlers } from './server/handlers.js';
+import { registerNotices } from './server/notices.js';
 import { getRuntime, warn } from './server/runtime.js';
 import { serverDefaults } from './server/settings.js';
 import { getSweeper } from './server/sweep.js';
@@ -26,6 +27,7 @@ export default Plugin.define({
     await runtime.settings.load(context.storage);
     await registerTools(runtime, context);
     await registerInstructions(runtime, context);
+    await registerNotices(runtime, context);
     await registerShellHook(runtime, context);
     const registration = await context.rpc.register(SuperSessions, rpcHandlers(runtime, context));
     // Attached last so a failed registration above never leaves a subscriber behind.
