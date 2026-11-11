@@ -109,6 +109,8 @@ A session is Done when it is idle and every tracked pull request is merged or cl
 
 `d` on a pull request, issue or link in the preview unlinks it, and asking the agent works too. An unlinked ref is never added back automatically.
 
+The agent sees everything linked to its session each time it links or unlinks something. Your next message also carries a notice of what was linked from your messages, by you in the browser or by a closing pull request. The notice shows as a muted row above your message and never makes the agent answer on its own. Set `notices` to `false` to turn it off.
+
 ### Work links
 
 Work outside GitHub and GitLab can be linked by URL. Links to these services are read from the URL alone, with no login or network call, and show the id or title the URL carries:
@@ -148,6 +150,7 @@ Options go in the plugin entry's `options`, as in the [GitLab example](#gitlab).
 | `titleScroll`             | `"auto"`        | Scroll cut titles on hover: `"auto"` follows OpenCode's `animations`, `"on"`, `"off"` |
 | `detect.prompts`          | `true`          | Track refs and tracker links from your prompts                                        |
 | `detect.mentions`         | `true`          | Record refs mentioned in the assistant's replies                                      |
+| `notices`                 | `true`          | Tell the agent, with your next message, what was linked without it                    |
 | `search.body`             | `true`          | Index message text for search                                                         |
 | `closeTabOnArchive`       | `true`          | Close a session's tab when archiving it                                               |
 | `archiveSuffix`           | unset           | Archive a session renamed to end with this text, such as `" !"`                       |
