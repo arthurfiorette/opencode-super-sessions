@@ -109,7 +109,7 @@ A session is Done when it is idle and every tracked pull request is merged or cl
 
 `d` on a pull request, issue or link in the preview unlinks it, and asking the agent works too. An unlinked ref is never added back automatically.
 
-The agent sees everything linked to its session each time it links or unlinks something. Your next message also carries a notice of what was linked from your messages, by you in the browser or by a closing pull request. The notice shows as a muted row above your message and never makes the agent answer on its own. Set `notices` to `false` to turn it off.
+The agent sees everything linked to its session each time it links or unlinks something. When you message an idle agent, a notice above your message also tells it what was linked from your messages, by you in the browser or by a closing pull request since it was last told. The notice never makes the agent answer on its own. Set `notices` to `false` to turn it off.
 
 ### Work links
 

@@ -44,15 +44,19 @@ export interface PromptEvent {
 }
 
 /**
- * Whether a prompt reaches the model at the next step boundary, so a notice admitted from the
- * `prompt` hook reaches it in the same request. The hook runs before the prompt is admitted
- * (packages/core/src/session/session.ts:171, prompt.ts:42), and a boundary delivers every pending
- * steer at once (packages/core/src/session/inbox.ts:576). A queued prompt waits for its own turn,
- * and a notice queued or steered beside it would make a request of its own: a pending steer keeps
- * a finishing turn going one more step (packages/core/src/session/runner/llm.ts:178).
+ * Whether a notice admitted from the `prompt` hook reaches the model only together with this
+ * prompt. The hook runs before the prompt is admitted (packages/core/src/session/prompt.ts:42,
+ * session.ts:171), the prompt's admission wakes the session (session.ts:187), and that wake
+ * delivers every pending steer at once (packages/core/src/session/inbox.ts:576). So the session
+ * must be idle and the prompt a steer:
+ * - while a turn runs, a pending steer keeps it going one more step
+ *   (packages/core/src/session/runner/llm.ts:178), which could take the notice alone before the
+ *   prompt is admitted;
+ * - a queued prompt waits for its own turn, and a notice beside it would make a request of its own.
+ * A notice left behind by a prompt that then fails to admit waits for the next wake.
  */
-export function sendsNow(event: PromptEvent): boolean {
-  return event.delivery === 'steer';
+export function sendsNow(event: PromptEvent, info: SessionInfo): boolean {
+  return event.delivery === 'steer' && !isBusy(info);
 }
 
 /** The part of the server plugin's session API {@link postNotice} needs. */
@@ -205,6 +209,14 @@ export function isUnread(info: SessionInfo): boolean {
 export function isBusy(info: SessionInfo): boolean {
   const busy = info.time.busy;
   return busy !== undefined && (info.time.idle === undefined || busy > info.time.idle);
+}
+
+/**
+ * When the session's latest run started, or undefined when it never ran. Read while the session
+ * is idle, that is the run the previous user message started, if one did.
+ */
+export function latestRunStart(info: Pick<SessionInfo, 'time'>): number | undefined {
+  return info.time.busy;
 }
 
 /** Field of this plugin's metadata value that holds a stamped activity time; see {@link activityStamp}. */

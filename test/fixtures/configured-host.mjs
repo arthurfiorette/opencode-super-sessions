@@ -273,10 +273,13 @@ try {
       (item) => item.type === 'synthetic' && item.payload.metadata?.source === 'super-sessions'
     );
   const [notice] = await notices();
-  assert.deepEqual(notice.payload.text.split('\n').slice(1, -1).sort(), [
-    '- issue acme/widgets#12 (open, the user linked it): Login fails on Safari',
-    '- issue acme/widgets#56 (open, PR acme/widgets#34 closes it): Session list cuts titles off'
-  ]);
+  assert.deepEqual(
+    notice.payload.description
+      .replace(/^Linked /u, '')
+      .split(', ')
+      .sort(),
+    ['issue acme/widgets#12', 'issue acme/widgets#56']
+  );
 
   // The same subscriber indexes the prompt text; these words appear in no title or ref.
   const bodyHits = await until(

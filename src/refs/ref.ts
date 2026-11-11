@@ -90,10 +90,10 @@ export const sessionRefsSchema = z.strictObject({
   // whose only activity record is `time.updated` and which that write moves. The write queue
   // stamps it; `activityTime` in src/host/session-api.ts reads it.
   activeAt: z.number().int().nonnegative().optional(),
-  // When the agent was last told what got linked without it (src/server/notices.ts). Links of
-  // the user, the user's messages and closing pull requests linked after it are told next.
-  // Without it, everything since the session was created is.
-  noticedAt: z.number().int().nonnegative().optional()
+  // Keys of links the agent was told about in a notice (src/server/notices.ts): links from user
+  // messages, the user's own links and issues a tracked pull request closes. Keys, not a time,
+  // since a link keeps its first `linkedAt` when its source changes.
+  noticed: z.array(z.string().min(1)).optional()
 });
 
 /**
@@ -221,6 +221,23 @@ export const TRACKED_SOURCES: ReadonlySet<RefSource> = new Set([
  */
 export function refKey(ref: Ref): string {
   return `${ref.provider}:${ref.host}/${ref.repo}/${ref.kind}/${ref.number}`.toLowerCase();
+}
+
+/**
+ * The ref a {@link refKey} names, lowercase as the key is, or undefined for any other key. Read
+ * where only a key is stored, such as a dismissal.
+ */
+export function refFromKey(key: string): Ref | undefined {
+  const match = /^([^:]+):([^/]+)\/(.+)\/(pr|issue)\/(\d+)$/u.exec(key);
+  const provider = providerIdSchema.safeParse(match?.[1]);
+  if (!match || !provider.success || !match[2] || !match[3]) return undefined;
+  return {
+    provider: provider.data,
+    host: match[2],
+    repo: match[3],
+    kind: match[4] === 'pr' ? 'pr' : 'issue',
+    number: Number(match[5])
+  };
 }
 
 /**

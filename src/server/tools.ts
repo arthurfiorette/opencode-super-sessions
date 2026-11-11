@@ -10,9 +10,15 @@ import {
   type SessionRefs,
   type WorkLink
 } from '../refs/ref.js';
-import { dismissLink, mergeLinks, mergeWorkLinks, type RefsUpdate } from '../refs/store.js';
+import {
+  dismissLink,
+  mergeLinks,
+  mergeWorkLinks,
+  type RefsUpdate,
+  storedLinks
+} from '../refs/store.js';
 import { cleanTitle, type LinkInfo, recognizeLink } from '../refs/work-link.js';
-import { describe, describeLink, linkedList } from './linked.js';
+import { describeLink, describeRef, linkedList } from './linked.js';
 import {
   linksOf,
   parseReference,
@@ -108,7 +114,8 @@ export function instructionText(forges: boolean, prompts: boolean): string {
     ...(forges
       ? [
           'the pull request of a branch you push',
-          'pull requests and issues you create with gh or glab'
+          'pull requests and issues you create with gh or glab',
+          'issues a linked pull request closes'
         ]
       : [])
   ];
@@ -220,21 +227,21 @@ async function sessionBase(
 }
 
 /**
- * The result line for a resolution, or none for a ref the session already tracked: the list
- * that ends every result shows it. `tracked` says whether the session tracked a key before this
- * call; a mention is not tracked, so linking one is a new link.
+ * The result line for a resolution: none for a ref the session already tracked and could check,
+ * since the list that ends every result shows it. `tracked` says whether the session tracked a
+ * key before this call; a mention is not tracked, so linking one is a new link.
  */
 function linkLine(resolution: Resolution, tracked: (key: string) => boolean): string[] {
   switch (resolution.status) {
     case 'found':
-      return tracked(refKey(resolution.ref)) ? [] : [`Linked ${describe(resolution.ref)}.`];
+      return tracked(refKey(resolution.ref)) ? [] : [`Linked ${describeRef(resolution.ref)}.`];
     case 'unverified':
       return [
-        `${tracked(refKey(resolution.ref)) ? 'Already linked' : 'Linked'} ${describe(resolution.ref)}, but could not check it: ${reasonText(resolution.reason)}.`
+        `${tracked(refKey(resolution.ref)) ? 'Already linked' : 'Linked'} ${describeRef(resolution.ref)}, but could not check it: ${reasonText(resolution.reason)}.`
       ];
     case 'not-found':
       return [
-        `Not linked: ${refLabel(resolution.candidate)} does not exist or is not visible to the forge CLI.`
+        `Not linked: ${refLabel(resolution.candidate)} does not exist or ${resolution.candidate.provider === 'gitlab' ? 'glab' : 'gh'} cannot see it.`
       ];
     case 'unknown':
       return [
@@ -253,7 +260,8 @@ async function currentList(
   sessionID: string
 ): Promise<string> {
   const views = await buildViews(runtime, context.session, [sessionID], { wait: true });
-  return linkedList(views[sessionID]);
+  const info = await context.session.get({ sessionID });
+  return linkedList(views[sessionID], readSessionRefs(info.metadata).dismissed);
 }
 
 /** Implements `link_work`: explicit agent links, which also undo an earlier dismissal. */
@@ -293,12 +301,7 @@ async function linkWork(
   const before = new Set<string>();
   if (links.length > 0 || workLinks.length > 0) {
     await runtime.writes.update(context.session, sessionID, (refs) => {
-      const dismissed = new Set(refs.dismissed);
-      const keys = [
-        ...refs.links.filter((link) => link.source !== 'mention').map((link) => refKey(link.ref)),
-        ...(refs.urls ?? []).flatMap((link) => recognizeLink(link.url)?.key ?? [])
-      ];
-      for (const key of keys) if (!dismissed.has(key)) before.add(key);
+      for (const { key } of storedLinks(refs)) before.add(key);
       // `agent` is an explicit source, so both merges lift any earlier dismissal of these keys.
       const merged = mergeLinks(refs, links);
       const added = mergeWorkLinks(merged.next, workLinks);
@@ -362,7 +365,7 @@ async function unlinkWork(
     if (matched.length > 0) {
       for (const link of matched) {
         keys.push(refKey(link.ref));
-        lines.push(`Unlinked ${describe(link.ref)}.`);
+        lines.push(`Unlinked ${describeRef(link.ref)}.`);
       }
       continue;
     }
@@ -370,7 +373,7 @@ async function unlinkWork(
     if (candidate.kind !== undefined) {
       const ref = { ...candidate, kind: candidate.kind };
       keys.push(refKey(ref));
-      lines.push(`Unlinked ${describe(ref)}.`);
+      lines.push(`Unlinked ${describeRef(ref)}.`);
       continue;
     }
     pending.push(candidate);
@@ -379,7 +382,7 @@ async function unlinkWork(
   for (const resolution of await resolveCandidates(runtime, pending)) {
     if (resolution.status === 'found' || resolution.status === 'unverified') {
       keys.push(refKey(resolution.ref));
-      lines.push(`Unlinked ${describe(resolution.ref)}.`);
+      lines.push(`Unlinked ${describeRef(resolution.ref)}.`);
     } else {
       lines.push(`Not unlinked: ${refLabel(resolution.candidate)} is not linked to this session.`);
     }

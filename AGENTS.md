@@ -22,6 +22,7 @@ Changes must preserve these. `CONTRIBUTING.md` explains the reasoning.
 - A forge is asked only about hosts in `src/server/hosts.ts`: its `defaultHost`, `gitlab.hosts` and hosts of recognized git remotes. GitHub Enterprise tokens reach `gh` only for a host other than github.com.
 - Detection never tracks refs from assistant text; those are mentions only. A bare `#N` is accepted only from user prompts, against the session's repository, after the forge confirms it.
 - A dismissed ref is never added back automatically. Only explicit `agent` and `manual` links lift a dismissal.
+- The plugin never makes a model request on its own. Notices to the agent are posted only from the `prompt` hook, before a steer prompt to an idle session, with `resume: false`.
 - Snapshot refreshes never write session metadata; only link changes do.
 - A keymap `run` that may fall through stays synchronous and returns a literal `false`.
 - Archiving happens only through the TUI's HTTP client (`setArchived`), on a user action, the user's title suffix, or auto-archive the user turned on. Auto-archive never takes pinned, running or waiting sessions, or sessions the user restored from it.

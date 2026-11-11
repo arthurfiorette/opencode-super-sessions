@@ -241,6 +241,20 @@ function failedForges(
   return [...failed];
 }
 
+/**
+ * A session's view from its stored links and cached states alone: no git, no forge, no write.
+ * It leaves out branch pull requests, which only a branch lookup finds.
+ */
+export function storedView(runtime: Runtime, refs: SessionRefs): SessionRefView {
+  const links = visibleLinks(refs, new Set());
+  return {
+    links,
+    branchRefs: [],
+    states: statesOf(runtime, [...new Set(links.map((link) => refKey(link.ref)))]),
+    ...(refs.urls === undefined || refs.urls.length === 0 ? {} : { urls: refs.urls })
+  };
+}
+
 /** Cached states for keys whose last answer was a state rather than an error. */
 function statesOf(runtime: Runtime, keys: string[]): Record<string, RefState> {
   const states: Record<string, RefState> = {};

@@ -120,6 +120,20 @@ function plainKey(parsed: URL): string {
 }
 
 /**
+ * The provider and id a work link key names (`link:<provider>:<id>`, built by
+ * {@link recognizeLink}), or undefined for any other key. Read where only a key is stored, such
+ * as a dismissal.
+ */
+export function linkFromKey(key: string): { provider: LinkProvider; id: string } | undefined {
+  const match = /^link:([^:]+):(.+)$/u.exec(key);
+  const provider = match?.[1];
+  if (match?.[2] === undefined || provider === undefined || !(provider in LINK_PROVIDER_NAMES)) {
+    return undefined;
+  }
+  return { provider: provider as LinkProvider, id: match[2] };
+}
+
+/**
  * A title fit for one terminal line: control characters, which a decoded slug or a title from
  * the agent may hold, become spaces, and runs of whitespace collapse.
  */
@@ -137,7 +151,7 @@ export function titleWithoutId(title: string, id: string | undefined): string {
   const rest = title.slice(id.length);
   // `COR-15300` is another id, not `COR-1530` followed by text.
   if (/^[\p{L}\p{N}_]/u.test(rest)) return title;
-  return rest.replace(/^[\s:|-]+/u, '') || title;
+  return rest.replace(/^[\s:|.\u2013\u2014-]+/u, '') || title;
 }
 
 /**

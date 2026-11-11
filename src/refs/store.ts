@@ -29,6 +29,25 @@ const PRIORITY: Record<RefSource, number> = {
 // detection, so a dismissed PR stays hidden even if a later script prints its URL again.
 const EXPLICIT: ReadonlySet<RefSource> = new Set(['agent', 'manual']);
 
+/**
+ * Every stored link the session tracks, forge refs and work links alike, by key and source.
+ * Mentions are left out: they are only recorded. A dismissal removes the link, so none of these
+ * is dismissed.
+ */
+export function storedLinks(
+  refs: SessionRefs
+): Array<{ key: string; source: RefSource; linkedAt: number }> {
+  return [
+    ...refs.links.flatMap(({ ref, source, linkedAt }) =>
+      source === 'mention' ? [] : [{ key: refKey(ref), source, linkedAt }]
+    ),
+    ...(refs.urls ?? []).flatMap(({ url, source, linkedAt }) => {
+      const key = recognizeLink(url)?.key;
+      return key === undefined ? [] : [{ key, source, linkedAt }];
+    })
+  ];
+}
+
 /** Copies a link, keeping `via` only on `closes` links since it means nothing for other sources. */
 function normalized(link: RefLink): RefLink {
   const { via, ...rest } = link;

@@ -49,7 +49,10 @@ import {
 // here names the accessor to fix.
 
 const NOTICE_PROMPT = 'Is this related?';
-const NOTICE = { text: 'Linked to this session automatically: issue 7', description: 'Linked 7' };
+const NOTICE = {
+  text: 'Linked to this session without link_work: issue 7',
+  description: 'Linked 7'
+};
 
 const hooks: Parameters<typeof shellCall>[0][] = [];
 const events = new Map<string, OpenCodeEvent>();
@@ -66,7 +69,8 @@ const recorder = Plugin.define({
     });
     // What src/server/notices.ts does, for prompts of the notice test only.
     await context.session.hook('prompt', async (event) => {
-      if (event.prompt.text !== NOTICE_PROMPT || !sendsNow(event)) return;
+      if (event.prompt.text !== NOTICE_PROMPT) return;
+      if (!sendsNow(event, await context.session.get({ sessionID: event.sessionID }))) return;
       await postNotice(context.session, event.sessionID, NOTICE);
     });
     const abort = new AbortController();

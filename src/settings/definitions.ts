@@ -212,9 +212,9 @@ export const SETTINGS: readonly SettingRow[] = [
     side: 'server',
     key: 'linkNotices',
     group: 'Tracking',
-    title: 'Tell the agent about automatic links',
+    title: 'Tell the agent about new links',
     description:
-      'Whether your next message carries a notice of what was linked from your messages, by you or by a closing pull request',
+      'Whether your next message to an idle agent carries a notice of what was linked without it',
     ...onOff,
     keywords: ['agent', 'notice', 'links']
   },
