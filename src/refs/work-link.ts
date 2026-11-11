@@ -129,6 +129,18 @@ export function cleanTitle(text: string): string {
 }
 
 /**
+ * A title without a leading copy of the link's id, as in `COR-1530: Plain agent events`, since
+ * the id is always drawn right before it. A title that is only the id stays as it is.
+ */
+export function titleWithoutId(title: string, id: string | undefined): string {
+  if (id === undefined || !title.toLowerCase().startsWith(id.toLowerCase())) return title;
+  const rest = title.slice(id.length);
+  // `COR-15300` is another id, not `COR-1530` followed by text.
+  if (/^[\p{L}\p{N}_]/u.test(rest)) return title;
+  return rest.replace(/^[\s:|-]+/u, '') || title;
+}
+
+/**
  * Every key a stored URL may have been dismissed under: its key now, and its plain-link key,
  * which it had before a recognizer for its site existed. A recognizer added later then never
  * brings back a link the user unlinked.

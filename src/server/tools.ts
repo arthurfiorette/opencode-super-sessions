@@ -5,19 +5,14 @@ import { parseUrl } from '../providers/registry.js';
 import {
   type ProviderId,
   type Ref,
-  type RefSource,
   readSessionRefs,
   refKey,
   type SessionRefs,
   type WorkLink
 } from '../refs/ref.js';
 import { dismissLink, mergeLinks, mergeWorkLinks, type RefsUpdate } from '../refs/store.js';
-import {
-  cleanTitle,
-  LINK_PROVIDER_NAMES,
-  type LinkInfo,
-  recognizeLink
-} from '../refs/work-link.js';
+import { cleanTitle, type LinkInfo, recognizeLink } from '../refs/work-link.js';
+import { describe, describeLink, linkedList } from './linked.js';
 import {
   linksOf,
   parseReference,
@@ -29,6 +24,7 @@ import {
   usableRefs
 } from './links.js';
 import type { Runtime } from './runtime.js';
+import { buildViews } from './views.js';
 
 const FORGE_NAMES: Record<ProviderId, string> = { github: 'GitHub', gitlab: 'GitLab' };
 
@@ -79,8 +75,9 @@ const linkInput = z.strictObject({
         })
       ])
     )
-    .min(1)
     .max(10)
+    .optional()
+    .describe('Omit to get what is linked without linking anything.')
 });
 
 const unlinkInput = z.strictObject({
@@ -90,7 +87,7 @@ const unlinkInput = z.strictObject({
     .max(10)
 });
 
-type Item = z.output<typeof linkInput>['refs'][number];
+type Item = NonNullable<z.output<typeof linkInput>['refs']>[number];
 
 // Pages a prompt links on its own (see `trackerLinks`). Named in full, since an agent told "and
 // similar" cannot tell which pasted links still need a call.
@@ -164,7 +161,7 @@ export async function registerTools(runtime: Runtime, context: Plugin.Context): 
       // Linking is a single bookkeeping call; batching it through Code Mode gains nothing.
       options: { codemode: false },
       execute: async (input, tool) => ({
-        content: await linkWork(runtime, context, tool.sessionID, input.refs)
+        content: await linkWork(runtime, context, tool.sessionID, input.refs ?? [])
       })
     });
     editor.add({
@@ -222,40 +219,41 @@ async function sessionBase(
   return (await resolveRepo(runtime, info.location.directory)).repo;
 }
 
-/** `PR acme/widgets#12` or `issue acme/widgets#7`. */
-function describe(ref: Ref): string {
-  return `${ref.kind === 'pr' ? 'PR' : 'issue'} ${refLabel(ref)}`;
+/**
+ * The result line for a resolution, or none for a ref the session already tracked: the list
+ * that ends every result shows it. `tracked` says whether the session tracked a key before this
+ * call; a mention is not tracked, so linking one is a new link.
+ */
+function linkLine(resolution: Resolution, tracked: (key: string) => boolean): string[] {
+  switch (resolution.status) {
+    case 'found':
+      return tracked(refKey(resolution.ref)) ? [] : [`Linked ${describe(resolution.ref)}.`];
+    case 'unverified':
+      return [
+        `${tracked(refKey(resolution.ref)) ? 'Already linked' : 'Linked'} ${describe(resolution.ref)}, but could not check it: ${reasonText(resolution.reason)}.`
+      ];
+    case 'not-found':
+      return [
+        `Not linked: ${refLabel(resolution.candidate)} does not exist or is not visible to the forge CLI.`
+      ];
+    case 'unknown':
+      return [
+        `Not linked: could not check ${refLabel(resolution.candidate)}: ${reasonText(resolution.reason)}. Pass its URL instead.`
+      ];
+  }
 }
 
 /**
- * How a line starts for a ref the session already tracked before this call, naming where the
- * link came from so the agent learns detection did it. Mentions are only counted, not tracked,
- * so linking one reads as a new link.
+ * The session's list after a change, read with missing or expired states fetched, so the agent
+ * sees what the user sees.
  */
-const ALREADY: Partial<Record<RefSource, string>> = {
-  prompt: "Already linked from the user's message:",
-  created: 'Already linked when you created it:',
-  manual: 'Already linked by the user:',
-  agent: 'Already linked:',
-  closes: 'Already linked through the pull request that closes it:'
-};
-
-/** One result line per resolution. `previous` is the ref's source before this call. */
-function linkLine(resolution: Resolution, previous: (ref: Ref) => RefSource | undefined): string {
-  const verb = (ref: Ref) => {
-    const source = previous(ref);
-    return (source && ALREADY[source]) ?? 'Linked';
-  };
-  switch (resolution.status) {
-    case 'found':
-      return `${verb(resolution.ref)} ${describe(resolution.ref)} (${resolution.state.status}): ${resolution.state.title}`;
-    case 'unverified':
-      return `${verb(resolution.ref)} ${describe(resolution.ref)}, but could not check it: ${reasonText(resolution.reason)}.`;
-    case 'not-found':
-      return `Not linked: ${refLabel(resolution.candidate)} does not exist or is not visible to the forge CLI.`;
-    case 'unknown':
-      return `Not linked: could not check ${refLabel(resolution.candidate)}: ${reasonText(resolution.reason)}. Pass its URL instead.`;
-  }
+async function currentList(
+  runtime: Runtime,
+  context: Plugin.Context,
+  sessionID: string
+): Promise<string> {
+  const views = await buildViews(runtime, context.session, [sessionID], { wait: true });
+  return linkedList(views[sessionID]);
 }
 
 /** Implements `link_work`: explicit agent links, which also undo an earlier dismissal. */
@@ -292,36 +290,29 @@ async function linkWork(
     })
   );
   // Read inside the queued write, so a link detection added a moment ago still counts as earlier.
-  const sources = new Map<string, RefSource>();
+  const before = new Set<string>();
   if (links.length > 0 || workLinks.length > 0) {
     await runtime.writes.update(context.session, sessionID, (refs) => {
-      for (const link of refs.links) sources.set(refKey(link.ref), link.source);
-      for (const link of refs.urls ?? []) {
-        const key = recognizeLink(link.url)?.key;
-        if (key !== undefined) sources.set(key, link.source);
-      }
+      const dismissed = new Set(refs.dismissed);
+      const keys = [
+        ...refs.links.filter((link) => link.source !== 'mention').map((link) => refKey(link.ref)),
+        ...(refs.urls ?? []).flatMap((link) => recognizeLink(link.url)?.key ?? [])
+      ];
+      for (const key of keys) if (!dismissed.has(key)) before.add(key);
       // `agent` is an explicit source, so both merges lift any earlier dismissal of these keys.
       const merged = mergeLinks(refs, links);
       const added = mergeWorkLinks(merged.next, workLinks);
       return { next: added.next, changed: merged.changed || added.changed };
     });
   }
-  const previous = (ref: Ref) => sources.get(refKey(ref));
+  const tracked = (key: string) => before.has(key);
   const errors = parsed.flatMap(({ found }) => (typeof found === 'string' ? [found] : []));
-  return [
-    ...resolutions.map((resolution) => linkLine(resolution, previous)),
-    ...work.map(({ info, title }) => {
-      const source = sources.get(info.key);
-      const named = title ?? info.title;
-      return `${(source && ALREADY[source]) ?? 'Linked'} ${describeLink(info)}${named ? `: ${named}` : ''}`;
-    }),
+  const changes = [
+    ...resolutions.flatMap((resolution) => linkLine(resolution, tracked)),
+    ...work.flatMap(({ info }) => (tracked(info.key) ? [] : [`Linked ${describeLink(info)}.`])),
     ...errors
-  ].join('\n');
-}
-
-/** `Linear COR-1466`, or `link example.com` for a page no tracker claims. */
-function describeLink(info: LinkInfo): string {
-  return `${LINK_PROVIDER_NAMES[info.provider]} ${info.name ?? info.url}`;
+  ];
+  return [...changes, await currentList(runtime, context, sessionID)].join('\n');
 }
 
 /** Whether a stored ref is the one a candidate names; kind only counts when the candidate has one. */
@@ -397,7 +388,7 @@ async function unlinkWork(
   if (keys.length > 0) {
     await runtime.writes.update(context.session, sessionID, (refs) => dismissAll(refs, keys));
   }
-  return lines.join('\n');
+  return [...lines, await currentList(runtime, context, sessionID)].join('\n');
 }
 
 /** Dismisses several keys in one update. */

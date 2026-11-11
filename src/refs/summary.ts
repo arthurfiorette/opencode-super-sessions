@@ -7,7 +7,7 @@ import {
   TRACKED_SOURCES,
   type WorkLink
 } from './ref.js';
-import { cleanTitle, type LinkInfo, recognizeLink } from './work-link.js';
+import { cleanTitle, type LinkInfo, recognizeLink, titleWithoutId } from './work-link.js';
 
 /**
  * Refs drawn on a session row: the first {@link ROW_PRS} pull requests in {@link pullRequests}
@@ -174,7 +174,9 @@ export function workLinks(view: SessionRefView): ShownLink[] {
       return [
         {
           ...info,
-          ...(link.title === undefined ? {} : { title: cleanTitle(link.title) }),
+          ...(link.title === undefined
+            ? {}
+            : { title: titleWithoutId(cleanTitle(link.title), info.name) }),
           source: link.source,
           linkedAt: link.linkedAt
         }
