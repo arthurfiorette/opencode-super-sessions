@@ -167,6 +167,8 @@ export default function SessionBrowser(props: PageProps) {
   const [listWidth, setListWidth] = createSignal(0);
   const [frame, setFrame] = createSignal(0);
   const [deleting, setDeleting] = createSignal<string>();
+  /** Sessions on screen under the browser when it deleted them, which the host then leaves. */
+  const leaving = new Set<string>();
   const [projectLabel, setProjectLabel] = createSignal('');
   const [projectID, setProjectID] = createSignal<string>();
   const cli = useCliSettings();
@@ -495,10 +497,17 @@ export default function SessionBrowser(props: PageProps) {
       setDeleting(session.id);
       return;
     }
+    // The host leaves a session that is deleted under it, for the home page or the next tab
+    // (packages/tui/src/app.tsx:1366, context/session-tabs.tsx:342); the browser stays open.
+    const route = context.ui.router.current();
+    if (route.type === 'session' && context.data.session.root(route.sessionID) === session.id) {
+      leaving.add(route.sessionID);
+    }
     try {
       await client.session.remove({ sessionID: session.id });
       controller.removed(session.id);
     } catch {
+      if (route.type === 'session') leaving.delete(route.sessionID);
       setDeleting(undefined);
       toast('Could not delete the session.', 'error');
     }
@@ -1163,8 +1172,21 @@ export default function SessionBrowser(props: PageProps) {
   // The mode turns off the prompt and every other base-mode layer while the browser is open.
   onCleanup(context.keymap.mode.push(MODE));
   // The quick switch keys and the host's tab keys change the route under the browser; the
-  // browser belongs to the route it opened over.
-  createEffect(on(() => routeKey(context.ui.router.current()), props.close, { defer: true }));
+  // browser belongs to the route it opened over. Leaving a session the browser deleted is the
+  // host's doing, not the user's, so the browser stays.
+  // `on` with `defer` passes no previous input on its first run, so the route seen last is kept here.
+  let shown = routeKey(context.ui.router.current());
+  createEffect(
+    on(
+      () => routeKey(context.ui.router.current()),
+      (key) => {
+        const left = shown.startsWith('session:') ? shown.slice('session:'.length) : '';
+        shown = key;
+        if (!leaving.delete(left)) props.close();
+      },
+      { defer: true }
+    )
+  );
   // Focus moves to the search input while open and back to the prompt (or whatever had it) on
   // close, like the host's dialogs.
   const previous = context.renderer.currentFocusedRenderable;

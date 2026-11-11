@@ -212,7 +212,13 @@ async function host(
         },
         get: async ({ sessionID }) => sessions.find((item) => item.id === sessionID),
         update: async () => {},
-        remove: async () => {},
+        // The host leaves a session deleted under it for the home page.
+        remove: async ({ sessionID }) => {
+          const current = route();
+          if (current.type === 'session' && current.sessionID === sessionID) {
+            setRoute({ type: 'home' });
+          }
+        },
         fork: async (input) => {
           forks.push(input);
           return session('forked', 'Forked session');
@@ -588,6 +594,32 @@ test('the selected session is scanned from the preview page, and nothing is scan
     lastMessageID: 'm1'
   });
   assert.deepEqual(terminal.pages, [scan.sessionID]);
+});
+
+test('deleting the session under the browser keeps the browser open, and leaving by hand closes it', async () => {
+  const terminal = await host();
+  const rendered = await testRender(() => terminal.overlay.render({}), { width: 140, height: 30 });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  await eventually(rendered, (frame) => frame.includes('Search sessions'));
+  const remove = () =>
+    terminal.layers
+      .flatMap((layer) => layer.commands ?? [])
+      .find((item) => item.id === 'session.delete')
+      .run();
+
+  // The browser opened over `unread` and selected it; the second press deletes it.
+  remove();
+  await eventually(rendered, (frame) => frame.includes('again to delete'));
+  remove();
+  await eventually(rendered, () => terminal.route().type === 'home');
+  await rendered.renderOnce();
+  assert.match(rendered.captureCharFrame(), /Search sessions/);
+
+  terminal.navigate({ type: 'session', sessionID: 'pinned' });
+  await eventually(rendered, (frame) => !frame.includes('Search sessions'));
 });
 
 test('ctrl+b forks the selected session before the picked prompt and opens the fork', async () => {
