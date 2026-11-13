@@ -1,7 +1,6 @@
 import type { Plugin } from '@opencode/plugin/tui';
 import { createSignal } from 'solid-js';
 import type { Options } from '../config.js';
-import { isUntested } from '../host/compat.js';
 import { pluginRpc } from '../host/rpc.js';
 import type { ServerSettings, ServerSettingsView } from '../rpc.js';
 import { readTuiOverrides, type TuiValues, tuiDefaults } from './definitions.js';
@@ -29,11 +28,6 @@ export interface TuiSettings {
   closeTabOnArchive(): boolean;
   /** Title suffix that archives a session, or undefined when off. */
   archiveSuffix(): string | undefined;
-  /**
-   * Whether the takeover and the peek keys stay off on this host: it is newer than the tested
-   * version by minor or major, and the user has not chosen to use the plugin there anyway.
-   */
-  hostGuarded(version: string): boolean;
 }
 
 interface Stored {
@@ -85,8 +79,7 @@ function buildTuiSettings(context: Plugin.Context, options: Options): TuiSetting
     previewPane: () => values().previewPane,
     previewWidth: () => values().previewWidth,
     closeTabOnArchive: () => values().closeTabOnArchive,
-    archiveSuffix: () => values().archiveSuffix ?? undefined,
-    hostGuarded: (version) => isUntested(version) && !values().untestedHosts
+    archiveSuffix: () => values().archiveSuffix ?? undefined
   };
 }
 

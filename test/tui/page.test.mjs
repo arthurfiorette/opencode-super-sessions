@@ -921,17 +921,14 @@ test('a new open starts with an empty search, and coming back from a peek keeps 
   );
 });
 
-// On a release CI never ran, the host's own list must answer its keys, and the user must learn
-// why the browser is gone and how to reach it.
-test('an untested OpenCode keeps its session list and quick switch, and says how to open the browser', async () => {
+// A release CI never ran keeps the browser, and the user learns the likely cause if it breaks.
+test('an untested OpenCode still opens the browser for its keys, and warns once', async () => {
   const terminal = await host('99.0.0');
   const ids = terminal.layers.flatMap((layer) => layer.commands ?? []).map((item) => item.id);
-  assert.ok(ids.includes('super-sessions.open'));
-  assert.ok(!ids.includes('session.list'));
-  assert.ok(!ids.includes('session.quick_switch.1'));
+  assert.ok(ids.includes('session.list'));
   assert.deepEqual(
     terminal.toasts.map((toast) => toast.message),
-    ['Super Sessions has not been tested with OpenCode 99.0.0. Open it with /super-sessions.']
+    ['Super Sessions has not been tested with OpenCode 99.0.0. Report anything that breaks.']
   );
 });
 

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { COMMAND_GROUP } from './commands.js';
 import { type Options, parseOptions } from './config.js';
 import { createHistoryScanner } from './history-scan.js';
+import { isUntested } from './host/compat.js';
 import {
   CLASSIC_LIST,
   DIALOG_MODE,
@@ -150,18 +151,16 @@ export default Plugin.define({
       },
       ...settings.commands
     ];
-    const guarded = () => settings.tui.hostGuarded(context.app.version);
     // Priority 1 puts these IDs above the host's own commands, so the user's configured keys,
     // the slash names and the palette entries all reach this plugin first. The layer factory is
-    // reactive, so the takeover follows the compatibility setting and the marked-archive entry
-    // the suffix setting.
+    // reactive, so the marked-archive entry follows the suffix setting.
     context.keymap.layer(() => {
       const suffix = settings.tui.archiveSuffix();
       return {
         mode: 'global',
         priority: OVER_HOST,
         commands: [
-          ...(guarded() ? [] : takeover),
+          ...takeover,
           ...commands,
           {
             id: 'super-sessions.archive.marked',
@@ -176,7 +175,7 @@ export default Plugin.define({
       };
     });
 
-    warnUntested(context, guarded);
+    warnUntested(context);
 
     // Read at event time, so turning suffix archiving on or off in the dialog applies at once.
     const offRenamed = context.data.on('session.renamed', (event) => {
@@ -198,17 +197,18 @@ export default Plugin.define({
 });
 
 /**
- * Says once per host version, across restarts, that the takeover is off because CI never tested
- * this release. Stored, so a user who keeps the version is not told on every start.
+ * Says once per host version, across restarts, that CI never tested this release, so a broken
+ * browser has a likely cause. Everything stays on: a crash falls back to the built-in list.
+ * Stored, so a user who keeps the version is not told on every start.
  */
-function warnUntested(context: Plugin.Context, guarded: () => boolean) {
-  if (!guarded()) return;
+function warnUntested(context: Plugin.Context) {
   const version = context.app.version;
+  if (!isUntested(version)) return;
   const [store, update] = context.storage.store<{ warned?: string }>('compat', { initial: {} });
   if (store.warned === version) return;
   context.ui.toast.show({
     title: TITLE,
-    message: `Super Sessions has not been tested with OpenCode ${version}. Open it with /super-sessions.`,
+    message: `Super Sessions has not been tested with OpenCode ${version}. Report anything that breaks.`,
     variant: 'warning'
   });
   void update((draft) => {

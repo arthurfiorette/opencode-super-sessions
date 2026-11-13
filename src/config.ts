@@ -79,8 +79,8 @@ export const optionsSchema = z
     titleScroll: z.enum(['auto', 'on', 'off']).default('auto'),
     /** Show the preview pane on wide terminals. */
     preview: z.boolean().default(true),
-    /** Take over the session list on OpenCode releases newer than the tested one. */
-    untestedHosts: z.boolean().default(false),
+    /** No effect: the plugin runs on every OpenCode release. Accepted so older configs still load. */
+    untestedHosts: z.boolean().optional(),
     /** Archive Done sessions this many days after they become Done. Unset keeps them. */
     autoArchiveDays: days.optional(),
     cleanup: z
@@ -117,7 +117,6 @@ export const optionsSchema = z
     rows: { refs: true, groupIssues: false },
     titleScroll: 'auto',
     preview: true,
-    untestedHosts: false,
     cleanup: { deletedSessions: false, merged: false, unchanged: false },
     colors: {}
   });

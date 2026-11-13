@@ -27,7 +27,7 @@ Changes must preserve these. `CONTRIBUTING.md` explains the reasoning.
 - A keymap `run` that may fall through stays synchronous and returns a literal `false`.
 - Archiving happens only through the TUI's HTTP client (`setArchived`), on a user action, the user's title suffix, or auto-archive the user turned on. Auto-archive never takes pinned, running or waiting sessions, or sessions the user restored from it.
 - Cleanup only removes worktrees `context.worktree.list` reports, never the main checkout, always with `force: false`, and never before the user confirmed once. Unknown facts keep a worktree, keep reasons beat every rule, local changes and commits only the worktree reaches always keep, and the decision runs again on freshly read sessions and git state right before each removal.
-- On a host newer than `TESTED_UP_TO` by minor or major, the takeover and the peek keys stay off unless the user enables them. A browser crash falls back to the built-in list; a crash in the sidebar's Work rows hides those rows.
+- On a host newer than `TESTED_UP_TO` by minor or major, the plugin keeps working and warns once per version. A browser crash falls back to the built-in list; a crash in the sidebar's Work rows hides those rows.
 - The TUI degrades without the server plugin, `gh` or `glab`: titles and archiving still work.
 
 ## Verification

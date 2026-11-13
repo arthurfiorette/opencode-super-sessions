@@ -160,7 +160,6 @@ Options go in the plugin entry's `options`, as in the [GitLab example](#gitlab).
 | `cleanup.inactiveDays`    | unset           | Remove worktrees whose sessions had no activity for this many days                    |
 | `cleanup.doneDays`        | unset           | Remove worktrees this many days after their sessions became Done                      |
 | `cleanup.unchanged`       | `false`         | Remove worktrees of finished sessions with no commits beyond the default branch       |
-| `untestedHosts`           | `false`         | Take over the session list on OpenCode versions newer than 2.2                        |
 | `colors.<state>`          | GitHub's colors | `"#rrggbb"`, or `{ "dark": "#rrggbb", "light": "#rrggbb" }`                           |
 
 The `colors` states are `open`, `draft`, `merged` and `closed` for pull requests, and `open`, `completed` and `not_planned` for issues.
@@ -181,20 +180,20 @@ The first removal asks for confirmation. "Run cleanup now" in the settings shows
 
 ## Commands
 
-| Command                    | Action                                                        |
-| -------------------------- | ------------------------------------------------------------- |
-| `/sessions`                | Open or close the browser                                     |
-| `/super-sessions`          | Open or close the browser, also on untested OpenCode versions |
-| `/super-sessions settings` | Open the settings                                             |
-| `/super-sessions status`   | Check that `gh` and `glab` are installed and logged in        |
-| `/super-sessions undo`     | Restore the last auto-archived sessions                       |
-| `/sessions-classic`        | Open OpenCode's built-in session list                         |
-| `/archive`, `/unarchive`   | Archive or restore the session on screen                      |
-| `/archive-marked`          | Archive every session whose title ends with `archiveSuffix`   |
+| Command                    | Action                                                      |
+| -------------------------- | ----------------------------------------------------------- |
+| `/sessions`                | Open or close the browser                                   |
+| `/super-sessions`          | Open or close the browser                                   |
+| `/super-sessions settings` | Open the settings                                           |
+| `/super-sessions status`   | Check that `gh` and `glab` are installed and logged in      |
+| `/super-sessions undo`     | Restore the last auto-archived sessions                     |
+| `/sessions-classic`        | Open OpenCode's built-in session list                       |
+| `/archive`, `/unarchive`   | Archive or restore the session on screen                    |
+| `/archive-marked`          | Archive every session whose title ends with `archiveSuffix` |
 
 ## Compatibility
 
-The plugin is tested with OpenCode 2.2. On a newer minor or major release, `/sessions` and `<leader>l` keep the built-in list and the browser opens only with `/super-sessions`, until you set `untestedHosts`. If the browser crashes, the built-in list opens instead.
+The plugin is tested with OpenCode 2.3. On a newer minor or major release it works as usual and shows a warning once. If the browser crashes, the built-in list opens instead.
 
 ## Limitations
 
