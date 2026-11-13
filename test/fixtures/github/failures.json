@@ -55,5 +55,26 @@
       "status": "403"
     },
     "stderr": "gh: Resource protected by organization SAML enforcement. You must grant your Personal Access token access to this organization. (HTTP 403)\n"
+  },
+  "undefined-field": {
+    "_comment": "Captured on 2026-11-13 from gh against github.com with a field PullRequest does not have, the way a GitHub Enterprise Server without stacked pull requests answers for `stack`.",
+    "code": 1,
+    "status": "HTTP/2.0 200 OK",
+    "headers": {},
+    "body": {
+      "errors": [
+        {
+          "path": ["query", "repository", "pullRequest", "stackz"],
+          "extensions": {
+            "code": "undefinedField",
+            "typeName": "PullRequest",
+            "fieldName": "stackz"
+          },
+          "locations": [{ "line": 1, "column": 72 }],
+          "message": "Field 'stackz' doesn't exist on type 'PullRequest'"
+        }
+      ]
+    },
+    "stderr": "gh: Field 'stackz' doesn't exist on type 'PullRequest'\n"
   }
 }

@@ -183,4 +183,23 @@ test('rows list open pull requests above merged and closed ones, and the issues 
   // #1 and #3 past the three PR lines, and the mention.
   assert.equal(row.extra, 3);
   assert.deepEqual(numbers(sidebarRefs(sessionView).refs), [6, 2, 4, 1, 3, 21, 23, 22, 20]);
+
+  // A partly landed stack: its open layers keep stack order above the merged ones, so the row's
+  // three PR lines never trade an open layer for a merged one.
+  const layer = (status: RefState['status'], position: number): RefState => ({
+    ...state(status, status === 'merged' ? 50 : undefined),
+    stack: { number: 99, position, size: 4 }
+  });
+  const stack = view(
+    // Linked bottom first, so newest first alone would read the stack upside down.
+    [10, 11, 12, 13].map((number, index) => link(pr(number), 'agent', index + 1)),
+    [
+      [pr(10), layer('merged', 1)],
+      [pr(11), layer('merged', 2)],
+      [pr(12), layer('open', 3)],
+      [pr(13), layer('open', 4)]
+    ]
+  );
+  assert.deepEqual(numbers(rowRefs(stack).prs), [12, 13, 10]);
+  assert.deepEqual(numbers(sidebarRefs(stack).refs), [12, 13, 10, 11]);
 });

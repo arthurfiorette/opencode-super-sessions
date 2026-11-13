@@ -198,6 +198,10 @@ test('whole-document gh failures map to the forge error the status page and back
       { reason: 'rate-limited', retryAt: NOW + 90_000 }
     ],
     ['saml-forbidden', captured('saml-forbidden'), { reason: 'forbidden' }],
+    // Only this one makes the provider ask again without the stack fields; a timeout or a 502
+    // must not, or a host that is down would be asked twice on every refresh.
+    ['undefined-field', captured('undefined-field'), { reason: 'failed', undefinedField: true }],
+    ['timeout', { code: null, stdout: '', stderr: '', failure: 'timeout' }, { reason: 'failed' }],
     [
       'gh not installed',
       { code: null, stdout: '', stderr: '', failure: 'missing' },

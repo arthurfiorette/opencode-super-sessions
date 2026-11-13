@@ -58,6 +58,8 @@ export interface ForgeError {
   reason: ForgeErrorReason;
   /** Epoch milliseconds before which the caller should not retry. */
   retryAt?: number;
+  /** The forge rejected the document for a field its schema does not have. */
+  undefinedField?: boolean;
 }
 
 export type Availability = 'ok' | 'missing-tool' | 'unauthenticated';

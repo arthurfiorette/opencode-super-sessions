@@ -122,15 +122,10 @@ export function createGitHubProvider(options: {
           let response = await query(host, document.query, document.variables);
           // A GitHub Enterprise Server without stacked pull requests rejects the whole document
           // for the unknown field: ask again without it, and leave it out for that host from then.
-          const retry =
-            !('data' in response) &&
-            response.reason === 'failed' &&
-            host !== 'github.com' &&
-            !unstacked.has(host);
-          if (retry) {
+          if (!('data' in response) && response.undefinedField && !unstacked.has(host)) {
+            unstacked.add(host);
             document = buildSnapshotQuery(batch, false);
             response = await query(host, document.query, document.variables);
-            if ('data' in response) unstacked.add(host);
           }
           const entries =
             'data' in response

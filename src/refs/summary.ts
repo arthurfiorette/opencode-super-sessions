@@ -69,7 +69,8 @@ function stateRank(view: SessionRefView, ref: Ref): number {
  * The session's tracked pull requests (branch PRs and tracked links, no mentions) in display
  * order: by state (see {@link stateRank}), then the branch's PRs in the server's order, then
  * PRs the agent or user linked or created, then PRs from prompts, newest link first. A PR
- * linked more than once takes its best place.
+ * linked more than once takes its best place. PRs of one stack in the same state rank stay
+ * together in stack order (see {@link stacked}).
  */
 export function pullRequests(view: SessionRefView): Ref[] {
   const places = new Map<string, { ref: Ref; source: number; at: number }>();
@@ -97,14 +98,15 @@ export function pullRequests(view: SessionRefView): Ref[] {
 
 /**
  * Keeps the pull requests of one GitHub stack together, bottom of the stack first, at the place
- * of the first of them, so the rows read in the stack's order whatever their states.
+ * of the first of them. Only within one state rank: the open layers of a partly landed stack
+ * stay above its merged ones, so the row cap never hides an open layer behind a merged one.
  */
 function stacked(view: SessionRefView, prs: Ref[]): Ref[] {
   const stackKey = (ref: Ref) => {
     const stack = view.states[refKey(ref)]?.stack;
     return stack === undefined
       ? undefined
-      : `${ref.host}/${ref.repo}#${stack.number}`.toLowerCase();
+      : `${stateRank(view, ref)}:${ref.host}/${ref.repo}#${stack.number}`.toLowerCase();
   };
   const position = (ref: Ref) => view.states[refKey(ref)]?.stack?.position ?? 0;
   const placed = new Set<string>();

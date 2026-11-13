@@ -7,6 +7,8 @@ export interface GraphQLError {
   type?: string;
   path?: Array<string | number>;
   message: string;
+  /** Validation errors carry their code here, such as `{ code: 'undefinedField' }`. */
+  extensions?: Record<string, unknown>;
 }
 
 /** A GraphQL response that carried `data`, possibly with per-field errors next to it. */
@@ -75,6 +77,11 @@ export function parseGraphQLOutput(result: RunResult, now: number): GraphQLRespo
   }
   if (status === 403 || errors.some((error) => error.type === 'FORBIDDEN')) {
     return { reason: 'forbidden' };
+  }
+  // A schema without a field the document asks for, such as a GitHub Enterprise Server from
+  // before stacked pull requests, rejects the whole document.
+  if (errors.some((error) => error.extensions?.code === 'undefinedField')) {
+    return { reason: 'failed', undefinedField: true };
   }
   return { reason: 'failed' };
 }

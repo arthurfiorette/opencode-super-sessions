@@ -1,5 +1,5 @@
 {
-  "_comment": "Captured on 2026-11-04 from gh 2.103.3 against github.com (authenticated, read-only) with the document buildSnapshotQuery builds for the candidates in github.test.ts. Only rate limit headers kept. github.com's pull request list showed mastra-ai/mastra#29382 as `92/95 checks passing` in the first capture: it leaves out a re-run check that these counts include. Recaptured the same day to add `mergeable`; cli/cli#10423 conflicts with its base.",
+  "_comment": "Captured on 2026-11-04 from gh 2.103.3 against github.com (authenticated, read-only) with the document buildSnapshotQuery built before it asked for stacks, for the candidates in github.test.ts. Only rate limit headers kept. github.com's pull request list showed mastra-ai/mastra#29382 as `92/95 checks passing` in the first capture: it leaves out a re-run check that these counts include. Recaptured the same day to add `mergeable`; cli/cli#10423 conflicts with its base.",
   "code": 1,
   "status": "HTTP/2.0 200 OK",
   "headers": {

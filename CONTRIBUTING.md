@@ -134,7 +134,7 @@ Opened and peeked sessions go first, then the previewed one, then "Scan all". A 
 
 ### Stacked pull requests
 
-A GitHub pull request's snapshot carries its `stack` (`number`, `position`, `size`) from the GraphQL `stack` and `stackEntry` fields. Rows, Work rows and the Pull requests view show `<stack> position/size` after the number, and `pullRequests` in `src/refs/summary.ts` keeps one stack's pull requests together, by position, at the place of the first of them. A GitHub Enterprise Server without stacks rejects the whole snapshot document for the unknown field, so a failed document on a host other than github.com is asked again without the fields, and that host is not asked for them again until the daemon restarts. A merged pull request's snapshot is never refetched, so its stack stays as it was when it merged.
+A GitHub pull request's snapshot carries its `stack` (`number`, `position`, `size`) from the GraphQL `stack` and `stackEntry` fields. Rows, Work rows and the Pull requests view show `<stack> position/size` after the number, and `pullRequests` in `src/refs/summary.ts` keeps one stack's pull requests of the same state rank together, by position, at the place of the first of them, so open layers stay above merged ones and the row cap never hides an open layer. A GitHub Enterprise Server without stacks rejects the whole snapshot document with an `undefinedField` error, which `parseGraphQLOutput` reports as `undefinedField`; only then is the document asked again without the fields, and that host is not asked for them again until the daemon restarts. A merged pull request's snapshot is never refetched, so its stack stays as it was when it merged.
 
 ### Caches
 
