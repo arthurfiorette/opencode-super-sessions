@@ -31,8 +31,15 @@ export const ICONS = {
   checksSkipped: '\uf517',
   actionRequired: '\uf421',
   conflicts: '\uf421',
-  threads: '\uf41f'
+  threads: '\uf41f',
+  // GitHub's stack octicon, beside a stacked pull request's place in its stack.
+  stack: '\uf51e'
 } as const;
+
+/** ` <stack> 2/4` after a stacked pull request's number, or nothing when it is in no stack. */
+export function stackText(stack: { position: number; size: number } | undefined): string {
+  return stack === undefined ? '' : ` ${ICONS.stack} ${stack.position}/${stack.size}`;
+}
 
 /**
  * Glyph of a work link: the tracker's logo where Nerd Fonts has one (Material Design icons, and

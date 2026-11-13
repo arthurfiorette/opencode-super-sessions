@@ -20,9 +20,13 @@ export interface SnapshotDocument {
 // GitHub has no count of unresolved threads, so threads are read as nodes; 100 is the page
 // maximum. At 25 refs the document measured 3,375 nodes (limit 500,000) and cost 1 point. The
 // check counts come from `contexts(first: 0)`, which reads no context node.
-const SNAPSHOT_FRAGMENTS = `
+// Stacked pull requests (generally available on github.com since 2026-10-06). A GitHub Enterprise
+// Server without them rejects the whole document, so it is left out for such a host.
+const STACK_FIELDS = 'stack { number size } stackEntry { position }';
+
+const snapshotFragments = (stacks: boolean) => `
 fragment PullRequestFields on PullRequest {
-  state isDraft title url mergedAt closedAt updatedAt reviewDecision headRefOid mergeable
+  state isDraft title url mergedAt closedAt updatedAt reviewDecision headRefOid mergeable${stacks ? ` ${STACK_FIELDS}` : ''}
   closingIssuesReferences(first: 10) { nodes { number repository { nameWithOwner } } }
   latestReviews(first: 20) { nodes { state } }
   reviewThreads(first: 100) { totalCount nodes { isResolved } }
@@ -44,9 +48,9 @@ function splitRepo(repo: string): { owner: string; name: string } {
 /**
  * Builds one aliased document for candidates on a single host. Owners and names travel as
  * variables so user-typed text never becomes GraphQL syntax; numbers are inlined only after the
- * integer check. Repeated candidates share one alias.
+ * integer check. Repeated candidates share one alias. `stacks` asks for stack membership.
  */
-export function buildSnapshotQuery(candidates: RefCandidate[]): SnapshotDocument {
+export function buildSnapshotQuery(candidates: RefCandidate[], stacks = true): SnapshotDocument {
   const repos = new Map<string, { alias: string; items: Map<number, string> }>();
   const variables: Record<string, string> = {};
   const declarations: string[] = [];
@@ -81,7 +85,7 @@ export function buildSnapshotQuery(candidates: RefCandidate[]): SnapshotDocument
     return `${repo.alias}: repository(owner: $o${index}, name: $n${index}) { ${items.join(' ')} }`;
   });
 
-  const query = `query(${declarations.join(', ')}) { rateLimit { remaining resetAt } ${selections.join(' ')} }${SNAPSHOT_FRAGMENTS}`;
+  const query = `query(${declarations.join(', ')}) { rateLimit { remaining resetAt } ${selections.join(' ')} }${snapshotFragments(stacks)}`;
   return { query, variables, paths };
 }
 
@@ -325,6 +329,7 @@ export function parseSnapshotResponse(
     const updatedAt = isPullRequest ? epoch(node.updatedAt) : undefined;
     const review = isPullRequest ? reviewOf(node, status) : undefined;
     const headSha = isPullRequest ? commitSha(node.headRefOid) : undefined;
+    const stack = isPullRequest ? stackOf(node) : undefined;
     const state: RefState = {
       status,
       title: node.title,
@@ -336,10 +341,25 @@ export function parseSnapshotResponse(
         ? { closes: linkedRefs(node.closingIssuesReferences, candidate.host, 'issue') }
         : { closedBy: linkedRefs(node.closedByPullRequestsReferences, candidate.host, 'pr') }),
       ...(review ? { review } : {}),
-      ...(headSha === undefined ? {} : { headSha })
+      ...(headSha === undefined ? {} : { headSha }),
+      ...(stack === undefined ? {} : { stack })
     };
     return { ref, state };
   });
+}
+
+/** A pull request's place in its stack, or undefined when it is in none. */
+function stackOf(node: Record<string, unknown>): RefState['stack'] {
+  const stack = node.stack;
+  const entry = node.stackEntry;
+  if (!isRecord(stack) || !isRecord(entry)) return undefined;
+  const [number, size, position] = [stack.number, stack.size, entry.position];
+  if (
+    ![number, size, position].every((value) => Number.isSafeInteger(value) && Number(value) > 0)
+  ) {
+    return undefined;
+  }
+  return { number: Number(number), size: Number(size), position: Number(position) };
 }
 
 /**

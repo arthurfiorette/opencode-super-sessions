@@ -101,6 +101,8 @@ A session tracks a pull request or issue when:
 - you link it with `ctrl+l` in the browser
 - a tracked pull request closes it, such as with `Fixes #123`
 
+A pull request in a [GitHub stack](https://docs.github.com/en/pull-requests/get-started/about-stacked-prs) shows its place after its number, such as `2/4`, and the pull requests of one stack are listed in stack order, the one on the base branch first.
+
 Links in the assistant's replies are mentions. They show in the preview and match in search, but never make a session Done.
 
 Sessions from before you installed the plugin are read for refs the first time you select, peek at or open them. "Scan all sessions now" in the settings reads every session in scope at once.

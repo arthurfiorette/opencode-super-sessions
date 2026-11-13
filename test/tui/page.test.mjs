@@ -569,6 +569,38 @@ test('a row lists every pull request, the open one above the merged branch PR', 
   delete refViews.multi;
 });
 
+// PR numbers of a stack say nothing about its order; the rows follow the stack instead.
+test('pull requests of one stack show their place and keep the stack order', async () => {
+  const [bottom, top] = [30274, 30275].map((number) => ({ ...pr4930, number }));
+  const stack = (position) => ({ number: 30276, position, size: 2 });
+  refViews.stacked = {
+    // The top was linked last, so it would lead without the stack.
+    links: [
+      { ref: bottom, source: 'agent', linkedAt: 1 },
+      { ref: top, source: 'agent', linkedAt: 2 }
+    ],
+    branchRefs: [],
+    states: {
+      [key(bottom)]: { status: 'open', title: 'Storage layer', url: 'u', stack: stack(1) },
+      [key(top)]: { status: 'open', title: 'Finished step check', url: 'u', stack: stack(2) }
+    }
+  };
+  const terminal = await host(undefined, undefined, [
+    session('stacked', 'Workflow leases', { updated: NOW - 30 * MINUTE })
+  ]);
+  const rendered = await testRender(() => terminal.overlay.render({}), { width: 140, height: 40 });
+  active = rendered;
+  terminal.attach(rendered.renderer);
+  terminal.dispatch('session.list');
+  await import('../../dist/page/view.js');
+  await eventually(rendered, (frame) => frame.includes('Storage layer'));
+  const lines = rendered.captureCharFrame().split('\n');
+  const title = lines.findIndex((line) => line.includes('Workflow leases'));
+  assert.match(lines[title + 1] ?? '', /#30274 \uf51e 1\/2 .*Storage layer/);
+  assert.match(lines[title + 2] ?? '', /#30275 \uf51e 2\/2 .*Finished step check/);
+  delete refViews.stacked;
+});
+
 // Old sessions are read only once the user selects one: no history reads on startup, and the
 // scan reuses the page the preview loaded.
 test('the selected session is scanned from the preview page, and nothing is scanned before', async () => {

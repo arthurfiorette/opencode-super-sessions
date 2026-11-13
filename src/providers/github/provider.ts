@@ -34,6 +34,8 @@ export function createGitHubProvider(options: {
   const availability = new Map<string, { value: Promise<Availability>; expiresAt: number }>();
   // Per host: no gh call is made before this time, because GitHub said the quota is spent.
   const blockedUntil = new Map<string, number>();
+  // Hosts whose GraphQL schema has no stacked pull requests.
+  const unstacked = new Set<string>();
 
   /** Returns the rate limit error to report while `host` is backing off, if it is. */
   const blocked = (host: string): ForgeError | undefined => {
@@ -116,8 +118,20 @@ export function createGitHubProvider(options: {
       await Promise.all(
         chunks.map(async ({ host, indexes }) => {
           const batch: RefCandidate[] = indexes.map((index) => candidates[index] as RefCandidate);
-          const document = buildSnapshotQuery(batch);
-          const response = await query(host, document.query, document.variables);
+          let document = buildSnapshotQuery(batch, !unstacked.has(host));
+          let response = await query(host, document.query, document.variables);
+          // A GitHub Enterprise Server without stacked pull requests rejects the whole document
+          // for the unknown field: ask again without it, and leave it out for that host from then.
+          const retry =
+            !('data' in response) &&
+            response.reason === 'failed' &&
+            host !== 'github.com' &&
+            !unstacked.has(host);
+          if (retry) {
+            document = buildSnapshotQuery(batch, false);
+            response = await query(host, document.query, document.variables);
+            if ('data' in response) unstacked.add(host);
+          }
           const entries =
             'data' in response
               ? parseSnapshotResponse(document, batch, response)

@@ -86,12 +86,35 @@ export function pullRequests(view: SessionRefView): Ref[] {
       continue;
     places.set(key, { ref: link.ref, source, at: link.linkedAt });
   }
-  return [...places.values()]
+  const sorted = [...places.values()]
     .sort(
       (a, b) =>
         stateRank(view, a.ref) - stateRank(view, b.ref) || a.source - b.source || b.at - a.at
     )
     .map((place) => place.ref);
+  return stacked(view, sorted);
+}
+
+/**
+ * Keeps the pull requests of one GitHub stack together, bottom of the stack first, at the place
+ * of the first of them, so the rows read in the stack's order whatever their states.
+ */
+function stacked(view: SessionRefView, prs: Ref[]): Ref[] {
+  const stackKey = (ref: Ref) => {
+    const stack = view.states[refKey(ref)]?.stack;
+    return stack === undefined
+      ? undefined
+      : `${ref.host}/${ref.repo}#${stack.number}`.toLowerCase();
+  };
+  const position = (ref: Ref) => view.states[refKey(ref)]?.stack?.position ?? 0;
+  const placed = new Set<string>();
+  return prs.flatMap((ref) => {
+    const key = stackKey(ref);
+    if (key === undefined) return [ref];
+    if (placed.has(key)) return [];
+    placed.add(key);
+    return prs.filter((other) => stackKey(other) === key).sort((a, b) => position(a) - position(b));
+  });
 }
 
 /**

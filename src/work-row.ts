@@ -18,7 +18,7 @@ import type { Options } from './config.js';
 import { clickLink } from './link.js';
 import { type createMarquee, marqueeText } from './marquee.js';
 import { checkLook, hasListedChecks, listedChecks } from './page/checks.js';
-import { linkColor, linkIcon, refColor, refIcon } from './page/icons.js';
+import { linkColor, linkIcon, refColor, refIcon, stackText } from './page/icons.js';
 import { badgeSegments, cells, fitText } from './page/row.js';
 import {
   type PullCheck,
@@ -271,6 +271,7 @@ export function workRow(input: WorkRowInput): JSX.Element {
     iconFg: () =>
       refColor(input.options, input.state()?.status, input.theme(), input.context.themeMode),
     number: () => refNumber(input.ref()),
+    tag: () => stackText(input.state()?.stack),
     title: () => input.state()?.title ?? '',
     url: () => refUrl(input.ref(), input.state())
   });
@@ -310,6 +311,8 @@ interface LineInput
   iconFg(): string | RGBA;
   /** The number or id; empty for a link that has none. */
   number(): string;
+  /** Muted text right after the number, such as a stacked pull request's ` <stack> 2/4`. */
+  tag?(): string;
   title(): string;
   url(): string;
 }
@@ -322,6 +325,7 @@ function lineRow(input: LineInput): JSX.Element {
   const id = (part: string) => (input.id === undefined ? {} : { id: `${input.id}-${part}` });
   const key = input.key;
   const number = input.number;
+  const tag = () => input.tag?.() ?? '';
   const title = input.title;
   const selected = () => input.selected?.() ?? false;
   /** Selection foreground over every part, or undefined for the parts' own colors. */
@@ -336,6 +340,7 @@ function lineRow(input: LineInput): JSX.Element {
       Math.floor(input.width()) -
       ICON -
       cells(number()) -
+      cells(tag()) -
       gap().length -
       (note ? cells(note) + MARKER_GAP : 0)
     );
@@ -385,6 +390,21 @@ function lineRow(input: LineInput): JSX.Element {
         },
         get children() {
           return number();
+        }
+      }),
+      jsx('text', {
+        ...id('tag'),
+        flexShrink: 0,
+        wrapMode: 'none',
+        // An empty text still takes a cell; the width keeps a ref without a tag as it was.
+        get width() {
+          return cells(tag());
+        },
+        get fg() {
+          return selectedFg() ?? theme().text.muted;
+        },
+        get children() {
+          return tag();
         }
       }),
       jsx('text', {

@@ -7,7 +7,7 @@ import { type Ref, type RefReview, type RefState, refKey, refNumber } from '../r
 import { ROW_PRS, rowRefs, type ShownLink, workLinks } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
 import { ciLook } from './checks.js';
-import { ICONS, linkColor, linkIcon, refColor, refIcon } from './icons.js';
+import { ICONS, linkColor, linkIcon, refColor, refIcon, stackText } from './icons.js';
 import type { DetailLine } from './state.js';
 
 /** A run of text in one color on a row line. */
@@ -198,6 +198,7 @@ export function rowDetails(input: RefsInput): RowDetails {
     const segments: Segment[] = [
       { text: `${refIcon(ref.kind, state?.status)} `, fg: color },
       { text: refNumber(ref), fg: color },
+      ...(state?.stack ? [{ text: stackText(state.stack), fg: muted }] : []),
       ...(badged ? stateBadges(state, input.theme) : [])
     ];
     if (titled && state?.title) {
@@ -359,6 +360,7 @@ export function pullLead(
   return [
     { text: `${refIcon(ref.kind, state?.status)} `, fg: color },
     { text: refNumber(ref), fg: color },
+    ...(state?.stack ? [{ text: stackText(state.stack), fg: look.theme.text.muted }] : []),
     ...stateBadges(state, look.theme)
   ];
 }

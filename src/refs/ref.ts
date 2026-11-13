@@ -159,6 +159,15 @@ export const refStateSchema = z.strictObject({
   headSha: z
     .string()
     .regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/)
+    .optional(),
+  // Pull requests in a GitHub stack: the stack's number in its repository, how many pull requests
+  // it has, and this one's place, 1 being the one on the base branch.
+  stack: z
+    .strictObject({
+      number: z.number().int().positive(),
+      position: z.number().int().positive(),
+      size: z.number().int().positive()
+    })
     .optional()
 });
 
