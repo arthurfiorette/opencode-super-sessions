@@ -1,6 +1,6 @@
 {
   "name": "opencode-super-sessions",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Session browser overlay for the OpenCode V2 TUI, with archiving and pull request and issue tracking",
   "keywords": [
     "opencode",
@@ -53,19 +53,19 @@
     "test-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@opencode/client": "2.2.7",
-    "@opencode/plugin": "2.2.7",
-    "@opencode/theme": "2.2.7",
+    "@opencode/client": "2.3.0",
+    "@opencode/plugin": "2.3.0",
+    "@opencode/theme": "2.3.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@arthurfiorette/biomejs-config": "^2.0.1",
-    "@biomejs/biome": "^2.6.6",
-    "@opencode/sdk": "2.2.7",
-    "@opentui/core": "0.8.1",
-    "@opentui/solid": "0.8.1",
+    "@biomejs/biome": "^2.6.7",
+    "@opencode/sdk": "2.3.0",
+    "@opentui/core": "0.8.4",
+    "@opentui/solid": "0.8.4",
     "@types/node": "^24.19.2",
-    "solid-js": "1.9.18",
+    "solid-js": "1.9.19",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   },
