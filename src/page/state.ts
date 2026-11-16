@@ -176,6 +176,10 @@ export interface GroupInput {
   /** Plugin pins in pin order. */
   pins: readonly string[];
   now: number;
+  /** Groups Active by the day of the latest activity (the default) or by the session's group. */
+  groupBy?: 'day' | 'group';
+  /** The groups sessions can be in, in display order, for `groupBy: 'group'`. */
+  groups?: readonly string[];
 }
 
 /**
@@ -222,7 +226,9 @@ export const RUNNING_GROUP = 'Running';
  *
  * - Active: Pinned in pin order, then Running, then one group per day of the latest activity
  *   (`activityTime`). Done sessions are left out, except pinned ones: a pin is an explicit choice
- *   to keep it in sight.
+ *   to keep it in sight. With `groupBy: 'group'`, the sessions in one of `groups` come before
+ *   the day groups, one group each in the order of `groups`, latest activity first; a group
+ *   name the options no longer list counts as none.
  * - Done: one group per day of the last merge or close.
  * - Archived: one group per day of `time.archived`, latest activity first within a day.
  */
@@ -250,11 +256,33 @@ export function groupSessions(input: GroupInput): Group[] {
   const rest = roots.filter((session) => !pinnedIDs.has(session.id) && !done(session));
   const running = rest.filter((session) => input.running(session.id)).sort(byActivity);
   const idle = rest.filter((session) => !input.running(session.id)).sort(byActivity);
+  const grouped = input.groupBy === 'group' ? byGroup(idle, input.refs, input.groups ?? []) : [];
+  const groupedIDs = new Set(rowsOf(grouped).map((session) => session.id));
   return [
     ...(pinned.length > 0 ? [{ title: 'Pinned', sessions: pinned }] : []),
     ...(running.length > 0 ? [{ title: RUNNING_GROUP, sessions: running }] : []),
-    ...byDay(idle, activityTime, input.now)
+    ...grouped,
+    ...byDay(
+      idle.filter((session) => !groupedIDs.has(session.id)),
+      activityTime,
+      input.now
+    )
   ];
+}
+
+/**
+ * The sessions in one of `groups`, already in display order, as one group each in the order of
+ * `groups`. Groups without sessions are left out.
+ */
+function byGroup(
+  sessions: readonly SessionInfo[],
+  refs: Readonly<Record<string, SessionRefView>>,
+  groups: readonly string[]
+): Group[] {
+  return groups.flatMap((title) => {
+    const members = sessions.filter((session) => refs[session.id]?.group === title);
+    return members.length > 0 ? [{ title, sessions: members }] : [];
+  });
 }
 
 /** Title of the search group of message text hits, whose header is muted. */

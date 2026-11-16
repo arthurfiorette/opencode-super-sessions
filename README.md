@@ -46,12 +46,12 @@ Restart OpenCode, or run `opencode service restart` if it runs as a service. The
 
 `tab` and `shift+tab` switch between the views:
 
-| View          | Shows                                                                                                               |
-| ------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Active        | Sessions that are not archived or Done, as Pinned, Running, then one group per day of the last activity             |
-| Done          | Sessions whose pull requests are all merged or closed, or whose issues are all closed, and sessions you marked Done |
-| Archived      | Archived sessions                                                                                                   |
-| Pull requests | Every pull request tracked by a session in scope                                                                    |
+| View          | Shows                                                                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Active        | Sessions that are not archived or Done, as Pinned, Running, then one group per day of the last activity, or per [group](#session-groups) |
+| Done          | Sessions whose pull requests are all merged or closed, or whose issues are all closed, and sessions you marked Done                      |
+| Archived      | Archived sessions                                                                                                                        |
+| Pull requests | Every pull request tracked by a session in scope                                                                                         |
 
 On terminals at least 120 columns wide, a preview on the right shows the selected session's context usage, its pull requests and issues with their failed checks, and its transcript.
 
@@ -67,6 +67,7 @@ The footer shows the common keys, and `ctrl+/` (or `?` while the search is empty
 | `ctrl+a`            | Switch between this project and all projects                                    |
 | `ctrl+s`            | Archive, or restore in the Archived view                                        |
 | `ctrl+q`            | Mark Done, or not Done                                                          |
+| `ctrl+e`            | Move to a group, when `groups` is set                                           |
 | `ctrl+f`            | Pin or unpin. `<leader>1` to `<leader>9` open the first nine pins               |
 | `ctrl+r`            | Rename                                                                          |
 | `ctrl+t`            | Generate a new title                                                            |
@@ -89,6 +90,28 @@ With the mouse, a click selects a row and a double click opens it. A click on a 
 Typing filters the list by session title and by pull request or issue number and title. `123`, `#123`, `pr 123` and `!12` find sessions tracking that number in any repository. `owner/repo#123` and full URLs find that exact ref. Work links match by id, such as `COR-1466`, by title, and by their full URL. A link to a page outside the trackers also matches any part of its URL.
 
 Sessions that match only in their message text appear a moment later, in an `In messages` group at the bottom.
+
+### Session groups
+
+Groups let the Active view follow the stage each session is in, instead of the day it last ran. List them in the plugin entry's `options` and set `groupBy` to `"group"`:
+
+```json
+{
+  "plugins": [
+    {
+      "package": "opencode-super-sessions",
+      "options": {
+        "groupBy": "group",
+        "groups": ["Investigating", "Coding", "Testing", "PR open"]
+      }
+    }
+  ]
+}
+```
+
+Active then shows Pinned, Running, one section per group in the order of `groups`, and the sessions in no group under their day, as before. A group with no session is hidden. A session in a group you later remove from `groups` counts as in no group. Search, Done, Archived and Pull requests keep their grouping.
+
+`ctrl+e` in the browser moves the selected session to a group or out of it. The agent can do the same with the `set_session_group` tool, which exists only while `groups` is set, so a command or skill such as `/qa` can move its session to `Testing`. "Group Active sessions by" in the settings switches between days and groups.
 
 ## Pull request and issue tracking
 
@@ -150,6 +173,8 @@ Options go in the plugin entry's `options`, as in the [GitLab example](#gitlab).
 | `rows.refs`               | `true`          | Show pull request, issue and link lines under each session                            |
 | `rows.groupIssues`        | `false`         | Join a session's issues and links on one line instead of one line each                |
 | `titleScroll`             | `"auto"`        | Scroll cut titles on hover: `"auto"` follows OpenCode's `animations`, `"on"`, `"off"` |
+| `groupBy`                 | `"day"`         | Group Active sessions by `"day"` or by [`"group"`](#session-groups)                   |
+| `groups`                  | `[]`            | Groups a session can be moved to, in display order, up to 20                          |
 | `detect.prompts`          | `true`          | Track refs and tracker links from your prompts                                        |
 | `detect.mentions`         | `true`          | Record refs mentioned in the assistant's replies                                      |
 | `notices`                 | `true`          | Tell the agent, with your next message, what was linked without it                    |

@@ -129,14 +129,15 @@ const missing = (directory) =>
 /**
  * A host stand-in: the real plugin entry against fake client, data, keymap, storage and router.
  * The server plugin is missing, so its search RPC throws unless `search` stands in for it.
- * `extra` sessions join the fixtures.
+ * `extra` sessions join the fixtures, and `options` are the plugin entry's.
  */
 async function host(
   version = '2.2.5',
   search = async () => {
     throw new Error('not registered');
   },
-  extra = []
+  extra = [],
+  options = {}
 ) {
   let renderer;
   const toasts = [];
@@ -160,17 +161,21 @@ async function host(
   const unlinks = [];
   // The session ids of each `refresh` call.
   const refreshes = [];
+  // `group.set` calls, and the group each session is in after them.
+  const groupSets = [];
+  const groups = new Map();
   /**
-   * A session's view without the links unlinked from it. `live` adds the states only the forge
-   * knows, as the waiting `refresh` does.
+   * A session's view without the links unlinked from it, in the group `group.set` put it in.
+   * `live` adds the states only the forge knows, as the waiting `refresh` does.
    */
   const viewOf = (id, live) => {
     const gone = new Set(unlinks.filter((item) => item.sessionID === id).map((item) => item.key));
-    const view = refViews[id];
+    const view = refViews[id] ?? { links: [], branchRefs: [], states: {} };
     return {
       ...view,
       links: view.links.filter((link) => !gone.has(key(link.ref))),
-      states: live ? { ...view.states, ...LIVE_STATES[id] } : view.states
+      states: live ? { ...view.states, ...LIVE_STATES[id] } : view.states,
+      ...(groups.has(id) ? { group: groups.get(id) } : {})
     };
   };
   // RPCs reach the server plugin through a Location, which a missing directory does not have.
@@ -178,12 +183,12 @@ async function host(
     const directory = options?.location?.directory ?? '/repo';
     if (directory.startsWith(GONE)) throw missing(directory);
     return Object.fromEntries(
-      sessionIDs.filter((id) => refViews[id]).map((id) => [id, viewOf(id, live)])
+      sessionIDs.filter((id) => refViews[id] || groups.has(id)).map((id) => [id, viewOf(id, live)])
     );
   };
   const context = {
     app: { name: 'opencode', version, channel: 'latest' },
-    options: {},
+    options,
     location: { directory: '/repo' },
     theme,
     themeMode: 'dark',
@@ -260,6 +265,12 @@ async function host(
         },
         unlink: async (input) => {
           unlinks.push(input);
+          return {};
+        },
+        'group.set': async (input) => {
+          groupSets.push(input);
+          if (input.group === null) groups.delete(input.sessionID);
+          else groups.set(input.sessionID, input.group);
           return {};
         },
         search
@@ -366,6 +377,7 @@ async function host(
     selects,
     unlinks,
     refreshes,
+    groupSets,
     stallLists() {
       stalled = true;
     },
@@ -691,6 +703,69 @@ test('ctrl+b forks the selected session before the picked prompt and opens the f
   command('shift+tab').run();
   await eventually(rendered, (frame) => /#4930 .*Migrate build to Rspack/.test(frame));
   assert.equal(command('ctrl+b').enabled(), false);
+});
+
+test('ctrl+e moves the selected session to a group, listed between Running and the days', async () => {
+  const terminal = await host(
+    undefined,
+    undefined,
+    [
+      session('flaky', 'Investigate the flaky e2e run', { updated: NOW - 2 * DAY }),
+      session('notes', 'Write the release notes', { updated: NOW - 5 * MINUTE })
+    ],
+    { groupBy: 'group', groups: ['Coding', 'Testing'] }
+  );
+  // A new open selects the session underneath.
+  terminal.navigate({ type: 'session', sessionID: 'flaky' });
+  const rendered = await openBrowser(terminal);
+  await eventually(rendered, (frame) => frame.includes('Investigate the flaky'));
+  /** Runs one of the browser's own keys, as the host would: a disabled one does nothing. */
+  const press = (bind) => {
+    const command = terminal.layers
+      .filter((layer) => layer.mode === 'super-sessions')
+      .flatMap((layer) => layer.commands)
+      .find((item) => item.bind === bind);
+    return command.enabled?.() === false ? false : command.run();
+  };
+
+  press('ctrl+e');
+  await eventually(rendered, () => terminal.selects.length > 0);
+  const [dialog] = terminal.selects;
+  assert.equal(dialog.title, 'Move to group');
+  assert.equal(dialog.current, null);
+  assert.deepEqual(
+    dialog.options.map((option) => [option.title, option.value]),
+    [
+      ['Coding', 'Coding'],
+      ['Testing', 'Testing'],
+      ['No group', null]
+    ]
+  );
+  dialog.resolve('Testing');
+  await eventually(rendered, (frame) => /Testing\s*\n.*Investigate the flaky/.test(frame));
+  assert.deepEqual(terminal.groupSets, [{ sessionID: 'flaky', group: 'Testing' }]);
+  assert.ok(terminal.toasts.some((toast) => toast.message === 'Moved to Testing'));
+  // Pinned and Running stay on top; sessions in no group keep their day.
+  const frame = rendered.captureCharFrame();
+  const order = ['Pinned', 'Running', 'Testing', 'Today'].map((title) =>
+    frame.search(new RegExp(`^\\s*${title}\\s*$`, 'm'))
+  );
+  assert.ok(
+    order.every((at, index) => at !== -1 && at > (order[index - 1] ?? -1)),
+    frame
+  );
+  assert.doesNotMatch(frame, /Coding/);
+
+  // Without groups the key stays the search's end of line.
+  rendered.renderer.destroy();
+  const plain = await host();
+  const again = await openBrowser(plain);
+  await eventually(again, (frame) => frame.includes('Mastra build'));
+  const bound = plain.layers
+    .filter((layer) => layer.mode === 'super-sessions')
+    .flatMap((layer) => layer.commands)
+    .find((item) => item.bind === 'ctrl+e');
+  assert.equal(bound.enabled(), false);
 });
 
 // Unlinking asks for no confirmation, so the key must act only on the Work links; on the list `d`

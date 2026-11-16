@@ -15,6 +15,8 @@ export const tuiValuesSchema = z.strictObject({
   groupIssues: z.boolean(),
   /** `auto` follows the host's `animations` setting. */
   titleScroll: z.enum(['auto', 'on', 'off']),
+  /** What the Active view groups sessions by after Pinned and Running. */
+  groupBy: z.enum(['day', 'group']),
   previewPane: z.boolean(),
   // The option's range, which is wider than the dialog's steps.
   previewWidth: z.number().min(0.2).max(0.7),
@@ -32,6 +34,7 @@ export function tuiDefaults(options: Options): TuiValues {
     refLine: options.rows.refs,
     groupIssues: options.rows.groupIssues,
     titleScroll: options.titleScroll,
+    groupBy: options.groupBy,
     previewPane: options.preview,
     previewWidth: options.previewWidth,
     closeTabOnArchive: options.closeTabOnArchive,
@@ -132,6 +135,17 @@ export const SETTINGS: readonly SettingRow[] = [
     values: ['auto', 'off', 'on'],
     labels: ['follow animations', 'off', 'on'],
     keywords: ['marquee', 'animation']
+  },
+  {
+    side: 'tui',
+    key: 'groupBy',
+    group: 'List',
+    title: 'Group Active sessions by',
+    description:
+      'Whether the Active view lists sessions under the day of their last activity, or under the groups the groups option lists, in its order',
+    values: ['day', 'group'],
+    labels: ['day', 'group'],
+    keywords: ['stage', 'status', 'sections']
   },
   {
     side: 'tui',

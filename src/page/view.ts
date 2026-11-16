@@ -114,7 +114,8 @@ const ESC_GAP = 2;
 const FOOTER_PADDING = 2;
 const HINT_GAP = 2;
 // Free in the host's default keymap and in the search input's own bindings: ctrl+e and ctrl+k
-// edit the line there, ctrl+n moves through host dialogs, ctrl+x is the host's leader.
+// edit the line there (ctrl+e only while no groups are set, see GROUP_KEY), ctrl+n moves
+// through host dialogs, ctrl+x is the host's leader.
 const DONE_KEY = 'ctrl+q';
 // Letters type into the search and ctrl+f is the host's pin. ctrl+b is only the search input's
 // cursor-left here (OpenTUI's input bindings), which `left` also does; the host's ctrl+b,
@@ -125,6 +126,9 @@ const FORK_KEY = 'ctrl+b';
 // ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e and ctrl+k edit the search, ctrl+h is backspace in
 // many terminals; the host binds nothing to f5.
 const RELOAD_KEY = 'f5';
+// The search input's end of line, as ctrl+a is its start of line, which the scope key took. Bound
+// only while the options list groups, so without groups the search keeps it.
+const GROUP_KEY = 'ctrl+e';
 // A reload that answers sooner than this shows no "Reloading…" toast, which would only flash.
 const RELOAD_TOAST_DELAY = 300;
 // Two left clicks on one row within this many milliseconds open it.
@@ -626,6 +630,42 @@ export default function SessionBrowser(props: PageProps) {
     }
     void controller.refresh([session.id]);
   };
+  /** Whether the options list groups to move sessions to. */
+  const hasGroups = () => settings.groups().length > 0;
+  /** Moves the selected session to the group the user picks, or out of its group. */
+  const moveToGroup = async () => {
+    const session = selected();
+    const groups = settings.groups();
+    if (!session || groups.length === 0) return;
+    const stored = data.refs[session.id]?.group;
+    // A group the options no longer list counts as none, as in the list.
+    const current = stored !== undefined && groups.includes(stored) ? stored : null;
+    // `null` stands for no group: the dialog resolves `undefined` when dismissed.
+    const group = await context.ui.dialog.select<string | null>({
+      title: 'Move to group',
+      options: [
+        ...groups.map((name) => ({ title: name, value: name })),
+        { title: 'No group', value: null }
+      ],
+      current
+    });
+    if (group === undefined || group === current) return;
+    try {
+      await model.rpc()['group.set']({ sessionID: session.id, group }, model.rpcOptions());
+    } catch (error) {
+      // The daemon keeps the options it started with until it restarts.
+      toast(
+        rpcError(error).type === 'unknown_group'
+          ? `The server does not know ${group}. Restart OpenCode after changing groups.`
+          : 'Could not move the session.',
+        'error'
+      );
+      return;
+    }
+    toast(group === null ? 'Moved out of its group' : `Moved to ${group}`, 'success');
+    // The cached read, not a forge refresh, so the row moves at once.
+    await controller.reread([session.id]);
+  };
   const openRef = () => {
     const pull = pullView() ? selectedPull() : undefined;
     if (pull !== undefined) {
@@ -850,6 +890,15 @@ export default function SessionBrowser(props: PageProps) {
         key: DONE_KEY,
         run: toggleDone
       },
+      ...(hasGroups()
+        ? [
+            {
+              title: 'Move to group',
+              key: shortcut('super-sessions.group', GROUP_KEY),
+              run: moveToGroup
+            }
+          ]
+        : []),
       { title: 'Next view', key: 'tab', run: () => nextView(1) },
       { title: 'Previous view', key: 'shift+tab', run: () => nextView(-1) },
       {
@@ -1096,6 +1145,13 @@ export default function SessionBrowser(props: PageProps) {
       title: 'Mark Done or not Done',
       enabled: sessionRows,
       run: () => void toggleDone()
+    },
+    {
+      id: 'super-sessions.group',
+      title: 'Move to group',
+      bind: GROUP_KEY,
+      enabled: () => sessionRows() && hasGroups(),
+      run: () => void moveToGroup()
     },
     {
       id: HOST_COMMANDS.rename,

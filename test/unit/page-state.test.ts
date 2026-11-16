@@ -144,6 +144,72 @@ test('the Active list orders and groups by the last run, not by the last metadat
   );
 });
 
+test('grouping by group lists the groups in option order between Running and the day groups', () => {
+  const at = (hours: number) => new Date(2026, 10, 4, hours).getTime();
+  const ran = (id: string, idle: number): SessionInfo => ({
+    ...session(id),
+    time: { created: at(-48), updated: idle, busy: idle - 60_000, idle }
+  });
+  const view = (group?: string): SessionRefView => ({
+    links: [],
+    branchRefs: [],
+    states: {},
+    ...(group === undefined ? {} : { group })
+  });
+  const input = {
+    view: 'active' as const,
+    sessions: [
+      ran('coding-old', at(-30)),
+      ran('testing', at(19)),
+      ran('pinned-testing', at(18)),
+      ran('running-coding', at(17)),
+      ran('coding-new', at(20)),
+      ran('dropped-group', at(16)),
+      ran('no-group', at(15)),
+      ran('no-group-yesterday', at(-20))
+    ],
+    refs: {
+      'coding-old': view('Coding'),
+      testing: view('Testing'),
+      'pinned-testing': view('Testing'),
+      'running-coding': view('Coding'),
+      'coding-new': view('Coding'),
+      // A group the options no longer list.
+      'dropped-group': view('Investigating')
+    },
+    extra: {},
+    running: (id: string) => id === 'running-coding',
+    pins: ['pinned-testing'],
+    now: at(21),
+    groups: ['Testing', 'Review', 'Coding']
+  };
+  const titles = (groups: ReturnType<typeof groupSessions>) =>
+    groups.map((group) => [group.title, group.sessions.map((item) => item.id)]);
+
+  assert.deepEqual(titles(groupSessions({ ...input, groupBy: 'group' })), [
+    ['Pinned', ['pinned-testing']],
+    ['Running', ['running-coding']],
+    ['Testing', ['testing']],
+    // Review has no session, so it has no header.
+    ['Coding', ['coding-new', 'coding-old']],
+    ['Today', ['dropped-group', 'no-group']],
+    [new Date(at(-20)).toDateString(), ['no-group-yesterday']]
+  ]);
+  // By day, the default, groups change nothing.
+  assert.deepEqual(titles(groupSessions(input)), [
+    ['Pinned', ['pinned-testing']],
+    ['Running', ['running-coding']],
+    ['Today', ['coding-new', 'testing', 'dropped-group', 'no-group']],
+    [new Date(at(-20)).toDateString(), ['no-group-yesterday']],
+    [new Date(at(-30)).toDateString(), ['coding-old']]
+  ]);
+  // Archived keeps its day groups.
+  assert.deepEqual(
+    groupSessions({ ...input, view: 'archived', groupBy: 'group' }).map((group) => group.title),
+    ['Today', new Date(at(-20)).toDateString(), new Date(at(-30)).toDateString()]
+  );
+});
+
 test('search falls back to the title search when the server plugin does not answer', async () => {
   const calls: unknown[] = [];
   const result = await search(

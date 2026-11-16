@@ -22,6 +22,10 @@ export interface TuiSettings {
   groupIssues(): boolean;
   /** Whether hovered titles scroll, given the host's `animations` value for `auto`. */
   titleScroll(animations: boolean): boolean;
+  /** What the Active view groups sessions by after Pinned and Running. */
+  groupBy(): TuiValues['groupBy'];
+  /** The groups a session can be put in, in display order. Options only: the dialog edits no lists. */
+  groups(): readonly string[];
   previewPane(): boolean;
   /** The preview's fraction of the browser width. */
   previewWidth(): number;
@@ -76,6 +80,8 @@ function buildTuiSettings(context: Plugin.Context, options: Options): TuiSetting
       const mode = values().titleScroll;
       return mode === 'auto' ? animations : mode === 'on';
     },
+    groupBy: () => values().groupBy,
+    groups: () => options.groups,
     previewPane: () => values().previewPane,
     previewWidth: () => values().previewWidth,
     closeTabOnArchive: () => values().closeTabOnArchive,

@@ -194,7 +194,9 @@ export function createBrowserModel(
         extra: data.extra,
         running,
         pins: pins.ids(),
-        now: now()
+        now: now(),
+        groupBy: settings.groupBy(),
+        groups: settings.groups()
       });
     } catch (error) {
       onError(error);
@@ -342,8 +344,25 @@ export function createBrowserModel(
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(() => void sync(), RELOAD_DELAY);
   };
+  // The plugin's own writes, such as an agent moving a session to a group, change only metadata.
+  // The listed sessions' views are read again from the server's caches, in one call per burst.
+  const changedMetadata = new Set<string>();
+  let rereadTimer: ReturnType<typeof setTimeout> | undefined;
+  const metadataChanged = (sessionID: string) => {
+    if (!isOpen()) return;
+    const listed = [...data.active, ...data.archived].some((session) => session.id === sessionID);
+    if (!listed) return;
+    changedMetadata.add(sessionID);
+    clearTimeout(rereadTimer);
+    rereadTimer = setTimeout(() => {
+      const ids = [...changedMetadata];
+      changedMetadata.clear();
+      void controller.reread(ids).catch(() => {});
+    }, RELOAD_DELAY);
+  };
   const offs = [
     context.data.on('session.deleted', (event) => controller.removed(event.data.sessionID)),
+    context.data.on('session.metadata.updated', (event) => metadataChanged(event.data.sessionID)),
     ...(
       [
         'session.created',
@@ -423,6 +442,7 @@ export function createBrowserModel(
     },
     dispose() {
       clearTimeout(reloadTimer);
+      clearTimeout(rereadTimer);
       for (const off of offs) off();
       controller.dispose();
       lists.dispose();
