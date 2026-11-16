@@ -13,6 +13,7 @@ import { mergeLinks } from '../../src/refs/store.js';
 import { createEventHub, type EventContext, type HandledEvent } from '../../src/server/events.js';
 import { createWriteQueue, type SessionAccess } from '../../src/server/queue.js';
 import type { Runtime } from '../../src/server/runtime.js';
+import { registerTools } from '../../src/server/tools.js';
 
 /** Yields to the event loop so concurrent fake calls interleave the way real I/O does. */
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -58,6 +59,73 @@ test('the write queue keeps every concurrent link and foreign metadata, and surv
     readSessionRefs(metadata).links.map((stored) => stored.ref.number),
     [1, 2, 3, 4, 5, 7, 8]
   );
+});
+
+test('groups are unique names other than the built-in headers, in the order given', () => {
+  assert.deepEqual(parseOptions({ groups: [' Coding ', 'Testing'] }).groups, ['Coding', 'Testing']);
+  assert.equal(parseOptions(undefined).groupBy, 'day');
+  for (const groups of [['Coding', 'Coding'], ['Running'], [''], ['x'.repeat(41)]]) {
+    assert.throws(() => parseOptions({ groups }), JSON.stringify(groups));
+  }
+  assert.throws(() => parseOptions({ groupBy: 'stage' }));
+});
+
+test('set_session_group exists only with groups and moves the top-level session', async () => {
+  type Tool = {
+    name: string;
+    input: { safeParse(value: unknown): { success: boolean } };
+    execute(input: unknown, tool: { sessionID: string }): Promise<{ content: string }>;
+  };
+  type Stored = { time: typeof RAN; parentID?: string; metadata: Record<string, unknown> };
+  /** The tools `registerTools` adds for the given options, against `sessions`. */
+  const register = async (groups: string[], sessions: Record<string, Stored>) => {
+    const tools: Tool[] = [];
+    const session = {
+      get: async ({ sessionID }: { sessionID: string }) => structuredClone(sessions[sessionID]),
+      update: async (input: { sessionID: string; metadata: Record<string, unknown> }) => {
+        const stored = sessions[input.sessionID];
+        if (stored) stored.metadata = structuredClone(input.metadata);
+      }
+    };
+    const context = {
+      session,
+      tool: {
+        transform: async (edit: (editor: unknown) => void) =>
+          edit({ add: (tool: Tool) => tools.push(tool) })
+      }
+    } as unknown as Plugin.Context;
+    const runtime = {
+      options: parseOptions({ groups }),
+      writes: createWriteQueue()
+    } as unknown as Runtime;
+    await registerTools(runtime, context);
+    return tools;
+  };
+
+  assert.deepEqual(
+    (await register([], {})).map((tool) => tool.name),
+    ['link_work', 'unlink_work']
+  );
+
+  const root: Stored = { time: RAN, metadata: { 'other-plugin': { keep: true } } };
+  const child: Stored = { time: RAN, parentID: 'ses_root', metadata: {} };
+  const tool = (await register(['Coding', 'Testing'], { ses_root: root, ses_child: child })).find(
+    (item) => item.name === 'set_session_group'
+  );
+  assert.ok(tool);
+  assert.equal(tool.input.safeParse({ group: 'Shipping' }).success, false);
+  assert.equal(tool.input.safeParse({ group: null }).success, true);
+
+  // A subagent's call moves the session the list shows: its parent.
+  const moved = await tool.execute({ group: 'Testing' }, { sessionID: 'ses_child' });
+  assert.equal(moved.content, 'Moved this session to Testing. Other groups: Coding.');
+  assert.equal(readSessionRefs(root.metadata).group, 'Testing');
+  assert.deepEqual(root.metadata['other-plugin'], { keep: true });
+  assert.deepEqual(child.metadata, {});
+
+  const out = await tool.execute({ group: null }, { sessionID: 'ses_root' });
+  assert.equal(out.content, 'Moved this session out of Testing. Other groups: Coding, Testing.');
+  assert.equal(readSessionRefs(root.metadata).group, undefined);
 });
 
 /** In-memory event bus whose subscriptions end when their signal aborts, like the host's. */

@@ -70,6 +70,9 @@ async function registerInert(context: Plugin.Context): Promise<void> {
     'done.set': async () => {
       throw new Error('The plugin options are invalid.');
     },
+    'group.set': async () => {
+      throw new Error('The plugin options are invalid.');
+    },
     // Defaults only, and nothing is stored: changing settings would suggest they apply.
     'settings.get': async () => ({ values: defaults, defaults }),
     'settings.set': async () => ({ values: defaults, defaults }),

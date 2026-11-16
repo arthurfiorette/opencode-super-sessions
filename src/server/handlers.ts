@@ -2,7 +2,7 @@ import type { Plugin } from '@opencode/plugin';
 import type { RpcHandlers } from '@opencode/plugin/promise/rpc';
 import { parseUrl } from '../providers/registry.js';
 import { refKey } from '../refs/ref.js';
-import { dismissLink, mergeLinks, mergeWorkLinks, setDone } from '../refs/store.js';
+import { dismissLink, mergeLinks, mergeWorkLinks, setDone, setGroup } from '../refs/store.js';
 import { recognizeLink } from '../refs/work-link.js';
 import type { SuperSessions } from '../rpc.js';
 import { scanHistory } from './history.js';
@@ -99,6 +99,21 @@ export function rpcHandlers(
       await runtime.writes.update(context.session, sessionID, (refs) =>
         setDone(refs, done, Date.now())
       );
+      return {};
+    },
+
+    async 'group.set'({ sessionID, group }, invocation) {
+      const groups = runtime.options.groups;
+      if (group !== null && !groups.includes(group)) {
+        return invocation.error(
+          'unknown_group',
+          groups.length === 0
+            ? 'The plugin options list no groups.'
+            : `${group} is not one of the groups: ${groups.join(', ')}.`,
+          { groups: [...groups] }
+        );
+      }
+      await runtime.writes.update(context.session, sessionID, (refs) => setGroup(refs, group));
       return {};
     },
 

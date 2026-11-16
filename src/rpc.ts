@@ -1,6 +1,7 @@
 import { Rpc } from '@opencode/plugin/rpc';
 import { z } from 'zod';
 import {
+  GROUP_NAME_MAX,
   providerIdSchema,
   pullDetailsSchema,
   refLinkSchema,
@@ -31,6 +32,8 @@ export const sessionRefViewSchema = z.strictObject({
   done: z.boolean().optional(),
   /** When the user marked the session Done. */
   doneAt: z.number().int().optional(),
+  /** The group the session is in (see `group.set`), which may no longer be in `groups`. */
+  group: z.string().optional(),
   /**
    * Forges whose last answer for this session's branch or refs was an error, rate limits
    * included. Only a forced `refresh` sets it.
@@ -206,6 +209,19 @@ export const SuperSessions = Rpc.define({
     'done.set': {
       input: z.strictObject({ sessionID: z.string(), done: z.boolean().nullable() }),
       output: z.strictObject({})
+    },
+    /**
+     * Puts a session in one of the `groups` the plugin options list, which the Active view lists
+     * it under when grouping by group, or takes it out of its group with `null`.
+     * `unknown_group` lists the groups the options have.
+     */
+    'group.set': {
+      input: z.strictObject({
+        sessionID: z.string(),
+        group: z.string().min(1).max(GROUP_NAME_MAX).nullable()
+      }),
+      output: z.strictObject({}),
+      errors: { unknown_group: z.strictObject({ groups: z.array(z.string()) }) }
     },
     'settings.get': {
       input: z.strictObject({}),

@@ -15,6 +15,7 @@ import {
   mergeLinks,
   mergeWorkLinks,
   type RefsUpdate,
+  setGroup,
   storedLinks
 } from '../refs/store.js';
 import { cleanTitle, type LinkInfo, recognizeLink } from '../refs/work-link.js';
@@ -158,8 +159,26 @@ export async function registerInstructions(
   });
 }
 
-/** Registers `link_work` and `unlink_work` for one Location. */
+const GROUP_DESCRIPTION =
+  "Moves this session to a group of the user's session list, such as the stage of the work " +
+  'it is in, or out of its group. Nothing changes elsewhere.';
+
+/** Input of `set_session_group`: one of the configured groups, or null for none. */
+function groupInput(groups: readonly [string, ...string[]]) {
+  return z.strictObject({
+    group: z
+      .enum(groups)
+      .nullable()
+      .describe('The group to move this session to, or null for none.')
+  });
+}
+
+/**
+ * Registers `link_work` and `unlink_work` for one Location, and `set_session_group` when the
+ * options list groups.
+ */
 export async function registerTools(runtime: Runtime, context: Plugin.Context): Promise<void> {
+  const [first, ...rest] = runtime.options.groups;
   await context.tool.transform((editor) => {
     editor.add({
       name: 'link_work',
@@ -180,6 +199,18 @@ export async function registerTools(runtime: Runtime, context: Plugin.Context): 
         content: await unlinkWork(runtime, context, tool.sessionID, input.refs)
       })
     });
+    // Only for users who set groups up, so other agents never see the tool.
+    if (first !== undefined) {
+      editor.add({
+        name: 'set_session_group',
+        description: GROUP_DESCRIPTION,
+        input: groupInput([first, ...rest]),
+        options: { codemode: false },
+        execute: async (input, tool) => ({
+          content: await setSessionGroup(runtime, context, tool.sessionID, input.group)
+        })
+      });
+    }
   });
 }
 
@@ -392,6 +423,45 @@ async function unlinkWork(
     await runtime.writes.update(context.session, sessionID, (refs) => dismissAll(refs, keys));
   }
   return [...lines, await currentList(runtime, context, sessionID)].join('\n');
+}
+
+// A subagent's session sits under its parent, and the list groups top-level sessions only.
+const ROOT_DEPTH = 50;
+
+/** The top-level session a session belongs to. */
+async function rootSession(context: Plugin.Context, sessionID: string): Promise<string> {
+  let id = sessionID;
+  for (let depth = 0; depth < ROOT_DEPTH; depth++) {
+    const info = await context.session.get({ sessionID: id });
+    if (info.parentID === undefined) return id;
+    id = info.parentID;
+  }
+  return id;
+}
+
+/** Implements `set_session_group` on the session's top-level session. */
+async function setSessionGroup(
+  runtime: Runtime,
+  context: Plugin.Context,
+  sessionID: string,
+  group: string | null
+): Promise<string> {
+  const root = await rootSession(context, sessionID);
+  let before: string | undefined;
+  await runtime.writes.update(context.session, root, (refs) => {
+    before = refs.group;
+    return setGroup(refs, group);
+  });
+  const others = runtime.options.groups.filter((name) => name !== group);
+  const result =
+    group === null
+      ? before === undefined
+        ? 'This session is in no group.'
+        : `Moved this session out of ${before}.`
+      : before === group
+        ? `This session is already in ${group}.`
+        : `Moved this session to ${group}.`;
+  return others.length > 0 ? `${result} Other groups: ${others.join(', ')}.` : result;
 }
 
 /** Dismisses several keys in one update. */
