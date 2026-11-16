@@ -164,6 +164,8 @@ async function host(
   // `group.set` calls, and the group each session is in after them.
   const groupSets = [];
   const groups = new Map();
+  // Handlers of `data.on`, which `emit` runs.
+  const listeners = [];
   /**
    * A session's view without the links unlinked from it, in the group `group.set` put it in.
    * `live` adds the states only the forge knows, as the waiting `refresh` does.
@@ -277,7 +279,11 @@ async function host(
       })
     },
     data: {
-      on: () => () => {},
+      on: (type, handler) => {
+        const listener = { type, handler };
+        listeners.push(listener);
+        return () => listeners.splice(listeners.indexOf(listener), 1);
+      },
       session: {
         list: () => sessions,
         get: (id) => sessions.find((item) => item.id === id),
@@ -378,6 +384,16 @@ async function host(
     unlinks,
     refreshes,
     groupSets,
+    /** Puts a session in a group on the server's side, as the agent's tool does. */
+    setGroup(sessionID, group) {
+      groups.set(sessionID, group);
+    },
+    /** Publishes a host event to the plugin's `data.on` handlers. */
+    emit(type, data) {
+      for (const listener of listeners.filter((item) => item.type === type)) {
+        listener.handler({ type, data });
+      }
+    },
     stallLists() {
       stalled = true;
     },
@@ -755,6 +771,11 @@ test('ctrl+e moves the selected session to a group, listed between Running and t
     frame
   );
   assert.doesNotMatch(frame, /Coding/);
+
+  // The agent's move changes only the metadata; the row follows without a key.
+  terminal.setGroup('notes', 'Coding');
+  terminal.emit('session.metadata.updated', { sessionID: 'notes' });
+  await eventually(rendered, (frame) => /Coding\s*\n.*Write the release notes/.test(frame));
 
   // Without groups the key stays the search's end of line.
   rendered.renderer.destroy();

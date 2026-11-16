@@ -329,8 +329,12 @@ export function createBrowserModel(
       loadedFor = key;
       loadedAt = Date.now();
       dirty = false;
+      // The load reads every listed session's view again.
+      changedMetadata.clear();
       await controller.load(target);
       if (token !== syncToken) return;
+    } else {
+      rereadChanged();
     }
     // A session the settled lists do not show, such as one past the list limit, keeps the
     // default selection instead of jumping there on a later reload.
@@ -345,20 +349,24 @@ export function createBrowserModel(
     reloadTimer = setTimeout(() => void sync(), RELOAD_DELAY);
   };
   // The plugin's own writes, such as an agent moving a session to a group, change only metadata.
-  // The listed sessions' views are read again from the server's caches, in one call per burst.
+  // The listed sessions' views are read again from the server's caches, in one call per burst
+  // while open, and on the next open otherwise, since cached lists skip the reload.
   const changedMetadata = new Set<string>();
   let rereadTimer: ReturnType<typeof setTimeout> | undefined;
+  const rereadChanged = () => {
+    clearTimeout(rereadTimer);
+    if (changedMetadata.size === 0) return;
+    const ids = [...changedMetadata];
+    changedMetadata.clear();
+    void controller.reread(ids).catch(() => {});
+  };
   const metadataChanged = (sessionID: string) => {
-    if (!isOpen()) return;
     const listed = [...data.active, ...data.archived].some((session) => session.id === sessionID);
     if (!listed) return;
     changedMetadata.add(sessionID);
+    if (!isOpen()) return;
     clearTimeout(rereadTimer);
-    rereadTimer = setTimeout(() => {
-      const ids = [...changedMetadata];
-      changedMetadata.clear();
-      void controller.reread(ids).catch(() => {});
-    }, RELOAD_DELAY);
+    rereadTimer = setTimeout(rereadChanged, RELOAD_DELAY);
   };
   const offs = [
     context.data.on('session.deleted', (event) => controller.removed(event.data.sessionID)),

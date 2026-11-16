@@ -123,7 +123,8 @@ const DONE_KEY = 'ctrl+q';
 // base-mode layer (packages/tui/src/routes/session/index.tsx:1459), which the browser's mode
 // turns off.
 const FORK_KEY = 'ctrl+b';
-// ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e and ctrl+k edit the search, ctrl+h is backspace in
+// ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e (while no groups are set) and ctrl+k edit the search,
+// ctrl+h is backspace in
 // many terminals; the host binds nothing to f5.
 const RELOAD_KEY = 'f5';
 // The search input's end of line, as ctrl+a is its start of line, which the scope key took. Bound
@@ -649,7 +650,8 @@ export default function SessionBrowser(props: PageProps) {
       ],
       current
     });
-    if (group === undefined || group === current) return;
+    // "No group" still clears a group the options dropped, which would come back with its name.
+    if (group === undefined || group === (stored ?? null)) return;
     try {
       await model.rpc()['group.set']({ sessionID: session.id, group }, model.rpcOptions());
     } catch (error) {
@@ -664,7 +666,7 @@ export default function SessionBrowser(props: PageProps) {
     }
     toast(group === null ? 'Moved out of its group' : `Moved to ${group}`, 'success');
     // The cached read, not a forge refresh, so the row moves at once.
-    await controller.reread([session.id]);
+    await controller.reread([session.id]).catch(() => {});
   };
   const openRef = () => {
     const pull = pullView() ? selectedPull() : undefined;

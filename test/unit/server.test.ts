@@ -64,7 +64,7 @@ test('the write queue keeps every concurrent link and foreign metadata, and surv
 test('groups are unique names other than the built-in headers, in the order given', () => {
   assert.deepEqual(parseOptions({ groups: [' Coding ', 'Testing'] }).groups, ['Coding', 'Testing']);
   assert.equal(parseOptions(undefined).groupBy, 'day');
-  for (const groups of [['Coding', 'Coding'], ['Running'], [''], ['x'.repeat(41)]]) {
+  for (const groups of [['Coding', 'Coding'], ['Running'], ['today'], [''], ['x'.repeat(41)]]) {
     assert.throws(() => parseOptions({ groups }), JSON.stringify(groups));
   }
   assert.throws(() => parseOptions({ groupBy: 'stage' }));

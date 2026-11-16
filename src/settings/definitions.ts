@@ -142,7 +142,7 @@ export const SETTINGS: readonly SettingRow[] = [
     group: 'List',
     title: 'Group Active sessions by',
     description:
-      'Whether the Active view lists sessions under the day of their last activity, or under the groups the groups option lists, in its order',
+      'Whether the Active view lists sessions under the day of their last activity, or under the groups the groups option lists, in its order. Without that option, group changes nothing.',
     values: ['day', 'group'],
     labels: ['day', 'group'],
     keywords: ['stage', 'status', 'sections']

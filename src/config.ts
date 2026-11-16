@@ -20,7 +20,8 @@ const hostname = z
 
 const days = z.number().int().min(0).max(365);
 
-// Headers the Active view already draws, which a group of the same name would be mistaken for.
+// Headers the Active view already draws (src/page/state.ts), which a group of the same name, in
+// any case, would be mistaken for.
 const BUILT_IN_GROUPS = ['Pinned', 'Running', 'Today'];
 
 /** Most groups the `groups` option takes. */
@@ -32,9 +33,12 @@ export const groupNameSchema = z
   .trim()
   .min(1)
   .max(GROUP_NAME_MAX)
-  .refine((name) => !BUILT_IN_GROUPS.includes(name), {
-    message: `Use a name other than ${BUILT_IN_GROUPS.join(', ')}.`
-  });
+  .refine(
+    (name) => !BUILT_IN_GROUPS.some((header) => header.toLowerCase() === name.toLowerCase()),
+    {
+      message: `Use a name other than ${BUILT_IN_GROUPS.join(', ')}.`
+    }
+  );
 
 const hex = z.string().regex(/^#[0-9a-f]{6}$/i, { message: 'Use a #rrggbb color.' });
 const color = z.union([hex, z.strictObject({ dark: hex, light: hex })]);
