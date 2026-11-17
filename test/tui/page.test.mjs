@@ -783,7 +783,7 @@ test('ctrl+e moves the selected session to a group, listed between Running and N
   terminal.emit('session.metadata.updated', { sessionID: 'notes' });
   await eventually(rendered, (frame) => /Coding\s*\n.*Write the release notes/.test(frame));
 
-  // Grouping by day gives the key back to the search, groups or not.
+  // Grouping by day gives the key back to the search, even with groups.
   await terminal.context.storage.store('settings', { initial: { values: {} } })[1]((draft) => {
     draft.values.groupBy = 'day';
   });
@@ -796,7 +796,7 @@ test('ctrl+e moves the selected session to a group, listed between Running and N
     false
   );
 
-  // Without groups the key stays the search's end of line.
+  // By day, the default, the key is the search's end of line.
   rendered.renderer.destroy();
   const plain = await host();
   const again = await openBrowser(plain);

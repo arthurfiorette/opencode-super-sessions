@@ -128,7 +128,7 @@ const FORK_KEY = 'ctrl+b';
 // many terminals; the host binds nothing to f5.
 const RELOAD_KEY = 'f5';
 // The search input's end of line, as ctrl+a is its start of line, which the scope key took. Bound
-// only while grouping by group with groups set, so otherwise the search keeps it.
+// only while grouping by group, so grouping by day leaves it to the search.
 const GROUP_KEY = 'ctrl+e';
 // A reload that answers sooner than this shows no "Reloading…" toast, which would only flash.
 const RELOAD_TOAST_DELAY = 300;
@@ -633,15 +633,19 @@ export default function SessionBrowser(props: PageProps) {
     void controller.refresh([session.id]);
   };
   /**
-   * Whether the Active view groups by group and there are groups to move sessions to. Otherwise
-   * ctrl+e stays the search's end of line.
+   * Whether the Active view groups by group, which alone decides ctrl+e: grouping by day keeps it
+   * the search's end of line, for long lists.
    */
-  const hasGroups = () => settings.groupBy() === 'group' && serverSettings.groups().length > 0;
+  const hasGroups = () => settings.groupBy() === 'group';
   /** Moves the selected session to the group the user picks, or out of its group. */
   const moveToGroup = async () => {
     const session = selected();
     const groups = serverSettings.groups();
     if (!session || !hasGroups()) return;
+    if (groups.length === 0) {
+      toast('No groups yet. Add them under Groups in the settings (ctrl+o).');
+      return;
+    }
     const stored = data.refs[session.id]?.group;
     // A group that is no longer listed counts as none, as in the list.
     const current = stored !== undefined && groups.includes(stored) ? stored : null;
