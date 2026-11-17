@@ -142,7 +142,7 @@ export function installSettings(
       title: 'Groups',
       description:
         'Sessions can be moved to these groups with ctrl+e or by the agent. With "Group Active sessions by" on group, the Active view lists them in this order.',
-      placeholder: 'For example Investigating, Coding, Testing, PR open',
+      placeholder: 'For example PR Open, Coding, Testing, Investigation',
       value: server.groups().join(', ')
     });
     if (value !== undefined) {
