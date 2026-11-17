@@ -93,7 +93,7 @@ Sessions that match only in their message text appear a moment later, in an `In 
 
 ### Session groups
 
-Groups let the Active view follow the stage each session is in, instead of the day it last ran. In the settings (`ctrl+o`), enter the names under "Groups", separated by commas, and set "Group Active sessions by" to group. Both apply at once. The same can go in the plugin entry's `options`, as defaults the settings override:
+Groups let the Active view follow the stage each session is in, instead of the day it last ran. In the settings (`ctrl+o`), set "Group Active sessions by" to group, then enter the names under "Groups", which shows right below it, separated by commas. Both apply at once. The same can go in the plugin entry's `options`, as defaults the settings override:
 
 ```json
 {

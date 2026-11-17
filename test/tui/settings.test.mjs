@@ -118,13 +118,23 @@ test('the settings dialog loads cold and writes a server setting changed with ri
     await rendered.waitForFrame((frame) => /Delete merged worktrees\s+on/.test(frame));
     assert.deepEqual(writes, [{ cleanupMerged: true }]);
 
-    // Groups take a list, so enter opens a prompt and left/right leave them alone.
+    // Groups show only once the Active view groups by group, right under that choice.
     const command = (id) =>
       layers.flatMap((layer) => layer.commands).find((item) => item.id === id);
     const search = rendered.renderer.currentFocusedRenderable;
     search.value = '';
-    await rendered.mockInput.typeText('groups');
-    await rendered.waitForFrame((frame) => /Groups\s+none/.test(frame));
+    // Both rows carry the keyword, and "Group issues" does not.
+    await rendered.mockInput.typeText('stage');
+    await rendered.waitForFrame(
+      (frame) => /Group Active sessions by\s+day/.test(frame) && !frame.includes('Group issues')
+    );
+    assert.doesNotMatch(rendered.captureCharFrame(), /Groups\s+none/);
+    right();
+    await rendered.waitForFrame((frame) =>
+      /Group Active sessions by\s+group\s*\n.*Groups\s+none/.test(frame)
+    );
+    command('dialog.select.next').run();
+    // Groups take a list, so enter opens a prompt and left/right leave them alone.
     right();
     answers.push('Pinned', 'Coding, Testing');
     command('dialog.select.submit').run();

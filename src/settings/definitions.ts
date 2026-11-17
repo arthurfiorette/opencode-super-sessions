@@ -85,6 +85,8 @@ interface RowShape {
   keywords?: readonly string[];
   /** Enter opens a text prompt for a custom value instead of cycling. */
   prompt?: { title: string; placeholder: string };
+  /** Whether the row shows for the current TUI values; rows without it always show. */
+  visible?: (tui: TuiValues) => boolean;
 }
 
 const onOff = { values: [false, true], labels: ['off', 'on'] } as const;
@@ -167,7 +169,7 @@ export const SETTINGS: readonly SettingRow[] = [
     group: 'List',
     title: 'Group Active sessions by',
     description:
-      'Whether the Active view lists sessions under the day of their last activity, or under every group in the order of Groups, then No group. Without groups, group keeps the days.',
+      'Whether the Active view lists sessions under the day of their last activity, or under every group in the order of Groups, then No group. Choosing group shows the Groups row below.',
     values: ['day', 'group'],
     labels: ['day', 'group'],
     keywords: ['stage', 'status', 'sections']
@@ -185,6 +187,8 @@ export const SETTINGS: readonly SettingRow[] = [
     values: [],
     format: (value) => groupsLabel(value),
     prompt: { title: 'Groups', placeholder: 'Names separated by commas, in display order' },
+    // Only means something while grouping by group, so it shows right under that choice then.
+    visible: (tui) => tui.groupBy === 'group',
     keywords: ['stage', 'status', 'sections', 'group by']
   },
   {
@@ -346,6 +350,11 @@ export const SETTINGS: readonly SettingRow[] = [
     keywords: ['worktree', 'dry run', 'clean']
   }
 ];
+
+/** The rows that show for the current TUI values, in display order. */
+export function visibleRows(rows: readonly SettingRow[], tui: TuiValues): SettingRow[] {
+  return rows.filter((row) => row.side === 'action' || row.visible?.(tui) !== false);
+}
 
 /**
  * Rows matching a search, keeping display order: every word of the query must appear in the

@@ -13,7 +13,14 @@ import {
 } from 'solid-js';
 import { DIALOG_MODE, DIALOG_SELECT } from '../host/keymap.js';
 import { dialogTheme } from '../host/theme.js';
-import { displayValue, filterRows, SETTINGS, type SettingRow, stepValue } from './definitions.js';
+import {
+  displayValue,
+  filterRows,
+  SETTINGS,
+  type SettingRow,
+  stepValue,
+  visibleRows
+} from './definitions.js';
 import type { SettingsDialogProps } from './install.js';
 
 // Laid out like the host's Settings dialog (packages/tui/src/component/dialog-config.tsx on
@@ -61,7 +68,7 @@ export default function SettingsDialog(props: SettingsDialogProps) {
   const [saving, setSaving] = createSignal(false);
   let input: InputRenderable | undefined;
 
-  const rows = createMemo(() => filterRows(SETTINGS, query()));
+  const rows = createMemo(() => filterRows(visibleRows(SETTINGS, props.tui.values()), query()));
   const lines = createMemo(() => layout(rows()));
   // The host's list height: half the terminal minus the dialog chrome.
   const height = () => Math.max(1, Math.min(lines().length, Math.floor(terminalHeight() / 2) - 6));
