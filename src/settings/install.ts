@@ -6,7 +6,7 @@ import { COMMAND_GROUP } from '../commands.js';
 import type { Options } from '../config.js';
 import { BASE_MODE, DIALOG_MODE } from '../host/keymap.js';
 import type { Pins } from '../pins.js';
-import type { SettingRow } from './definitions.js';
+import { parseGroups, type SettingRow } from './definitions.js';
 import { installMaintenance, type Maintenance } from './maintenance.js';
 import {
   createServerSettings,
@@ -24,6 +24,8 @@ export interface SettingsDialogProps {
   focus?: SettingRow['key'] | undefined;
   /** Asks for a custom archive suffix, then reopens the dialog on that row. */
   promptSuffix(): void;
+  /** Asks for the groups, then reopens the dialog on their row. */
+  promptGroups(): void;
   /** Dry run and confirmation, then reopens the dialog on the action row. */
   runCleanup(): void;
   /** Confirmation, then scans every session in the scope and reopens the dialog on its row. */
@@ -61,7 +63,7 @@ export function installSettings(
   history: ScanAll
 ): SettingsInstall {
   const tui = createTuiSettings(context, options);
-  const server = createServerSettings(context);
+  const server = createServerSettings(context, options);
   // A confirmation would replace whatever dialog is open, and the browser overlay is not a host
   // dialog but pushes its own keymap mode; either way the base mode is gone.
   const busy = () => context.keymap.mode.current() !== BASE_MODE;
@@ -76,6 +78,7 @@ export function installSettings(
         server,
         focus,
         promptSuffix: () => void promptSuffix(),
+        promptGroups: () => void promptGroups(),
         runCleanup: () => void maintenance.runCleanup().finally(() => open('cleanup.run')),
         scanAll: () => void scanAll().finally(() => open('history.scan'))
       })
@@ -128,6 +131,31 @@ export function installSettings(
         );
     }
     open('archiveSuffix');
+  };
+
+  /**
+   * Prompts for the groups as names separated by commas. An empty answer clears them, a
+   * dismissed prompt keeps them, and invalid names keep them with a toast saying why.
+   */
+  const promptGroups = async () => {
+    const value = await context.ui.dialog.prompt({
+      title: 'Groups',
+      description:
+        'Sessions can be moved to these groups with ctrl+e or by the agent. With "Group Active sessions by" on group, the Active view lists them in this order.',
+      placeholder: 'For example Investigating, Coding, Testing, PR open',
+      value: server.groups().join(', ')
+    });
+    if (value !== undefined) {
+      const parsed = parseGroups(value);
+      if ('error' in parsed) {
+        context.ui.toast.show({ message: `Groups not saved: ${parsed.error}`, variant: 'error' });
+      } else {
+        await server.set('groups', parsed.groups);
+        const error = server.error();
+        if (error) context.ui.toast.show({ message: error, variant: 'error' });
+      }
+    }
+    open('groups');
   };
 
   const commands: KeymapCommand[] = [

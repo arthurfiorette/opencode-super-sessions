@@ -93,7 +93,7 @@ Sessions that match only in their message text appear a moment later, in an `In 
 
 ### Session groups
 
-Groups let the Active view follow the stage each session is in, instead of the day it last ran. List them in the plugin entry's `options` and set `groupBy` to `"group"`:
+Groups let the Active view follow the stage each session is in, instead of the day it last ran. In the settings (`ctrl+o`), enter the names under "Groups", separated by commas, and set "Group Active sessions by" to group. Both apply at once. The same can go in the plugin entry's `options`, as defaults the settings override:
 
 ```json
 {
@@ -109,9 +109,9 @@ Groups let the Active view follow the stage each session is in, instead of the d
 }
 ```
 
-Active then shows Pinned, Running, one section per group in the order of `groups`, and the sessions in no group under their day, as before. A group with no session is hidden. A session in a group you later remove from `groups` counts as in no group. Search, Done, Archived and Pull requests keep their grouping.
+Active then shows Pinned, Running, one section per group in their order, and the sessions in no group under their day, as before. A group with no session is hidden. A session in a group you later remove counts as in no group. Search, Done, Archived and Pull requests keep their grouping.
 
-`ctrl+e` in the browser moves the selected session to a group or out of it. The agent can do the same with the `set_session_group` tool, which exists only while `groups` is set, so a command or skill can move its session to `Testing` when tests start. "Group Active sessions by" in the settings switches between days and groups.
+`ctrl+e` in the browser moves the selected session to a group or out of it. The agent can do the same with the `set_session_group` tool, which exists only while there are groups, so a command or skill can move its session to `Testing` when tests start.
 
 ## Pull request and issue tracking
 

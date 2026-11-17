@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { z } from 'zod';
-import { GROUP_NAME_MAX, providerIdSchema, type RefStatus } from './refs/ref.js';
+import { groupsSchema, providerIdSchema, type RefStatus } from './refs/ref.js';
 
 // Mirrors opencode-zero-trust: executables run without a shell, so arguments in the value would be
 // treated as part of the program name and are rejected up front.
@@ -19,26 +19,6 @@ const hostname = z
   });
 
 const days = z.number().int().min(0).max(365);
-
-// Headers the Active view already draws (src/page/state.ts), which a group of the same name, in
-// any case, would be mistaken for.
-const BUILT_IN_GROUPS = ['Pinned', 'Running', 'Today'];
-
-/** Most groups the `groups` option takes. */
-export const GROUPS_MAX = 20;
-
-/** A group the user sorts Active sessions into, such as a stage of their work. */
-export const groupNameSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(GROUP_NAME_MAX)
-  .refine(
-    (name) => !BUILT_IN_GROUPS.some((header) => header.toLowerCase() === name.toLowerCase()),
-    {
-      message: `Use a name other than ${BUILT_IN_GROUPS.join(', ')}.`
-    }
-  );
 
 const hex = z.string().regex(/^#[0-9a-f]{6}$/i, { message: 'Use a #rrggbb color.' });
 const color = z.union([hex, z.strictObject({ dark: hex, light: hex })]);
@@ -104,14 +84,8 @@ export const optionsSchema = z
      * activity, or by the group the user or the agent put them in, in the order of `groups`.
      */
     groupBy: z.enum(['day', 'group']).default('day'),
-    /** Groups a session can be put in, in display order. */
-    groups: z
-      .array(groupNameSchema)
-      .max(GROUPS_MAX)
-      .refine((names) => new Set(names).size === names.length, {
-        message: 'Group names must be unique.'
-      })
-      .default([]),
+    /** Groups a session can be put in, in display order. The settings dialog can change them. */
+    groups: groupsSchema.default([]),
     /** No effect: the plugin runs on every OpenCode release. Accepted so older configs still load. */
     untestedHosts: z.boolean().optional(),
     /** Archive Done sessions this many days after they become Done. Unset keeps them. */

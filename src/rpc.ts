@@ -2,6 +2,7 @@ import { Rpc } from '@opencode/plugin/rpc';
 import { z } from 'zod';
 import {
   GROUP_NAME_MAX,
+  groupsSchema,
   providerIdSchema,
   pullDetailsSchema,
   refLinkSchema,
@@ -75,7 +76,9 @@ export const serverSettingsSchema = z.strictObject({
   cleanupMerged: z.boolean(),
   cleanupInactiveDays: days.min(1).nullable(),
   cleanupDoneDays: days.nullable(),
-  cleanupUnchanged: z.boolean()
+  cleanupUnchanged: z.boolean(),
+  /** The groups `group.set` and `set_session_group` accept, in the Active view's order. */
+  groups: groupsSchema
 });
 
 /** Effective values and the plugin-option defaults they override. */
@@ -211,9 +214,9 @@ export const SuperSessions = Rpc.define({
       output: z.strictObject({})
     },
     /**
-     * Puts a session in one of the `groups` the plugin options list, which the Active view lists
-     * it under when grouping by group, or takes it out of its group with `null`.
-     * `unknown_group` lists the groups the options have.
+     * Puts a session in one of the `groups` setting's groups, which the Active view lists it
+     * under when grouping by group, or takes it out of its group with `null`.
+     * `unknown_group` lists the groups there are.
      */
     'group.set': {
       input: z.strictObject({

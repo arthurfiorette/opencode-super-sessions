@@ -42,7 +42,7 @@ import { type ProviderId, type PullDetails, type Ref, refKey, refNumber } from '
 import { rowRefs, workLinks } from '../refs/summary.js';
 import { LINK_PROVIDER_NAMES, recognizeLink } from '../refs/work-link.js';
 import { excludeFromAutoArchive } from '../settings/maintenance.js';
-import { tuiSettingsFor } from '../settings/store.js';
+import { serverSettingsFor, tuiSettingsFor } from '../settings/store.js';
 import { ICONS, titleGradient } from './icons.js';
 import { guardActions, type PageProps, type PeekBannerProps, routeKey } from './page.js';
 import { Preview } from './preview.js';
@@ -128,7 +128,7 @@ const FORK_KEY = 'ctrl+b';
 // many terminals; the host binds nothing to f5.
 const RELOAD_KEY = 'f5';
 // The search input's end of line, as ctrl+a is its start of line, which the scope key took. Bound
-// only while the options list groups, so without groups the search keeps it.
+// only while there are groups, so without groups the search keeps it.
 const GROUP_KEY = 'ctrl+e';
 // A reload that answers sooner than this shows no "Reloading…" toast, which would only flash.
 const RELOAD_TOAST_DELAY = 300;
@@ -178,6 +178,7 @@ export default function SessionBrowser(props: PageProps) {
   const [projectID, setProjectID] = createSignal<string>();
   const cli = useCliSettings();
   const settings = tuiSettingsFor(context);
+  const serverSettings = serverSettingsFor(context);
   let input: InputRenderable | undefined;
   let listBox: BoxRenderable | undefined;
   let panelBox: BoxRenderable | undefined;
@@ -631,15 +632,15 @@ export default function SessionBrowser(props: PageProps) {
     }
     void controller.refresh([session.id]);
   };
-  /** Whether the options list groups to move sessions to. */
-  const hasGroups = () => settings.groups().length > 0;
+  /** Whether there are groups to move sessions to. */
+  const hasGroups = () => serverSettings.groups().length > 0;
   /** Moves the selected session to the group the user picks, or out of its group. */
   const moveToGroup = async () => {
     const session = selected();
-    const groups = settings.groups();
+    const groups = serverSettings.groups();
     if (!session || groups.length === 0) return;
     const stored = data.refs[session.id]?.group;
-    // A group the options no longer list counts as none, as in the list.
+    // A group that is no longer listed counts as none, as in the list.
     const current = stored !== undefined && groups.includes(stored) ? stored : null;
     // `null` stands for no group: the dialog resolves `undefined` when dismissed.
     const group = await context.ui.dialog.select<string | null>({
@@ -650,15 +651,15 @@ export default function SessionBrowser(props: PageProps) {
       ],
       current
     });
-    // "No group" still clears a group the options dropped, which would come back with its name.
+    // "No group" still clears a dropped group, which would come back with its name.
     if (group === undefined || group === (stored ?? null)) return;
     try {
       await model.rpc()['group.set']({ sessionID: session.id, group }, model.rpcOptions());
     } catch (error) {
-      // The daemon keeps the options it started with until it restarts.
+      // Another terminal may have changed the groups since this one read them.
       toast(
         rpcError(error).type === 'unknown_group'
-          ? `The server does not know ${group}. Restart OpenCode after changing groups.`
+          ? `${group} is no longer a group.`
           : 'Could not move the session.',
         'error'
       );

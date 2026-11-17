@@ -7,7 +7,7 @@ import { pluginRpc } from '../host/rpc.js';
 import { listFilters, projectScope, sessionScope } from '../host/session-api.js';
 import type { Pins } from '../pins.js';
 import type { SearchScope } from '../rpc.js';
-import { tuiSettingsFor } from '../settings/store.js';
+import { serverSettingsFor, tuiSettingsFor } from '../settings/store.js';
 import {
   createPageController,
   filterPulls,
@@ -45,6 +45,7 @@ export function createBrowserModel(
     initial: { query: '', view: 'active', selected: undefined, scroll: 0 }
   });
   const settings = tuiSettingsFor(context);
+  const server = serverSettingsFor(context);
   // ctrl+a stores an override here; without one the "Default scope" setting decides.
   const [prefs, setPrefs] = context.storage.store<{ allProjects?: boolean }>('page-prefs', {
     initial: {}
@@ -196,7 +197,7 @@ export function createBrowserModel(
         pins: pins.ids(),
         now: now(),
         groupBy: settings.groupBy(),
-        groups: settings.groups()
+        groups: server.groups()
       });
     } catch (error) {
       onError(error);
@@ -316,6 +317,8 @@ export function createBrowserModel(
    */
   const sync = async (): Promise<void> => {
     const token = ++syncToken;
+    // The groups may have changed in another terminal's settings dialog.
+    void server.load();
     const target = scope();
     // An unresolved scope matches nothing, so the load runs and reports the failure.
     const key = await searchScope(target).then(

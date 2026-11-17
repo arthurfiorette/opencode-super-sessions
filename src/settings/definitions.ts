@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Options } from '../config.js';
+import { groupsSchema } from '../refs/ref.js';
 import type { ServerSettings } from '../rpc.js';
 
 // The rows of the settings dialog and the TUI's own settings. No OpenTUI imports: the store and
@@ -94,6 +95,30 @@ const afterDays = (days: readonly (number | null)[], zero: string) => ({
   )
 });
 
+// Longest groups label in the value column; the description lists them all.
+const GROUPS_LABEL_MAX = 24;
+
+/** The Groups row's value: the names joined, cut to fit the value column, or `none`. */
+function groupsLabel(value: unknown): string {
+  if (!Array.isArray(value) || value.length === 0) return 'none';
+  const text = value.join(', ');
+  return text.length > GROUPS_LABEL_MAX ? `${text.slice(0, GROUPS_LABEL_MAX - 1)}…` : text;
+}
+
+/**
+ * Reads the Groups prompt: names separated by commas, in order. An empty answer clears them.
+ * Returns the error to show when the names are not valid groups.
+ */
+export function parseGroups(text: string): { groups: string[] } | { error: string } {
+  const names = text
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name !== '');
+  const parsed = groupsSchema.safeParse(names);
+  if (parsed.success) return { groups: parsed.data };
+  return { error: parsed.error.issues[0]?.message ?? 'Those are not valid groups.' };
+}
+
 /** Every row, in display order. Groups follow the order of their first row. */
 export const SETTINGS: readonly SettingRow[] = [
   {
@@ -142,10 +167,25 @@ export const SETTINGS: readonly SettingRow[] = [
     group: 'List',
     title: 'Group Active sessions by',
     description:
-      'Whether the Active view lists sessions under the day of their last activity, or under the groups the groups option lists, in its order. Without that option, group changes nothing.',
+      'Whether the Active view lists sessions under the day of their last activity, or under their group, in the order of Groups. Without groups, group changes nothing.',
     values: ['day', 'group'],
     labels: ['day', 'group'],
     keywords: ['stage', 'status', 'sections']
+  },
+  {
+    side: 'server',
+    key: 'groups',
+    group: 'List',
+    title: 'Groups',
+    description: (value) =>
+      Array.isArray(value) && value.length > 0
+        ? `Groups ctrl+e and the agent move sessions to: ${value.join(', ')}. Enter edits them.`
+        : 'Groups ctrl+e and the agent move sessions to, such as the stages of your work. Enter adds them.',
+    // Edited in a prompt only: left and right would drop the list.
+    values: [],
+    format: (value) => groupsLabel(value),
+    prompt: { title: 'Groups', placeholder: 'Names separated by commas, in display order' },
+    keywords: ['stage', 'status', 'sections', 'group by']
   },
   {
     side: 'tui',

@@ -108,7 +108,7 @@ export function rpcHandlers(
         return invocation.error(
           'unknown_group',
           groups.length === 0
-            ? 'The plugin options list no groups.'
+            ? 'There are no groups to move a session to.'
             : `${group} is not one of the groups: ${groups.join(', ')}.`,
           { groups: [...groups] }
         );

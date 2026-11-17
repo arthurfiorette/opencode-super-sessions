@@ -1,5 +1,7 @@
+import { isDeepStrictEqual } from 'node:util';
 import type { Plugin } from '@opencode/plugin';
 import { z } from 'zod';
+import { reloadTools } from '../host/tool-hook.js';
 import type { RefCandidate, RepoRef } from '../providers/provider.js';
 import { parseUrl } from '../providers/registry.js';
 import {
@@ -30,7 +32,7 @@ import {
   resolveRepo,
   usableRefs
 } from './links.js';
-import type { Runtime } from './runtime.js';
+import { type Runtime, warn } from './runtime.js';
 import { buildViews } from './views.js';
 
 const FORGE_NAMES: Record<ProviderId, string> = { github: 'GitHub', gitlab: 'GitLab' };
@@ -174,12 +176,12 @@ function groupInput(groups: readonly [string, ...string[]]) {
 }
 
 /**
- * Registers `link_work` and `unlink_work` for one Location, and `set_session_group` when the
- * options list groups.
+ * Registers `link_work` and `unlink_work` for one Location, and `set_session_group` while there
+ * are groups (see {@link followGroups}).
  */
 export async function registerTools(runtime: Runtime, context: Plugin.Context): Promise<void> {
-  const [first, ...rest] = runtime.options.groups;
   await context.tool.transform((editor) => {
+    const [first, ...rest] = runtime.options.groups;
     editor.add({
       name: 'link_work',
       description: LINK_DESCRIPTION,
@@ -211,6 +213,17 @@ export async function registerTools(runtime: Runtime, context: Plugin.Context): 
         })
       });
     }
+  });
+}
+
+/**
+ * Reloads the Location's tools when the groups change in the settings dialog, so
+ * `set_session_group` and its choices follow at once. Returns a function that stops.
+ */
+export function followGroups(runtime: Runtime, context: Plugin.Context): () => void {
+  return runtime.settings.onChange((next, previous) => {
+    if (isDeepStrictEqual(next.groups, previous.groups)) return;
+    reloadTools(context).catch((error: unknown) => warn('Reloading the tools failed', error));
   });
 }
 
@@ -446,6 +459,13 @@ async function setSessionGroup(
   sessionID: string,
   group: string | null
 ): Promise<string> {
+  // A turn that started before the groups changed still offers the old choices.
+  if (group !== null && !runtime.options.groups.includes(group)) {
+    const groups = runtime.options.groups;
+    return groups.length === 0
+      ? 'Not moved: there are no groups anymore.'
+      : `Not moved: ${group} is no longer a group. Groups: ${groups.join(', ')}.`;
+  }
   const root = await rootSession(context, sessionID);
   let before: string | undefined;
   await runtime.writes.update(context.session, root, (refs) => {
