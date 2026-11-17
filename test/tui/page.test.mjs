@@ -149,6 +149,7 @@ async function host(
   const modes = [];
   const [route, setRoute] = createSignal({ type: 'session', sessionID: 'unread' });
   const memories = new Map();
+  const stores = new Map();
   // Sessions whose transcript pages were read, and the `history.scan` calls.
   const pages = [];
   const scans = [];
@@ -335,13 +336,17 @@ async function host(
         }
         return memories.get(name);
       },
+      // One store per name, like the host, so a test can change what the plugin reads.
       store(name, options) {
-        const initial =
-          name === 'pins'
-            ? { imported: true, ids: ['pinned', 'unread'] }
-            : structuredClone(options.initial);
-        const [store, set] = createStore(initial);
-        return [store, async (mutation) => set(produce(mutation))];
+        if (!stores.has(name)) {
+          const initial =
+            name === 'pins'
+              ? { imported: true, ids: ['pinned', 'unread'] }
+              : structuredClone(options.initial);
+          const [store, set] = createStore(initial);
+          stores.set(name, [store, async (mutation) => set(produce(mutation))]);
+        }
+        return stores.get(name);
       }
     },
     ui: {
@@ -777,6 +782,19 @@ test('ctrl+e moves the selected session to a group, listed between Running and N
   terminal.setGroup('notes', 'Coding');
   terminal.emit('session.metadata.updated', { sessionID: 'notes' });
   await eventually(rendered, (frame) => /Coding\s*\n.*Write the release notes/.test(frame));
+
+  // Grouping by day gives the key back to the search, groups or not.
+  await terminal.context.storage.store('settings', { initial: { values: {} } })[1]((draft) => {
+    draft.values.groupBy = 'day';
+  });
+  assert.equal(
+    terminal.layers
+      .filter((layer) => layer.mode === 'super-sessions')
+      .flatMap((layer) => layer.commands)
+      .find((item) => item.bind === 'ctrl+e')
+      .enabled(),
+    false
+  );
 
   // Without groups the key stays the search's end of line.
   rendered.renderer.destroy();

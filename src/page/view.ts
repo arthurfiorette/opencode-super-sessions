@@ -114,7 +114,7 @@ const ESC_GAP = 2;
 const FOOTER_PADDING = 2;
 const HINT_GAP = 2;
 // Free in the host's default keymap and in the search input's own bindings: ctrl+e and ctrl+k
-// edit the line there (ctrl+e only while no groups are set, see GROUP_KEY), ctrl+n moves
+// edit the line there (ctrl+e only while not grouping by group, see GROUP_KEY), ctrl+n moves
 // through host dialogs, ctrl+x is the host's leader.
 const DONE_KEY = 'ctrl+q';
 // Letters type into the search and ctrl+f is the host's pin. ctrl+b is only the search input's
@@ -123,12 +123,12 @@ const DONE_KEY = 'ctrl+q';
 // base-mode layer (packages/tui/src/routes/session/index.tsx:1459), which the browser's mode
 // turns off.
 const FORK_KEY = 'ctrl+b';
-// ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e (while no groups are set) and ctrl+k edit the search,
+// ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e (while not grouping by group) and ctrl+k edit the search,
 // ctrl+h is backspace in
 // many terminals; the host binds nothing to f5.
 const RELOAD_KEY = 'f5';
 // The search input's end of line, as ctrl+a is its start of line, which the scope key took. Bound
-// only while there are groups, so without groups the search keeps it.
+// only while grouping by group with groups set, so otherwise the search keeps it.
 const GROUP_KEY = 'ctrl+e';
 // A reload that answers sooner than this shows no "Reloading…" toast, which would only flash.
 const RELOAD_TOAST_DELAY = 300;
@@ -632,13 +632,16 @@ export default function SessionBrowser(props: PageProps) {
     }
     void controller.refresh([session.id]);
   };
-  /** Whether there are groups to move sessions to. */
-  const hasGroups = () => serverSettings.groups().length > 0;
+  /**
+   * Whether the Active view groups by group and there are groups to move sessions to. Otherwise
+   * ctrl+e stays the search's end of line.
+   */
+  const hasGroups = () => settings.groupBy() === 'group' && serverSettings.groups().length > 0;
   /** Moves the selected session to the group the user picks, or out of its group. */
   const moveToGroup = async () => {
     const session = selected();
     const groups = serverSettings.groups();
-    if (!session || groups.length === 0) return;
+    if (!session || !hasGroups()) return;
     const stored = data.refs[session.id]?.group;
     // A group that is no longer listed counts as none, as in the list.
     const current = stored !== undefined && groups.includes(stored) ? stored : null;

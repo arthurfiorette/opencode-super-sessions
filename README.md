@@ -67,7 +67,7 @@ The footer shows the common keys, and `ctrl+/` (or `?` while the search is empty
 | `ctrl+a`            | Switch between this project and all projects                                    |
 | `ctrl+s`            | Archive, or restore in the Archived view                                        |
 | `ctrl+q`            | Mark Done, or not Done                                                          |
-| `ctrl+e`            | Move to a group, when `groups` is set                                           |
+| `ctrl+e`            | Move to a group, while grouping Active sessions by group                        |
 | `ctrl+f`            | Pin or unpin. `<leader>1` to `<leader>9` open the first nine pins               |
 | `ctrl+r`            | Rename                                                                          |
 | `ctrl+t`            | Generate a new title                                                            |
@@ -111,7 +111,7 @@ Groups let the Active view follow the stage each session is in, instead of the d
 
 Active then shows Pinned, Running, every group in its order, empty ones included, and a No group section with the sessions you have not moved yet, instead of the day groups. A session in a group you later remove counts as in no group. Search, Done, Archived and Pull requests keep their grouping.
 
-`ctrl+e` in the browser moves the selected session to a group or out of it. The agent can do the same with the `set_session_group` tool, which exists only while there are groups, so a command or skill can move its session to `Testing` when tests start.
+While grouping by group, `ctrl+e` in the browser moves the selected session to a group or out of it. Grouping by day gives `ctrl+e` back to the search, where it moves the cursor to the end. The agent can do the same with the `set_session_group` tool, which exists only while there are groups, so a command or skill can move its session to `Testing` when tests start.
 
 ## Pull request and issue tracking
 
