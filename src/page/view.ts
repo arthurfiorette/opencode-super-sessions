@@ -1379,8 +1379,8 @@ export default function SessionBrowser(props: PageProps) {
       const value = line();
       return value.kind === 'header'
         ? `h:${value.title}`
-        : value.kind === 'blank'
-          ? 'b'
+        : value.kind === 'blank' || value.kind === 'empty'
+          ? value.kind
           : value.kind === 'pull'
             ? `p:${value.pull.key}`
             : value.kind === 'wrap' || value.kind === 'issue' || value.kind === 'pr'
@@ -1394,6 +1394,19 @@ export default function SessionBrowser(props: PageProps) {
         if (value.kind === 'pull') return renderPull(line, value.pull);
         // A text node, because an empty box in this column collapses to zero height.
         if (value.kind === 'blank') return jsx('text', { height: 1, flexShrink: 0, children: ' ' });
+        if (value.kind === 'empty') {
+          return jsx('box', {
+            height: 1,
+            flexShrink: 0,
+            paddingLeft: 1,
+            children: jsx('text', {
+              get fg() {
+                return theme().text.muted;
+              },
+              children: value.text
+            })
+          });
+        }
         if (value.kind === 'header') {
           return jsx('box', {
             height: 1,
@@ -1417,7 +1430,10 @@ export default function SessionBrowser(props: PageProps) {
         // Reads the latest line, but tolerates the moment before the key memo rebuilds this node.
         const session = () => {
           const current = line();
-          return current.kind === 'blank' || current.kind === 'header' || current.kind === 'pull'
+          return current.kind === 'blank' ||
+            current.kind === 'empty' ||
+            current.kind === 'header' ||
+            current.kind === 'pull'
             ? initial
             : current.session;
         };

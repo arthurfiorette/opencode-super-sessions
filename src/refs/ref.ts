@@ -11,7 +11,7 @@ export const GROUPS_MAX = 20;
 
 // Headers the Active view already draws (src/page/state.ts), which a group of the same name, in
 // any case, would be mistaken for.
-const BUILT_IN_GROUPS = ['Pinned', 'Running', 'Today'];
+const BUILT_IN_GROUPS = ['Pinned', 'Running', 'Today', 'No group'];
 
 /** A group the user sorts Active sessions into, such as a stage of their work. */
 export const groupNameSchema = z

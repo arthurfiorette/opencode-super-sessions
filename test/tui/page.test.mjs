@@ -721,7 +721,7 @@ test('ctrl+b forks the selected session before the picked prompt and opens the f
   assert.equal(command('ctrl+b').enabled(), false);
 });
 
-test('ctrl+e moves the selected session to a group, listed between Running and the days', async () => {
+test('ctrl+e moves the selected session to a group, listed between Running and No group', async () => {
   const terminal = await host(
     undefined,
     undefined,
@@ -761,16 +761,17 @@ test('ctrl+e moves the selected session to a group, listed between Running and t
   await eventually(rendered, (frame) => /Testing\s*\n.*Investigate the flaky/.test(frame));
   assert.deepEqual(terminal.groupSets, [{ sessionID: 'flaky', group: 'Testing' }]);
   assert.ok(terminal.toasts.some((toast) => toast.message === 'Moved to Testing'));
-  // Pinned and Running stay on top; sessions in no group keep their day.
+  // Running stays on top (Pinned scrolled above it), every group shows, the rest go under No group.
   const frame = rendered.captureCharFrame();
-  const order = ['Pinned', 'Running', 'Testing', 'Today'].map((title) =>
+  const order = ['Running', 'Coding', 'Testing', 'No group'].map((title) =>
     frame.search(new RegExp(`^\\s*${title}\\s*$`, 'm'))
   );
   assert.ok(
     order.every((at, index) => at !== -1 && at > (order[index - 1] ?? -1)),
     frame
   );
-  assert.doesNotMatch(frame, /Coding/);
+  assert.match(frame, /Coding\s*\n\s*No sessions/);
+  assert.doesNotMatch(frame, /^\s*Today\s*$/m);
 
   // The agent's move changes only the metadata; the row follows without a key.
   terminal.setGroup('notes', 'Coding');

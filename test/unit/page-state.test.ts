@@ -4,6 +4,7 @@ import type { SessionInfo } from '@opencode/client';
 import {
   createPageController,
   groupSessions,
+  layoutLines,
   type PageData,
   type PageDeps
 } from '../../src/page/state.js';
@@ -144,7 +145,7 @@ test('the Active list orders and groups by the last run, not by the last metadat
   );
 });
 
-test('grouping by group lists the groups in option order between Running and the day groups', () => {
+test('grouping by group lists every group in order between Running and No group', () => {
   const at = (hours: number) => new Date(2026, 10, 4, hours).getTime();
   const ran = (id: string, idle: number): SessionInfo => ({
     ...session(id),
@@ -190,11 +191,19 @@ test('grouping by group lists the groups in option order between Running and the
     ['Pinned', ['pinned-testing']],
     ['Running', ['running-coding']],
     ['Testing', ['testing']],
-    // Review has no session, so it has no header.
+    // Every group shows, so an empty one can be seen and moved to.
+    ['Review', []],
     ['Coding', ['coding-new', 'coding-old']],
-    ['Today', ['dropped-group', 'no-group']],
-    [new Date(at(-20)).toDateString(), ['no-group-yesterday']]
+    ['No group', ['dropped-group', 'no-group', 'no-group-yesterday']]
   ]);
+  const lines = layoutLines(groupSessions({ ...input, groupBy: 'group' }), () => []);
+  const review = lines.findIndex((line) => line.kind === 'header' && line.title === 'Review');
+  assert.deepEqual(lines[review + 1], { kind: 'empty', text: 'No sessions' });
+  // Without groups, grouping by group keeps the days.
+  assert.deepEqual(
+    titles(groupSessions({ ...input, groupBy: 'group', groups: [] })),
+    titles(groupSessions(input))
+  );
   // By day, the default, groups change nothing.
   assert.deepEqual(titles(groupSessions(input)), [
     ['Pinned', ['pinned-testing']],

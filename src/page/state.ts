@@ -140,6 +140,8 @@ export function layoutPulls(groups: readonly PullGroup[]): Line[] {
 export interface Group {
   title?: string;
   sessions: SessionInfo[];
+  /** Shown under the header while the group has no sessions. */
+  empty?: string;
 }
 
 /**
@@ -152,6 +154,8 @@ export type DetailLine = { kind: 'issues' } | { kind: 'pr' | 'issue'; index: num
 export type Line =
   | { kind: 'blank' }
   | { kind: 'header'; title: string }
+  /** A muted line under the header of a group without rows, such as an empty session group. */
+  | { kind: 'empty'; text: string }
   | { kind: 'title'; session: SessionInfo }
   | (DetailLine & { session: SessionInfo })
   /** The `index`th line (1 and up) of a title that wraps. */
@@ -226,9 +230,9 @@ export const RUNNING_GROUP = 'Running';
  *
  * - Active: Pinned in pin order, then Running, then one group per day of the latest activity
  *   (`activityTime`). Done sessions are left out, except pinned ones: a pin is an explicit choice
- *   to keep it in sight. With `groupBy: 'group'`, the sessions in one of `groups` come before
- *   the day groups, one group each in the order of `groups`, latest activity first; a group
- *   name the options no longer list counts as none.
+ *   to keep it in sight. With `groupBy: 'group'`, every one of `groups` follows instead, in
+ *   their order and empty ones included, then {@link NO_GROUP} with the rest, latest activity
+ *   first; a group name no longer listed counts as none.
  * - Done: one group per day of the last merge or close.
  * - Archived: one group per day of `time.archived`, latest activity first within a day.
  */
@@ -256,33 +260,46 @@ export function groupSessions(input: GroupInput): Group[] {
   const rest = roots.filter((session) => !pinnedIDs.has(session.id) && !done(session));
   const running = rest.filter((session) => input.running(session.id)).sort(byActivity);
   const idle = rest.filter((session) => !input.running(session.id)).sort(byActivity);
-  const grouped = input.groupBy === 'group' ? byGroup(idle, input.refs, input.groups ?? []) : [];
-  const groupedIDs = new Set(rowsOf(grouped).map((session) => session.id));
+  const groups = input.groupBy === 'group' ? (input.groups ?? []) : [];
   return [
     ...(pinned.length > 0 ? [{ title: 'Pinned', sessions: pinned }] : []),
     ...(running.length > 0 ? [{ title: RUNNING_GROUP, sessions: running }] : []),
-    ...grouped,
-    ...byDay(
-      idle.filter((session) => !groupedIDs.has(session.id)),
-      activityTime,
-      input.now
-    )
+    ...(groups.length > 0
+      ? byGroup(idle, input.refs, groups)
+      : byDay(idle, activityTime, input.now))
   ];
 }
 
+/** Title of the group of sessions in no group, last when grouping by group. */
+export const NO_GROUP = 'No group';
+
+/** Muted line under a session group without sessions. */
+const EMPTY_GROUP = 'No sessions';
+
 /**
- * The sessions in one of `groups`, already in display order, as one group each in the order of
- * `groups`. Groups without sessions are left out.
+ * One group per name of `groups` in their order, empty ones included so each can be seen and
+ * moved to, then {@link NO_GROUP} with the sessions in none of them, when there are any.
+ * `sessions` are already in display order.
  */
 function byGroup(
   sessions: readonly SessionInfo[],
   refs: Readonly<Record<string, SessionRefView>>,
   groups: readonly string[]
 ): Group[] {
-  return groups.flatMap((title) => {
-    const members = sessions.filter((session) => refs[session.id]?.group === title);
-    return members.length > 0 ? [{ title, sessions: members }] : [];
-  });
+  const known = new Set(groups);
+  const groupOf = (session: SessionInfo) => {
+    const group = refs[session.id]?.group;
+    return group !== undefined && known.has(group) ? group : undefined;
+  };
+  const rest = sessions.filter((session) => groupOf(session) === undefined);
+  return [
+    ...groups.map((title) => ({
+      title,
+      sessions: sessions.filter((session) => groupOf(session) === title),
+      empty: EMPTY_GROUP
+    })),
+    ...(rest.length > 0 ? [{ title: NO_GROUP, sessions: rest }] : [])
+  ];
 }
 
 /** Title of the search group of message text hits, whose header is muted. */
@@ -365,6 +382,9 @@ export function layoutLines(
   return groups.flatMap((group, index): Line[] => [
     ...(index > 0 ? [{ kind: 'blank' as const }] : []),
     ...(group.title === undefined ? [] : [{ kind: 'header' as const, title: group.title }]),
+    ...(group.sessions.length === 0 && group.empty !== undefined
+      ? [{ kind: 'empty' as const, text: group.empty }]
+      : []),
     ...group.sessions.flatMap((session): Line[] => [
       { kind: 'title', session },
       ...Array.from({ length: Math.max(0, titleLines(session) - 1) }, (_, line) => ({
@@ -428,6 +448,7 @@ export function scrollFor(
   while (end < lines.length) {
     const line = lines[end];
     if (line === undefined || line.kind === 'blank' || line.kind === 'header') break;
+    if (line.kind === 'empty') break;
     if (line.kind === 'title' || line.kind === 'pull' || line.session.id !== selected) break;
     end++;
   }
