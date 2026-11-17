@@ -32,6 +32,16 @@ export function shellCall(
   return { sessionID: event.sessionID, command, output };
 }
 
+/**
+ * Runs the Location's tool transforms again, so a tool added or left out by a setting follows a
+ * change without a restart. `tool.reload` is the public API for it (`ToolDomain` in
+ * @opencode/plugin/promise/tool); test/contract checks that a reload reruns a transform and that
+ * the tool list follows.
+ */
+export function reloadTools(context: Pick<Plugin.Context, 'tool'>): Promise<void> {
+  return context.tool.reload();
+}
+
 /** Narrows an unknown value to a plain object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;

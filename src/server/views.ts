@@ -193,7 +193,8 @@ export async function collectViews(
       states: {},
       ...(refs.urls === undefined || refs.urls.length === 0 ? {} : { urls: refs.urls }),
       ...(refs.done === undefined ? {} : { done: refs.done }),
-      ...(refs.doneAt === undefined ? {} : { doneAt: refs.doneAt })
+      ...(refs.doneAt === undefined ? {} : { doneAt: refs.doneAt }),
+      ...(refs.group === undefined ? {} : { group: refs.group })
     };
     views[entry.id] = { view, checkout: { ...view, branchRefs: entry.branches.checkout } };
   }

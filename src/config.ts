@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { z } from 'zod';
-import { providerIdSchema, type RefStatus } from './refs/ref.js';
+import { groupsSchema, providerIdSchema, type RefStatus } from './refs/ref.js';
 
 // Mirrors opencode-zero-trust: executables run without a shell, so arguments in the value would be
 // treated as part of the program name and are rejected up front.
@@ -79,6 +79,13 @@ export const optionsSchema = z
     titleScroll: z.enum(['auto', 'on', 'off']).default('auto'),
     /** Show the preview pane on wide terminals. */
     preview: z.boolean().default(true),
+    /**
+     * How the Active view groups sessions after Pinned and Running: by the day of their latest
+     * activity, or by the group the user or the agent put them in, in the order of `groups`.
+     */
+    groupBy: z.enum(['day', 'group']).default('day'),
+    /** Groups a session can be put in, in display order. The settings dialog can change them. */
+    groups: groupsSchema.default([]),
     /** No effect: the plugin runs on every OpenCode release. Accepted so older configs still load. */
     untestedHosts: z.boolean().optional(),
     /** Archive Done sessions this many days after they become Done. Unset keeps them. */
@@ -117,6 +124,8 @@ export const optionsSchema = z
     rows: { refs: true, groupIssues: false },
     titleScroll: 'auto',
     preview: true,
+    groupBy: 'day',
+    groups: [],
     cleanup: { deletedSessions: false, merged: false, unchanged: false },
     colors: {}
   });

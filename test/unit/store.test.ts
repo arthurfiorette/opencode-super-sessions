@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { Ref, RefLink, RefSource, SessionRefs } from '../../src/refs/ref.js';
-import { refKey } from '../../src/refs/ref.js';
-import { dismissLink, mergeLinks, mergeWorkLinks } from '../../src/refs/store.js';
+import { readSessionRefs, refKey } from '../../src/refs/ref.js';
+import {
+  dismissLink,
+  mergeLinks,
+  mergeWorkLinks,
+  setGroup,
+  withSessionRefs
+} from '../../src/refs/store.js';
 
 const pr: Ref = { provider: 'github', host: 'github.com', repo: 'acme/app', kind: 'pr', number: 1 };
 const issue: Ref = { ...pr, kind: 'issue', number: 2 };
@@ -90,6 +96,23 @@ test('dismissing a PR drops its closes links without dismissing those issues', (
   // The issue was not dismissed, so a prompt may still link it.
   assert.equal(mergeLinks(next, [link(issue, 'prompt', 4)]).next.links.length, 2);
   assert.deepEqual(dismissLink(next, refKey(pr)), { next, changed: false });
+});
+
+test('a group is stored next to the links, read back, and cleared with null', () => {
+  const current = { ...refs([link(pr, 'agent', 1)]), done: true, doneAt: 2 };
+  const grouped = setGroup(current, 'Testing');
+  assert.deepEqual(grouped, { next: { ...current, group: 'Testing' }, changed: true });
+  assert.deepEqual(setGroup(grouped.next, 'Testing'), { next: grouped.next, changed: false });
+
+  // Written with the other plugins' keys, and read back from the metadata.
+  const metadata = withSessionRefs({ 'other-plugin': { keep: true } }, grouped.next);
+  assert.deepEqual(metadata['other-plugin'], { keep: true });
+  assert.equal(readSessionRefs(structuredClone(metadata)).group, 'Testing');
+
+  const cleared = setGroup(grouped.next, null);
+  assert.deepEqual(cleared, { next: current, changed: true });
+  assert.equal('group' in cleared.next, false);
+  assert.deepEqual(setGroup(current, null), { next: current, changed: false });
 });
 
 test('an unlinked work link comes back only from an explicit link, under its first URL', () => {

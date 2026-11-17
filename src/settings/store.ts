@@ -22,6 +22,8 @@ export interface TuiSettings {
   groupIssues(): boolean;
   /** Whether hovered titles scroll, given the host's `animations` value for `auto`. */
   titleScroll(animations: boolean): boolean;
+  /** What the Active view groups sessions by after Pinned and Running. */
+  groupBy(): TuiValues['groupBy'];
   previewPane(): boolean;
   /** The preview's fraction of the browser width. */
   previewWidth(): number;
@@ -76,6 +78,7 @@ function buildTuiSettings(context: Plugin.Context, options: Options): TuiSetting
       const mode = values().titleScroll;
       return mode === 'auto' ? animations : mode === 'on';
     },
+    groupBy: () => values().groupBy,
     previewPane: () => values().previewPane,
     previewWidth: () => values().previewWidth,
     closeTabOnArchive: () => values().closeTabOnArchive,
@@ -91,10 +94,37 @@ export interface ServerSettingsClient {
   error(): string | undefined;
   load(): Promise<void>;
   set<Key extends keyof ServerSettings>(key: Key, value: ServerSettings[Key]): Promise<void>;
+  /**
+   * The groups a session can be moved to: the server's setting, or the plugin options until the
+   * server answered. Reactive.
+   */
+  groups(): readonly string[];
+}
+
+const serverByContext = new WeakMap<Plugin.Context, ServerSettingsClient>();
+
+/**
+ * The server settings client created for this plugin context, like {@link tuiSettingsFor}. A
+ * miss is a setup-order bug and throws.
+ */
+export function serverSettingsFor(context: Plugin.Context): ServerSettingsClient {
+  const server = serverByContext.get(context);
+  if (server === undefined) throw new Error('Super Sessions settings read before setup');
+  return server;
 }
 
 /** Reads and writes server settings over RPC, through the TUI's own Location. */
-export function createServerSettings(context: Plugin.Context): ServerSettingsClient {
+export function createServerSettings(
+  context: Plugin.Context,
+  options: Options
+): ServerSettingsClient {
+  const server = buildServerSettings(context, options);
+  serverByContext.set(context, server);
+  return server;
+}
+
+/** Builds the server settings client. */
+function buildServerSettings(context: Plugin.Context, options: Options): ServerSettingsClient {
   const [view, setView] = createSignal<ServerSettingsView>();
   const [error, setError] = createSignal<string>();
   const rpc = () => pluginRpc(context.client);
@@ -114,6 +144,8 @@ export function createServerSettings(context: Plugin.Context): ServerSettingsCli
     view,
     error,
     load: () => call(() => rpc()['settings.get']({}, location())),
-    set: (key, value) => call(() => rpc()['settings.set']({ values: { [key]: value } }, location()))
+    set: (key, value) =>
+      call(() => rpc()['settings.set']({ values: { [key]: value } }, location())),
+    groups: () => view()?.values.groups ?? options.groups
   };
 }

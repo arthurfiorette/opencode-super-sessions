@@ -194,6 +194,13 @@ export function setDone(current: SessionRefs, done: boolean | null, now: number)
   return { next: done ? { ...rest, done, doneAt: now } : { ...rest, done }, changed: true };
 }
 
+/** Puts the session in a group, or takes it out of its group with `null`. */
+export function setGroup(current: SessionRefs, group: string | null): RefsUpdate {
+  if ((current.group ?? null) === group) return { next: current, changed: false };
+  const { group: _group, ...rest } = current;
+  return { next: group === null ? rest : { ...rest, group }, changed: true };
+}
+
 /**
  * Records that the history scan read the session, pushes included, through `lastMessageID`. A
  * session already marked keeps its first marker, so a second scan of it writes nothing; a marker

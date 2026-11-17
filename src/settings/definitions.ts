@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Options } from '../config.js';
+import { groupsSchema } from '../refs/ref.js';
 import type { ServerSettings } from '../rpc.js';
 
 // The rows of the settings dialog and the TUI's own settings. No OpenTUI imports: the store and
@@ -15,6 +16,8 @@ export const tuiValuesSchema = z.strictObject({
   groupIssues: z.boolean(),
   /** `auto` follows the host's `animations` setting. */
   titleScroll: z.enum(['auto', 'on', 'off']),
+  /** What the Active view groups sessions by after Pinned and Running. */
+  groupBy: z.enum(['day', 'group']),
   previewPane: z.boolean(),
   // The option's range, which is wider than the dialog's steps.
   previewWidth: z.number().min(0.2).max(0.7),
@@ -32,6 +35,7 @@ export function tuiDefaults(options: Options): TuiValues {
     refLine: options.rows.refs,
     groupIssues: options.rows.groupIssues,
     titleScroll: options.titleScroll,
+    groupBy: options.groupBy,
     previewPane: options.preview,
     previewWidth: options.previewWidth,
     closeTabOnArchive: options.closeTabOnArchive,
@@ -81,6 +85,8 @@ interface RowShape {
   keywords?: readonly string[];
   /** Enter opens a text prompt for a custom value instead of cycling. */
   prompt?: { title: string; placeholder: string };
+  /** Whether the row shows for the current TUI values; rows without it always show. */
+  visible?: (tui: TuiValues) => boolean;
 }
 
 const onOff = { values: [false, true], labels: ['off', 'on'] } as const;
@@ -90,6 +96,30 @@ const afterDays = (days: readonly (number | null)[], zero: string) => ({
     day === null ? 'off' : day === 0 ? zero : `after ${day} ${day === 1 ? 'day' : 'days'}`
   )
 });
+
+// Longest groups label in the value column; the description lists them all.
+const GROUPS_LABEL_MAX = 24;
+
+/** The Groups row's value: the names joined, cut to fit the value column, or `none`. */
+function groupsLabel(value: unknown): string {
+  if (!Array.isArray(value) || value.length === 0) return 'none';
+  const text = value.join(', ');
+  return text.length > GROUPS_LABEL_MAX ? `${text.slice(0, GROUPS_LABEL_MAX - 1)}…` : text;
+}
+
+/**
+ * Reads the Groups prompt: names separated by commas, in order. An empty answer clears them.
+ * Returns the error to show when the names are not valid groups.
+ */
+export function parseGroups(text: string): { groups: string[] } | { error: string } {
+  const names = text
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name !== '');
+  const parsed = groupsSchema.safeParse(names);
+  if (parsed.success) return { groups: parsed.data };
+  return { error: parsed.error.issues[0]?.message ?? 'Those are not valid groups.' };
+}
 
 /** Every row, in display order. Groups follow the order of their first row. */
 export const SETTINGS: readonly SettingRow[] = [
@@ -132,6 +162,34 @@ export const SETTINGS: readonly SettingRow[] = [
     values: ['auto', 'off', 'on'],
     labels: ['follow animations', 'off', 'on'],
     keywords: ['marquee', 'animation']
+  },
+  {
+    side: 'tui',
+    key: 'groupBy',
+    group: 'List',
+    title: 'Group Active sessions by',
+    description:
+      'Whether the Active view lists sessions under the day of their last activity, or under every group in the order of Groups, then No group. Choosing group shows the Groups row below.',
+    values: ['day', 'group'],
+    labels: ['day', 'group'],
+    keywords: ['stage', 'status', 'sections']
+  },
+  {
+    side: 'server',
+    key: 'groups',
+    group: 'List',
+    title: 'Groups',
+    description: (value) =>
+      Array.isArray(value) && value.length > 0
+        ? `Groups ctrl+e and the agent move sessions to: ${value.join(', ')}. Enter edits them.`
+        : 'Groups ctrl+e and the agent move sessions to, such as the stages of your work. Enter adds them.',
+    // Edited in a prompt only: left and right would drop the list.
+    values: [],
+    format: (value) => groupsLabel(value),
+    prompt: { title: 'Groups', placeholder: 'Names separated by commas, in display order' },
+    // Only means something while grouping by group, so it shows right under that choice then.
+    visible: (tui) => tui.groupBy === 'group',
+    keywords: ['stage', 'status', 'sections', 'group by']
   },
   {
     side: 'tui',
@@ -292,6 +350,11 @@ export const SETTINGS: readonly SettingRow[] = [
     keywords: ['worktree', 'dry run', 'clean']
   }
 ];
+
+/** The rows that show for the current TUI values, in display order. */
+export function visibleRows(rows: readonly SettingRow[], tui: TuiValues): SettingRow[] {
+  return rows.filter((row) => row.side === 'action' || row.visible?.(tui) !== false);
+}
 
 /**
  * Rows matching a search, keeping display order: every word of the query must appear in the

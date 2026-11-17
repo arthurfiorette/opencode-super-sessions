@@ -13,6 +13,9 @@ import { mergeLinks } from '../../src/refs/store.js';
 import { createEventHub, type EventContext, type HandledEvent } from '../../src/server/events.js';
 import { createWriteQueue, type SessionAccess } from '../../src/server/queue.js';
 import type { Runtime } from '../../src/server/runtime.js';
+import { applySettings, createSettingsStore, serverDefaults } from '../../src/server/settings.js';
+import { followGroups, registerTools } from '../../src/server/tools.js';
+import { parseGroups } from '../../src/settings/definitions.js';
 
 /** Yields to the event loop so concurrent fake calls interleave the way real I/O does. */
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -58,6 +61,118 @@ test('the write queue keeps every concurrent link and foreign metadata, and surv
     readSessionRefs(metadata).links.map((stored) => stored.ref.number),
     [1, 2, 3, 4, 5, 7, 8]
   );
+});
+
+test('groups are unique names other than the built-in headers, in the order given', () => {
+  assert.deepEqual(parseOptions({ groups: [' Coding ', 'Testing'] }).groups, ['Coding', 'Testing']);
+  assert.equal(parseOptions(undefined).groupBy, 'day');
+  for (const groups of [['Coding', 'Coding'], ['Running'], ['today'], [''], ['x'.repeat(41)]]) {
+    assert.throws(() => parseOptions({ groups }), JSON.stringify(groups));
+  }
+  assert.throws(() => parseOptions({ groupBy: 'stage' }));
+});
+
+test('the Groups prompt reads names separated by commas, and refuses invalid ones', () => {
+  assert.deepEqual(parseGroups(' Coding, Testing ,, PR open '), {
+    groups: ['Coding', 'Testing', 'PR open']
+  });
+  assert.deepEqual(parseGroups('  '), { groups: [] });
+  assert.ok('error' in parseGroups('Coding, Coding'));
+  assert.ok('error' in parseGroups('Pinned'));
+});
+
+test('set_session_group follows the groups setting and moves the top-level session', async () => {
+  type Tool = {
+    name: string;
+    input: { safeParse(value: unknown): { success: boolean } };
+    execute(input: unknown, tool: { sessionID: string }): Promise<{ content: string }>;
+  };
+  type Stored = { time: typeof RAN; parentID?: string; metadata: Record<string, unknown> };
+  const root: Stored = { time: RAN, metadata: { 'other-plugin': { keep: true } } };
+  const child: Stored = { time: RAN, parentID: 'ses_root', metadata: {} };
+  const sessions: Record<string, Stored> = { ses_root: root, ses_child: child };
+  const session = {
+    get: async ({ sessionID }: { sessionID: string }) => structuredClone(sessions[sessionID]),
+    update: async (input: { sessionID: string; metadata: Record<string, unknown> }) => {
+      const stored = sessions[input.sessionID];
+      if (stored) stored.metadata = structuredClone(input.metadata);
+    }
+  };
+  // Like the host: a reload runs every transform again on an empty tool list.
+  let tools: Tool[] = [];
+  const transforms: Array<(editor: unknown) => void> = [];
+  const run = () => {
+    tools = [];
+    for (const edit of transforms) edit({ add: (tool: Tool) => tools.push(tool) });
+  };
+  let reloaded = () => {};
+  const context = {
+    session,
+    tool: {
+      transform: async (edit: (editor: unknown) => void) => {
+        transforms.push(edit);
+        run();
+      },
+      reload: async () => {
+        run();
+        reloaded();
+      }
+    }
+  } as unknown as Plugin.Context;
+  const base = parseOptions({});
+  const settings = createSettingsStore(serverDefaults(base), () => {});
+  const storage = { get: async () => undefined, set: async () => {} };
+  const runtime = {
+    get options() {
+      return applySettings(base, settings.current());
+    },
+    settings,
+    writes: createWriteQueue()
+  } as unknown as Runtime;
+  await registerTools(runtime, context);
+  const stop = followGroups(runtime, context);
+  /** Sets the groups as the settings dialog does, and waits for the tools to follow. */
+  const setGroups = async (groups: string[]) => {
+    const done = new Promise<void>((resolve) => {
+      reloaded = resolve;
+    });
+    await settings.set(storage, { groups });
+    await done;
+  };
+  const named = (name: string) => tools.find((item) => item.name === name);
+
+  // No groups, so other agents never see the tool.
+  assert.deepEqual(
+    tools.map((tool) => tool.name),
+    ['link_work', 'unlink_work']
+  );
+  await setGroups(['Coding', 'Testing']);
+  const tool = named('set_session_group');
+  assert.ok(tool);
+  assert.equal(tool.input.safeParse({ group: 'Shipping' }).success, false);
+  assert.equal(tool.input.safeParse({ group: null }).success, true);
+
+  // A subagent's call moves the session the list shows: its parent.
+  const moved = await tool.execute({ group: 'Testing' }, { sessionID: 'ses_child' });
+  assert.equal(moved.content, 'Moved this session to Testing. Other groups: Coding.');
+  assert.equal(readSessionRefs(root.metadata).group, 'Testing');
+  assert.deepEqual(root.metadata['other-plugin'], { keep: true });
+  assert.deepEqual(child.metadata, {});
+
+  const out = await tool.execute({ group: null }, { sessionID: 'ses_root' });
+  assert.equal(out.content, 'Moved this session out of Testing. Other groups: Coding, Testing.');
+  assert.equal(readSessionRefs(root.metadata).group, undefined);
+
+  // A turn that read the tool before the change still has the old choices.
+  await setGroups(['Investigating']);
+  const stale = await tool.execute({ group: 'Testing' }, { sessionID: 'ses_root' });
+  assert.equal(stale.content, 'Not moved: Testing is no longer a group. Groups: Investigating.');
+  assert.equal(readSessionRefs(root.metadata).group, undefined);
+  assert.equal(named('set_session_group')?.input.safeParse({ group: 'Testing' }).success, false);
+
+  await setGroups([]);
+  assert.equal(named('set_session_group'), undefined);
+  stop();
 });
 
 /** In-memory event bus whose subscriptions end when their signal aborts, like the host's. */

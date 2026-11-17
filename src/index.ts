@@ -7,7 +7,7 @@ import { registerNotices } from './server/notices.js';
 import { getRuntime, warn } from './server/runtime.js';
 import { serverDefaults } from './server/settings.js';
 import { getSweeper } from './server/sweep.js';
-import { registerInstructions, registerTools } from './server/tools.js';
+import { followGroups, registerInstructions, registerTools } from './server/tools.js';
 
 /**
  * Server plugin loaded by the OpenCode daemon once per Location. Each Location registers its own
@@ -32,10 +32,12 @@ export default Plugin.define({
     const registration = await context.rpc.register(SuperSessions, rpcHandlers(runtime, context));
     // Attached last so a failed registration above never leaves a subscriber behind.
     const detach = runtime.events.attach(context);
+    const stopTools = followGroups(runtime, context);
     // After attach: the backfill borrows the live contexts the event hub tracks.
     runtime.backfill.start();
     const detachSweeper = getSweeper(runtime).attach(context, registration.events.emit);
     return () => {
+      stopTools();
       detachSweeper();
       detach();
     };
@@ -68,6 +70,9 @@ async function registerInert(context: Plugin.Context): Promise<void> {
       invocation.error('unavailable', 'The plugin options are invalid.', { reason: 'failed' }),
     // Fails, so the browser says the mark did not stick instead of showing no change.
     'done.set': async () => {
+      throw new Error('The plugin options are invalid.');
+    },
+    'group.set': async () => {
       throw new Error('The plugin options are invalid.');
     },
     // Defaults only, and nothing is stored: changing settings would suggest they apply.

@@ -13,7 +13,14 @@ import {
 } from 'solid-js';
 import { DIALOG_MODE, DIALOG_SELECT } from '../host/keymap.js';
 import { dialogTheme } from '../host/theme.js';
-import { displayValue, filterRows, SETTINGS, type SettingRow, stepValue } from './definitions.js';
+import {
+  displayValue,
+  filterRows,
+  SETTINGS,
+  type SettingRow,
+  stepValue,
+  visibleRows
+} from './definitions.js';
 import type { SettingsDialogProps } from './install.js';
 
 // Laid out like the host's Settings dialog (packages/tui/src/component/dialog-config.tsx on
@@ -61,7 +68,7 @@ export default function SettingsDialog(props: SettingsDialogProps) {
   const [saving, setSaving] = createSignal(false);
   let input: InputRenderable | undefined;
 
-  const rows = createMemo(() => filterRows(SETTINGS, query()));
+  const rows = createMemo(() => filterRows(visibleRows(SETTINGS, props.tui.values()), query()));
   const lines = createMemo(() => layout(rows()));
   // The host's list height: half the terminal minus the dialog chrome.
   const height = () => Math.max(1, Math.min(lines().length, Math.floor(terminalHeight() / 2) - 6));
@@ -123,7 +130,7 @@ export default function SettingsDialog(props: SettingsDialogProps) {
 
   /** Steps the selected value. Changes queue behind a write in progress, like the host's. */
   const change = async (direction: number, row = current()) => {
-    if (row === undefined || row.side === 'action' || saving()) return;
+    if (row === undefined || row.side === 'action' || row.values.length === 0 || saving()) return;
     const value = settingValue(row);
     if (value === undefined && row.side === 'server') return;
     const next = stepValue(row.values, value, direction);
@@ -143,7 +150,7 @@ export default function SettingsDialog(props: SettingsDialogProps) {
     if (row.side === 'action') {
       return row.key === 'history.scan' ? props.scanAll() : props.runCleanup();
     }
-    if (row.side === 'tui' && row.prompt) return props.promptSuffix();
+    if (row.prompt) return row.side === 'server' ? props.promptGroups() : props.promptSuffix();
     void change(1, row);
   };
 
@@ -388,10 +395,11 @@ export default function SettingsDialog(props: SettingsDialogProps) {
       jsx('box', {
         get visible() {
           const row = current();
-          return row?.side === 'action' || (row?.side === 'tui' && row.prompt !== undefined);
+          return row?.side === 'action' || (row !== undefined && row.prompt !== undefined);
         },
         children: hint(
-          () => (current()?.side === 'action' ? 'run' : 'custom'),
+          () =>
+            current()?.side === 'action' ? 'run' : current()?.key === 'groups' ? 'edit' : 'custom',
           () => 'enter'
         )
       })

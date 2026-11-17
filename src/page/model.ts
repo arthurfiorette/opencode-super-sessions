@@ -7,7 +7,7 @@ import { pluginRpc } from '../host/rpc.js';
 import { listFilters, projectScope, sessionScope } from '../host/session-api.js';
 import type { Pins } from '../pins.js';
 import type { SearchScope } from '../rpc.js';
-import { tuiSettingsFor } from '../settings/store.js';
+import { serverSettingsFor, tuiSettingsFor } from '../settings/store.js';
 import {
   createPageController,
   filterPulls,
@@ -45,6 +45,7 @@ export function createBrowserModel(
     initial: { query: '', view: 'active', selected: undefined, scroll: 0 }
   });
   const settings = tuiSettingsFor(context);
+  const server = serverSettingsFor(context);
   // ctrl+a stores an override here; without one the "Default scope" setting decides.
   const [prefs, setPrefs] = context.storage.store<{ allProjects?: boolean }>('page-prefs', {
     initial: {}
@@ -194,7 +195,9 @@ export function createBrowserModel(
         extra: data.extra,
         running,
         pins: pins.ids(),
-        now: now()
+        now: now(),
+        groupBy: settings.groupBy(),
+        groups: server.groups()
       });
     } catch (error) {
       onError(error);
@@ -314,6 +317,8 @@ export function createBrowserModel(
    */
   const sync = async (): Promise<void> => {
     const token = ++syncToken;
+    // The groups may have changed in another terminal's settings dialog.
+    void server.load();
     const target = scope();
     // An unresolved scope matches nothing, so the load runs and reports the failure.
     const key = await searchScope(target).then(
@@ -327,8 +332,12 @@ export function createBrowserModel(
       loadedFor = key;
       loadedAt = Date.now();
       dirty = false;
+      // The load reads every listed session's view again.
+      changedMetadata.clear();
       await controller.load(target);
       if (token !== syncToken) return;
+    } else {
+      rereadChanged();
     }
     // A session the settled lists do not show, such as one past the list limit, keeps the
     // default selection instead of jumping there on a later reload.
@@ -342,8 +351,29 @@ export function createBrowserModel(
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(() => void sync(), RELOAD_DELAY);
   };
+  // The plugin's own writes, such as an agent moving a session to a group, change only metadata.
+  // The listed sessions' views are read again from the server's caches, in one call per burst
+  // while open, and on the next open otherwise, since cached lists skip the reload.
+  const changedMetadata = new Set<string>();
+  let rereadTimer: ReturnType<typeof setTimeout> | undefined;
+  const rereadChanged = () => {
+    clearTimeout(rereadTimer);
+    if (changedMetadata.size === 0) return;
+    const ids = [...changedMetadata];
+    changedMetadata.clear();
+    void controller.reread(ids).catch(() => {});
+  };
+  const metadataChanged = (sessionID: string) => {
+    const listed = [...data.active, ...data.archived].some((session) => session.id === sessionID);
+    if (!listed) return;
+    changedMetadata.add(sessionID);
+    if (!isOpen()) return;
+    clearTimeout(rereadTimer);
+    rereadTimer = setTimeout(rereadChanged, RELOAD_DELAY);
+  };
   const offs = [
     context.data.on('session.deleted', (event) => controller.removed(event.data.sessionID)),
+    context.data.on('session.metadata.updated', (event) => metadataChanged(event.data.sessionID)),
     ...(
       [
         'session.created',
@@ -423,6 +453,7 @@ export function createBrowserModel(
     },
     dispose() {
       clearTimeout(reloadTimer);
+      clearTimeout(rereadTimer);
       for (const off of offs) off();
       controller.dispose();
       lists.dispose();

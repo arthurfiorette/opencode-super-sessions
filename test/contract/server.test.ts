@@ -5,6 +5,7 @@ import path from 'node:path';
 import { after, before, test } from 'node:test';
 import type { OpenCodeEvent, SessionInfo, SessionMessageInfo } from '@opencode/client';
 import { Plugin } from '@opencode/plugin';
+import { z } from 'zod';
 import {
   assistantText,
   shellRun,
@@ -24,7 +25,7 @@ import {
   sessionScope,
   setArchived
 } from '../../src/host/session-api.js';
-import { shellCall } from '../../src/host/tool-hook.js';
+import { reloadTools, shellCall } from '../../src/host/tool-hook.js';
 import { projectWorktrees, removeWorktree } from '../../src/host/worktree.js';
 import { markScanned } from '../../src/refs/store.js';
 import { createWriteQueue } from '../../src/server/queue.js';
@@ -57,6 +58,9 @@ const NOTICE = {
 const hooks: Parameters<typeof shellCall>[0][] = [];
 const events = new Map<string, OpenCodeEvent>();
 let probe: Plugin.Context | undefined;
+// Whether the probe's transform adds its tool, as `set_session_group` follows the groups.
+let offerTool = false;
+const PROBE_TOOL = 'contract_probe_tool';
 
 // Records what the plugin would see through the same context APIs it uses. `setup` runs once per
 // Location and every Location's subscription sees every event, so events are keyed by id.
@@ -64,6 +68,15 @@ const recorder = Plugin.define({
   id: 'contract-probe',
   async setup(context) {
     probe ??= context;
+    await context.tool.transform((editor) => {
+      if (!offerTool) return;
+      editor.add({
+        name: PROBE_TOOL,
+        description: 'Contract probe.',
+        input: z.strictObject({}),
+        execute: async () => ({ content: 'ok' })
+      });
+    });
     await context.tool.hook('execute.after', (event) => {
       hooks.push(structuredClone(event));
     });
@@ -276,6 +289,18 @@ test('a user ! command publishes session.shell.ended with its command and output
   const stored = storedHistory(await messages(session.id)).find((entry) => entry.type === 'shell');
   assert.equal(stored?.type === 'shell' && stored.command, 'echo bang-output');
   assert.match(stored?.type === 'shell' ? stored.output : '', /bang-output/);
+});
+
+test('a tool reload runs the transforms again, so a tool a setting adds or drops follows', async () => {
+  assert.ok(probe);
+  const names = async () => (await probe?.tool.list())?.map((tool) => tool.name) ?? [];
+  assert.equal((await names()).includes(PROBE_TOOL), false);
+  offerTool = true;
+  await reloadTools(probe);
+  assert.equal((await names()).includes(PROBE_TOOL), true);
+  offerTool = false;
+  await reloadTools(probe);
+  assert.equal((await names()).includes(PROBE_TOOL), false);
 });
 
 test('server plugin session.update replaces metadata and session.get returns it with the location', async () => {
