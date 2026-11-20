@@ -10,7 +10,7 @@
 
 # OpenCode Super Sessions
 
-A session browser for the OpenCode V2 TUI that also tracks the pull requests and issues each session works on.
+A session browser for the OpenCode V2 TUI that also tracks the pull requests and issues each session works on. It adds the browser and pull request status to [OpenCode Desktop](#opencode-desktop) too.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/arthurfiorette/opencode-super-sessions/main/assets/trailer.gif" alt="The session browser opening over OpenCode: sessions grouped by day, with their pull requests, checks and issues" width="960" />
@@ -89,6 +89,34 @@ With the mouse, a click selects a row and a double click opens it. A click on a 
 Typing filters the list by session title and by pull request or issue number and title. `123`, `#123`, `pr 123` and `!12` find sessions tracking that number in any repository. `owner/repo#123` and full URLs find that exact ref. Work links match by id, such as `COR-1466`, by title, and by their full URL. A link to a page outside the trackers also matches any part of its URL.
 
 Sessions that match only in their message text appear a moment later, in an `In messages` group at the bottom.
+
+## OpenCode Desktop
+
+The same plugin adds to OpenCode Desktop 2.3:
+
+- the session browser as a dialog. Press `cmd+shift+s` (`ctrl+shift+s` on Windows and Linux) or run "Super Sessions: Browse sessions" from the command palette. It has the same views, search and project scope as the terminal browser, and shows the selected session's work on the right.
+- the session's pull requests and issues in the session header, with their state, review and CI
+- a Work side panel, from the side panel's `+` menu or "Super Sessions: Show work", with the failed checks of open pull requests. You can open, copy, link and unlink work there.
+- the session's open pull request above the message box, colored by its checks and review, with a menu of its checks
+
+Desktop's own session list in the sidebar stays as it is, since plugins cannot change it. Use the browser to list one project's sessions or to see their pull requests.
+
+Keys in the browser:
+
+| Key                 | Action                                                        |
+| ------------------- | ------------------------------------------------------------- |
+| `up` / `down`       | Select a session                                              |
+| `tab` / `shift+tab` | Next or previous view                                         |
+| `enter`             | Open the session                                              |
+| `cmd+enter`         | Open the session in a background tab                          |
+| `alt+a`             | Switch between this project and all projects                  |
+| `alt+s`             | Archive, or restore in the Archived view                      |
+| `alt+q`             | Mark Done, or not Done                                        |
+| `alt+g`             | Open the session's pull request, issue or link in the browser |
+| `f5`                | Reload the selected session from GitHub or GitLab             |
+| `esc`               | Close the browser                                             |
+
+Desktop support uses OpenCode's experimental plugin API for the app, so an OpenCode Desktop update can break it until the plugin catches up. The terminal is not affected.
 
 ## Pull request and issue tracking
 
