@@ -88,7 +88,7 @@ export const sessionRefsSchema = z.strictObject({
   pushed: z.array(z.string().min(1)).optional(),
   // A session's activity time before the plugin first wrote it, for sessions without run times,
   // whose only activity record is `time.updated` and which that write moves. The write queue
-  // stamps it; `activityTime` in src/host/session-api.ts reads it.
+  // stamps it; `activityTime` in src/host/session-info.ts reads it.
   activeAt: z.number().int().nonnegative().optional(),
   // Keys of links the agent was told about in a notice (src/server/notices.ts): links from user
   // messages, the user's own links and issues a tracked pull request closes. Keys, not a time,
@@ -122,7 +122,7 @@ export const refStatusSchema = z.enum([
  *   GitHub counts successful, neutral and skipped check runs and successful statuses as passed;
  *   GitLab counts successful and skipped jobs of the head pipeline, without retried or manual ones.
  * - `checksSkipped` / `checksCancelled` / `checksPending` / `checksFailed`: the rest of the
- *   breakdown (see `tallyOf` in `src/page/checks.ts`); skipped checks are part of
+ *   breakdown (see `tallyOf` in `src/refs/look.ts`); skipped checks are part of
  *   `checksPassed`. GitHub only, where the counts cost nothing; GitLab's come from the details.
  * - `conflicts`: whether the branch conflicts with its base; absent while the forge has not
  *   computed it, which the snapshot cache then fills with the last known answer.
@@ -255,6 +255,12 @@ export function refFromKey(key: string): Ref | undefined {
  */
 export function refNumber(ref: Pick<Ref, 'provider' | 'number'> & { kind?: RefKind }): string {
   return `${ref.provider === 'gitlab' && ref.kind === 'pr' ? '!' : '#'}${ref.number}`;
+}
+
+/** How a ref's kind reads in a label. GitLab calls its pull requests merge requests. */
+export function refKind(ref: Pick<Ref, 'provider' | 'kind'>): string {
+  if (ref.kind === 'issue') return 'issue';
+  return ref.provider === 'gitlab' ? 'MR' : 'PR';
 }
 
 /**

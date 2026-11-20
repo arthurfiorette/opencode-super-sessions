@@ -1,5 +1,5 @@
 import type { SessionInfo } from '@opencode/client';
-import { activityTime } from '../host/session-api.js';
+import { activityTime } from '../host/session-info.js';
 import { type ProviderId, type Ref, type RefState, refKey } from '../refs/ref.js';
 import { rankSessions, searchLinks } from '../refs/search.js';
 import { doneAt, isDone, trackedRefs } from '../refs/summary.js';

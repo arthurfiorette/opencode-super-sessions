@@ -83,6 +83,16 @@ async function waitForPlugins(
 }
 
 /**
+ * Whether a call failed because the Location runs no handler for this plugin's RPC: the host
+ * answers `rpc.unavailable` for an id nothing registered (packages/core/src/rpc.ts:112 at
+ * v2.3.2). {@link pluginRpc} waits for the Location's plugins first, so after it this means the
+ * server plugin is not installed there, as on a remote server the desktop app connects to.
+ */
+export function serverPluginMissing(error: unknown): boolean {
+  return rpcError(error).type === 'rpc.unavailable';
+}
+
+/**
  * The `type` and `data` of an error a handler returned with `invocation.error`, which the client
  * rejects with as an `RpcError` (packages/protocol/src/errors.ts:21). Both are undefined for any
  * other failure, such as a daemon without the server plugin.

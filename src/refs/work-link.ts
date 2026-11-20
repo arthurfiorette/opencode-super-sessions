@@ -49,6 +49,13 @@ export interface LinkInfo {
   title?: string;
 }
 
+/** How a work link reads in a toast: its provider and id, such as `Linear COR-1466`. */
+export function linkLabel(url: string): string {
+  const info = recognizeLink(url);
+  if (info === undefined) return url;
+  return `${LINK_PROVIDER_NAMES[info.provider]} ${info.name ?? info.title ?? ''}`.trim();
+}
+
 /** Longest URL a work link stores, matching `workLinkSchema`. */
 export const URL_MAX = 2000;
 

@@ -103,6 +103,12 @@ jobs:
         timeout-minutes: 10
         run: pnpm test:tui
 
+      - name: Desktop GUI tests
+        id: gui
+        continue-on-error: true
+        timeout-minutes: 10
+        run: pnpm test:gui
+
       - name: Report the result
         env:
           GH_TOKEN: ${{ github.token }}
@@ -115,6 +121,7 @@ jobs:
           INTEGRATION: ${{ steps.integration.outcome }}
           CONTRACT: ${{ steps.contract.outcome }}
           TUI: ${{ steps.tui.outcome }}
+          GUI: ${{ steps.gui.outcome }}
         run: |
           failed=""
           [ "$TYPECHECK" = success ] || failed="$failed- typecheck"$'\n'
@@ -122,10 +129,11 @@ jobs:
           [ "$INTEGRATION" = success ] || failed="$failed- integration tests"$'\n'
           [ "$CONTRACT" = success ] || failed="$failed- contract tests"$'\n'
           [ "$TUI" = success ] || failed="$failed- native TUI tests"$'\n'
+          [ "$GUI" = success ] || failed="$failed- Desktop GUI tests"$'\n'
 
           if [ -z "$failed" ]; then
             {
-              echo "OpenCode $OPENCODE with OpenTUI $OPENTUI passed the typecheck, unit, integration, contract and native TUI tests."
+              echo "OpenCode $OPENCODE with OpenTUI $OPENTUI passed the typecheck, unit, integration, contract, native TUI and Desktop GUI tests."
               if [ "$OPENCODE" != "$PINNED" ]; then
                 echo
                 echo "The pins are still at $PINNED. Updating the \`@opencode/*\` pins to $OPENCODE raises \`TESTED_UP_TO\` with them."

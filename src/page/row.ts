@@ -3,10 +3,11 @@ import { MouseButton, type MouseEvent, type RGBA } from '@opentui/core';
 import { jsx } from '@opentui/solid/jsx-runtime';
 import type { JSX } from 'solid-js';
 import type { Options } from '../config.js';
+import { type Badge, openBadges, reviewBadges } from '../refs/look.js';
 import { type Ref, type RefReview, type RefState, refKey, refNumber } from '../refs/ref.js';
 import { ROW_PRS, rowRefs, type ShownLink, workLinks } from '../refs/summary.js';
 import type { SessionRefView } from '../rpc.js';
-import { ciLook } from './checks.js';
+import { toneColor } from './checks.js';
 import { ICONS, linkColor, linkIcon, refColor, refIcon, stackText } from './icons.js';
 import type { DetailLine } from './state.js';
 
@@ -120,25 +121,10 @@ export function detailKinds(details: RowDetails): DetailLine[] {
 }
 
 /**
- * A pull request's CI counts as `passed/total`, or undefined when they are unknown or every check
- * passed: the green check alone says that, and `160/160` only took room from the title.
- */
-export function checkCounts(review: RefReview | undefined): string | undefined {
-  const passed = review?.checksPassed;
-  const total = review?.checksTotal;
-  if (passed === undefined || total === undefined || passed === total) return undefined;
-  return `${passed}/${total}`;
-}
-
-/**
- * The review and CI icons drawn after an open pull request's number, in GitHub's colors: the
- * review verdict, the CI result (see {@link ciLook}) with `passed/total` muted unless every check
- * passed (see {@link checkCounts}) or `counts` is false, an alert in the error color when the
- * branch has merge conflicts, then the unresolved threads in the warning color. A part without
- * data is left out, and so is the CI result when `ci` is false. Each part starts with its
- * separating space, so the number and the state icon stay in the same column on every row, and
- * each glyph keeps a 2-cell slot like the ref icons because a space always follows it (the next
- * part's or the title's).
+ * The review and CI icons drawn after an open pull request's number, in GitHub's colors, as
+ * {@link reviewBadges} decides them. Each part starts with its separating space, so the number
+ * and the state icon stay in the same column on every row, and each glyph keeps a 2-cell slot
+ * like the ref icons because a space always follows it (the next part's or the title's).
  */
 export function badgeSegments(
   review: RefReview | undefined,
@@ -146,29 +132,7 @@ export function badgeSegments(
   counts = true,
   ci = true
 ): Segment[] {
-  if (review === undefined) return [];
-  const { feedback, muted } = theme.text;
-  const parts: Segment[] = [];
-  if (review.decision === 'changes_requested') {
-    parts.push({ text: ` ${ICONS.changesRequested}`, fg: feedback.error.base });
-  } else if (review.decision === 'approved') {
-    parts.push({ text: ` ${ICONS.approved}`, fg: feedback.success.base });
-  } else if (review.decision === 'review_required') {
-    parts.push({ text: ` ${ICONS.reviewRequired}`, fg: muted });
-  }
-  if (ci && review.checks !== undefined) {
-    const [glyph, fg] = ciLook(review.checks, theme);
-    parts.push({ text: ` ${glyph}`, fg });
-    const text = counts ? checkCounts(review) : undefined;
-    if (text !== undefined) parts.push({ text: ` ${text}`, fg: muted });
-  }
-  if (review.conflicts === true) {
-    parts.push({ text: ` ${ICONS.conflicts}`, fg: feedback.error.base });
-  }
-  if (review.unresolved !== undefined && review.unresolved > 0) {
-    parts.push({ text: ` ${ICONS.threads} ${review.unresolved}`, fg: feedback.warning.base });
-  }
-  return parts;
+  return reviewBadges(review, counts, ci).map(segmentOf(theme));
 }
 
 /** {@link badgeSegments} for a ref's state, or none unless it is an open or draft pull request. */
@@ -177,8 +141,16 @@ export function stateBadges(
   theme: ResolvedTheme,
   counts = true
 ): Segment[] {
-  const open = state?.status === 'open' || state?.status === 'draft';
-  return open ? badgeSegments(state.review, theme, counts) : [];
+  return openBadges(state, counts).map(segmentOf(theme));
+}
+
+/** Draws a {@link Badge} as one segment: its glyph, then its text, after a space. */
+function segmentOf(theme: ResolvedTheme) {
+  return (badge: Badge): Segment => {
+    const glyph = badge.icon === undefined ? [] : [ICONS[badge.icon]];
+    const text = badge.text === undefined ? [] : [badge.text];
+    return { text: ` ${[...glyph, ...text].join(' ')}`, fg: toneColor(badge.tone, theme) };
+  };
 }
 
 /**

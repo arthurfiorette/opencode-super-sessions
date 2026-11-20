@@ -1,6 +1,7 @@
 import type { ResolvedTheme } from '@opencode/theme/tui';
 import { RGBA } from '@opentui/core';
 import { type Options, stateColor } from '../config.js';
+import { type LookIcon, refGlyph } from '../refs/look.js';
 import type { RefKind, RefStatus } from '../refs/ref.js';
 import type { LinkProvider } from '../refs/work-link.js';
 
@@ -34,7 +35,7 @@ export const ICONS = {
   threads: '\uf41f',
   // GitHub's stack octicon, beside a stacked pull request's place in its stack.
   stack: '\uf51e'
-} as const;
+} as const satisfies Record<LookIcon | 'done' | 'archived', string>;
 
 /** ` <stack> 2/4` after a stacked pull request's number, or nothing when it is in no stack. */
 export function stackText(stack: { position: number; size: number } | undefined): string {
@@ -83,17 +84,9 @@ export const STATE_WORDS: Record<RefStatus, string> = {
   not_planned: 'not planned'
 };
 
-/** Glyph for a ref. Unknown state (no snapshot yet) uses the open glyph. */
+/** Glyph for a ref (see {@link refGlyph}). Unknown state (no snapshot yet) uses the open glyph. */
 export function refIcon(kind: RefKind, status: RefStatus | undefined): string {
-  if (kind === 'pr') {
-    if (status === 'draft') return ICONS.prDraft;
-    if (status === 'merged') return ICONS.prMerged;
-    if (status === 'closed') return ICONS.prClosed;
-    return ICONS.prOpen;
-  }
-  if (status === 'completed' || status === 'closed') return ICONS.issueCompleted;
-  if (status === 'not_planned') return ICONS.issueNotPlanned;
-  return ICONS.issueOpen;
+  return ICONS[refGlyph(kind, status)];
 }
 
 // The theme has no orange or yellow token (`SemanticHue` is accent, interactive and neutral), so

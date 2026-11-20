@@ -38,9 +38,9 @@ import {
 } from '../host/session-api.js';
 import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.js';
 import { copyLink } from '../link.js';
-import { type ProviderId, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
+import { type ProviderId, type PullDetails, refKey, refKind, refNumber } from '../refs/ref.js';
 import { rowRefs, workLinks } from '../refs/summary.js';
-import { LINK_PROVIDER_NAMES, recognizeLink } from '../refs/work-link.js';
+import { LINK_PROVIDER_NAMES, linkLabel } from '../refs/work-link.js';
 import { excludeFromAutoArchive } from '../settings/maintenance.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import { ICONS, titleGradient } from './icons.js';
@@ -2034,25 +2034,12 @@ function matchLabel(reason: SearchReason | undefined, refs: Parameters<typeof fi
   return ref === undefined ? 'ref number' : `${kind} ${refNumber(ref)}`;
 }
 
-/** How a ref's kind reads in a label. GitLab calls its pull requests merge requests. */
-function refKind(ref: Ref): string {
-  if (ref.kind === 'issue') return 'issue';
-  return ref.provider === 'gitlab' ? 'MR' : 'PR';
-}
-
 /** A Work row the keys can select: a ref or a work link, with what `enter`, `c` and `d` need. */
 interface WorkItem {
   key: string;
   url: string;
   /** How toasts name it, such as `PR #12` or `Linear COR-1466`. */
   label: string;
-}
-
-/** How a work link reads in a toast: its provider and id, such as `Linear COR-1466`. */
-function linkLabel(url: string): string {
-  const info = recognizeLink(url);
-  if (info === undefined) return url;
-  return `${LINK_PROVIDER_NAMES[info.provider]} ${info.name ?? info.title ?? ''}`.trim();
 }
 
 /** Whether a renderable is still in the tree under `root`. */

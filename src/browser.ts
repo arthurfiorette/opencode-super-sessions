@@ -1,18 +1,8 @@
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import type { Ref, RefState } from './refs/ref.js';
 
-/**
- * Web page of a ref. The snapshot's URL wins; before the first snapshot arrives the URL is built
- * from the ref with GitHub's path layout.
- */
-export function refUrl(ref: Ref, state: RefState | undefined): string {
-  return (
-    state?.url ??
-    `https://${ref.host}/${ref.repo}/${ref.kind === 'pr' ? 'pull' : 'issues'}/${ref.number}`
-  );
-}
+export { refUrl } from './refs/look.js';
 
 /**
  * Opens a web URL with the OS opener. No shell is involved, and only http(s) URLs are passed,

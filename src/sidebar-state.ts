@@ -8,7 +8,10 @@ export interface SidebarSource {
   refresh(sessionID: string): Promise<SessionRefView | undefined>;
 }
 
-/** Fetches the refs of the session the sidebar shows and drops answers that arrive too late. */
+/**
+ * Fetches the refs of the session the sidebar shows and drops answers that arrive too late. The
+ * Desktop GUI's refs store (`src/gui/refs-store.ts`) runs one per session it shows.
+ */
 export interface SidebarController {
   /** Switches to a session (or reloads the current one): cached refs first, then a refresh. */
   show(sessionID: string): Promise<void>;

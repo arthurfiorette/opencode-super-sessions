@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { z } from 'zod';
+import { GITHUB_COLORS } from './refs/look.js';
 import { providerIdSchema, type RefStatus } from './refs/ref.js';
 
 // Mirrors opencode-zero-trust: executables run without a shell, so arguments in the value would be
@@ -22,16 +23,6 @@ const days = z.number().int().min(0).max(365);
 
 const hex = z.string().regex(/^#[0-9a-f]{6}$/i, { message: 'Use a #rrggbb color.' });
 const color = z.union([hex, z.strictObject({ dark: hex, light: hex })]);
-
-// GitHub Primer foreground colors for each state, so the list reads like GitHub in either mode.
-const githubColors: Record<RefStatus, { dark: string; light: string }> = {
-  open: { dark: '#3fb950', light: '#1a7f37' },
-  draft: { dark: '#9198a1', light: '#59636e' },
-  merged: { dark: '#ab7df8', light: '#8250df' },
-  closed: { dark: '#f85149', light: '#d1242f' },
-  completed: { dark: '#ab7df8', light: '#8250df' },
-  not_planned: { dark: '#9198a1', light: '#59636e' }
-};
 
 export const optionsSchema = z
   .strictObject({
@@ -132,5 +123,5 @@ export function parseOptions(input: unknown): Options {
 export function stateColor(options: Options, status: RefStatus, mode: 'dark' | 'light'): string {
   const override = options.colors[status];
   if (typeof override === 'string') return override;
-  return (override ?? githubColors[status])[mode];
+  return (override ?? GITHUB_COLORS[status])[mode];
 }

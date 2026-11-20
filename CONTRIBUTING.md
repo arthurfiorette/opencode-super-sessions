@@ -14,7 +14,7 @@ A GitHub release tagged `v<package.json version>` publishes to npm through `publ
 
 ## Development
 
-Use Node.js 24.16+, pnpm 12 and Bun 1.3.14 for the native TUI tests. The contract tests start the real `opencode` binary, so it must be on `PATH` or named by `OPENCODE_BIN`, at the version of the pinned `@opencode/sdk`. To try a local build, run `pnpm build` and set the plugin entry's `package` to the absolute path of the repository.
+Use Node.js 24.16+, pnpm 12 and Bun 1.3.14 for the native TUI and Desktop GUI tests. The contract tests start the real `opencode` binary, so it must be on `PATH` or named by `OPENCODE_BIN`, at the version of the pinned `@opencode/sdk`. To try a local build, run `pnpm build` and set the plugin entry's `package` to the absolute path of the repository.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -24,7 +24,7 @@ pnpm check
 
 | Command                 | Purpose                                                                                    |
 | ----------------------- | ------------------------------------------------------------------------------------------ |
-| `pnpm build`            | Compile ESM and TypeScript declarations into `dist/`                                       |
+| `pnpm build`            | Compile ESM and TypeScript declarations into `dist/`, then the Desktop GUI bundle          |
 | `pnpm format`           | Apply the shared Biome configuration                                                       |
 | `pnpm lint`             | Check formatting and lint rules                                                            |
 | `pnpm lint-fix`         | Apply Biome's fixes, unsafe ones included                                                  |
@@ -34,6 +34,7 @@ pnpm check
 | `pnpm test:integration` | Build, then load the plugin in an isolated `@opencode/sdk` host                            |
 | `pnpm test:contract`    | Build, then check host assumptions against a real host and the real TUI                    |
 | `pnpm test:tui`         | Build, then mount the compiled views through OpenTUI under Bun                             |
+| `pnpm test:gui`         | Build, then run the Desktop GUI bundle in happy-dom under Bun                              |
 | `pnpm test:package`     | Pack, install and import the packed build                                                  |
 | `pnpm check`            | Lint, build, typecheck, then the unit, integration, contract, native TUI and package tests |
 
@@ -49,7 +50,8 @@ SDK native parser addons may require Python and a C/C++ build toolchain. Their b
 | Integration | `test/integration`          | `tsx --test` | The built plugin in an `@opencode/sdk` host run from `test/fixtures` in a child process with a throwaway home: RPC per Location, links, detection against `test/fixtures/fake-gh.mjs`, a `git push` to a local bare repository, the history scan of an imported session, and cleanup on a real temporary git repository                 |
 | Contract    | `test/contract`             | `tsx --test` | The host assumptions listed under [Compatibility](#compatibility), against a real host and, in `tui.test.ts`, the real TUI                                                                                                                                                                                                              |
 | Native TUI  | `test/tui`                  | `bun test`   | The compiled browser, settings dialog and sidebar mounted with OpenTUI's `testRender`, including the cold lazy load                                                                                                                                                                                                                     |
-| Package     | `scripts/check-package.mjs` | Node         | `npm pack`, an install into a temporary directory, the `.`, `./tui` and `./rpc` exports, and `Host.resolve` finding all three                                                                                                                                                                                                           |
+| Desktop GUI | `test/gui`                  | `bun test`   | The built `dist/gui-experimental.cjs` evaluated with the modules the app provides and set up with a fake window context, in happy-dom (`test/gui/harness.mjs`)                                                                                                                                                                          |
+| Package     | `scripts/check-package.mjs` | Node         | `npm pack`, an install into a temporary directory, the `.`, `./tui`, `./rpc` and `./gui-experimental` exports, `Host.resolve` finding all four, and the GUI bundle evaluated as the app's main process does, without a `require` of a Node.js built-in or electron                                                                      |
 
 The contract tests in `test/contract/server.test.ts` run against an in-process host from `@opencode/sdk` with a scripted OpenAI-compatible model on loopback (`test/contract/harness.ts`), so the real agent loop, tool registry and title agent run without a model provider or network. The harness replaces the environment before the SDK loads, so nothing touches the developer's OpenCode config, credentials or sessions.
 
@@ -73,7 +75,7 @@ Each Location registers its own tools, shell hook, `context` hook for the agent 
 
 Links live in session metadata under `super-sessions` (`src/refs/ref.ts`), as `{ v: 1, links, urls?, dismissed, done?, doneAt?, scanned?, pushed?, activeAt?, noticed? }`. `urls` holds [work links](#work-links). `done` is the user's Done mark from `done.set`, and `doneAt` is when it was set to `true`, which auto-archive counts days from. `scanned` is `{ scannedAt, lastMessageID?, pushes? }`, written once when the [history scan](#history-scan) finished the session. `pushed` lists the branches the session pushed (at most 50), which [branch pull requests](#branch-pull-requests) read; recording one is a link change, not a snapshot refresh, so it goes through the queue like any link. The server plugin's `session.update({ metadata })` replaces the whole object, so every write goes through `src/server/queue.ts`: a per-session promise chain that reads the session, applies a pure mutation from `src/refs/store.ts` and writes only when it changed. Tools, the shell hook, events and RPC all share it, across Locations. A stored value that does not parse, such as one a newer plugin version wrote, is never replaced: the write rejects and the daemon log names the session.
 
-Every metadata write moves the session's `time.updated` (`SessionEvent.MetadataUpdated` in the host's projector), so the plugin never reads `time.updated` as activity. `activityTime` in `src/host/session-api.ts` is `max(time.created, time.busy, time.idle)`: the start and end of the latest run, which the host sets without touching `time.updated`, and which every TUI prompt and compaction moves. The list's order, day groups and ages, the tie order of search and the cleanup inactive rule read it. A session without run times (it last ran on a host older than 2.2.0, or it never ran) has only `time.updated`, so the first write the queue makes to such a session also stores the `time.updated` it is about to overwrite as `activeAt`, and `activityTime` reads that instead. A `!` command without a run moves only `time.updated`, so it counts with the next run.
+Every metadata write moves the session's `time.updated` (`SessionEvent.MetadataUpdated` in the host's projector), so the plugin never reads `time.updated` as activity. `activityTime` in `src/host/session-info.ts` is `max(time.created, time.busy, time.idle)`: the start and end of the latest run, which the host sets without touching `time.updated`, and which every TUI prompt and compaction moves. The list's order, day groups and ages, the tie order of search and the cleanup inactive rule read it. A session without run times (it last ran on a host older than 2.2.0, or it never ran) has only `time.updated`, so the first write the queue makes to such a session also stores the `time.updated` it is about to overwrite as `activeAt`, and `activityTime` reads that instead. A `!` command without a run moves only `time.updated`, so it counts with the next run.
 
 `mergeLinks` dedupes by `refKey`, keeps the earliest `linkedAt`, and only moves a link up the source ladder (`agent`, `created` and `manual` above `prompt`, above `closes`, above `mention`). Only `agent` and `manual` links lift a dismissal. `dismissLink` also drops the `closes` links derived from a dismissed pull request. The rows and the preview list an issue a pull request closes only while a link stores it: the pull request's snapshot keeps listing an issue the user unlinked, and `buildViews` stores a `closes` link for every other one before it answers.
 
@@ -243,6 +245,14 @@ Auto-archive (`src/server/auto-archive.ts`) decides on the server, where ref sta
 
 Cleanup (`src/server/cleanup.ts`) gathers facts per worktree and calls `decideWorktree`, a pure function. Keep reasons come first: the main checkout, a running, waiting, open or pinned session, unreadable `git status`, any modified, staged or untracked file (`has local changes`; `git worktree remove` without force refuses these anyway, and keeping them stops every sweep from retrying), then commits only the worktree reaches. OpenCode creates worktrees on a detached HEAD, so a commit the agent made without a branch is lost with the worktree: when HEAD has commits beyond the default branch, is not in it and is not at or behind a merged pull request's head, `for-each-ref --contains HEAD` over `refs/heads`, `refs/remotes` and `refs/tags` must find a ref, or the worktree is kept with `has commits no branch or tag contains` (`could not tell whether a branch holds its commits` when git cannot answer). Then the rules, in order: deleted, merged, Done, inactive, unchanged. The deleted rule needs no session left, the Done, inactive and unchanged rules at least one, and the merged, Done and unchanged rules every session archived or Done. Unknown facts always keep. The merged rule needs the tracked pull requests merged and HEAD contained in the default branch, or, for squash and rebase merges, HEAD at or behind a merged head commit (`headSha` from the forge) that exists locally. Until the user confirms once, a sweep emits `cleanup.confirm` and removes nothing; the TUI asks when no dialog or the browser holds the screen. The `cleanup` storage key keeps the confirmation, the worktree each session was last seen in (so a deletion maps to its worktree) and the projects with linked worktrees. Right before each removal `freshFacts` reads the worktree again: `session.list({ directory })` for sessions started there since the sweep, `session.get`, pending permissions and questions and fresh presence for each, and git status, commits and refs. `decideWorktree` runs again on those facts, a session the sweep did not see counts as not Done, and a failed read keeps the worktree. Removal goes through `context.worktree.remove` with `force: false`. The "Run cleanup now" dialog says, while cleanup is unconfirmed, that confirming also turns on automatic removal.
 
+### OpenCode Desktop GUI
+
+`src/gui` is the Desktop part, loaded by the app from the package's `./gui-experimental` export. `vite build` with `gui()` from `@opencode/plugin/gui/vite` (`vite.config.ts`) compiles `src/gui/index.tsx` into one CommonJS file, `dist/gui-experimental.cjs`. The modules the app provides (`solid-js`, `@opencode/plugin/gui`, `@opencode/plugin/rpc` and the others in the SDK's `modules.ts`) stay external and are the app's own instances; zod and the shared code are bundled. `tsconfig.gui.json` typechecks it with the DOM library and Solid's JSX; the tsc build leaves `src/gui` out.
+
+The app hands a window bundle an inert placeholder for every Node.js built-in and for electron, which answers every read and call with itself instead of failing. So `src/gui` imports only modules without `node:*` imports: `src/refs/*`, `src/rpc.ts`, `src/page/state.ts`, `src/sidebar-state.ts`, `src/host/rpc.ts`, `src/host/session-info.ts` and `src/host/gui.ts`. The package test fails on any `require` of a built-in in the bundle, and the GUI tests fail on any module the app does not provide. How a ref looks (its glyph, the review and CI badges, their order and tones, check tallies, the GitHub state colors) is decided once in `src/refs/look.ts`; the TUI draws it with Nerd Font glyphs and theme colors, the GUI with the octicons in `src/gui/octicons.tsx` and the app's CSS variables.
+
+`setup` is synchronous and keeps all state inside it. `src/gui/refs-store.ts` holds one fetcher per session for every surface that shows its refs: `refs` on the first read, `refresh` when a run of the session ends and every minute, and `refs` again on `session.metadata.updated`, while anything reads it. RPC goes to the session's own server and Location (`src/gui/server.ts`); a server without the server plugin answers `rpc.unavailable`, and the GUI shows sessions without refs there.
+
 ## Providers
 
 `src/providers/provider.ts` defines a forge as a static half and a runtime half:
@@ -265,7 +275,7 @@ To add a forge:
 3. Write the client on `run` and `createLimiter` from `src/process.ts`, and the provider. Keep the concurrency cap in the client and one provider per daemon.
 4. Add a factory to `providerFactories` in `src/server/runtime.ts`, an executable option in `src/config.ts` (in the field and in the outer default), and the CLI's environment variables to `src/environment.ts`.
 5. Extend the provider choice: `providerChoiceSchema` in `src/rpc.ts`, `providerChoice` and `providerList` in `src/server/settings.ts`, and the Providers row in `src/settings/definitions.ts`. These only know GitHub, GitLab and both today.
-6. Check the forge-specific display code: `refNumber` in `src/refs/ref.ts`, `refKind` in `src/page/view.ts`, the URL fallback in `src/browser.ts`, and the status texts in `src/tui.ts`.
+6. Check the forge-specific display code: `refNumber` in `src/refs/ref.ts`, `refKind` in `src/refs/ref.ts`, the URL fallback (`refUrl`) in `src/refs/look.ts`, and the status texts in `src/tui.ts`.
 7. Capture real CLI output into `test/fixtures/<id>` and add unit tests like `test/unit/github.test.ts` and `test/unit/github-definition.test.ts`.
 
 ## Compatibility
@@ -275,12 +285,13 @@ The `@opencode/*` pins only fix the types and the tests. At runtime the plugin r
 - `keymap.ts`: command ids the takeover reuses, the `dialog.select.*` ids the settings dialog registers, layer priorities, keymap modes.
 - `events.ts`: where prompt text, assistant text and `!` commands sit in events and in stored messages (`storedHistory` for the history scan), the index keys shared with the backfill, and the last user message in a `session.context` that starts at the latest compaction.
 - `tool-hook.ts`: the shell tool's name and its `execute.after` payload.
-- `session-api.ts`: archiving and title regeneration over HTTP, forking and the prompts a fork can start before, the project scope of the list for a Location and for a stored session, the running test, the unread rule, the activity time.
+- `session-api.ts`: forking and the prompts a fork can start before, the project scope of the list for a Location, notices. It re-exports `session-info.ts`, which holds what the Desktop GUI may import too: archiving and title regeneration over HTTP, the project scope of a stored session, the list filters, the running test, the unread rule, the activity time.
+- `gui.ts`: the `./gui-experimental` export and `features.gui`, the `session.header` slot and the `session.panel` menu, `tabs.open`, the app's own server.
 - `worktree.ts`: worktree listing and removal without force.
 - `files.ts`: paths of `cli.json`, the host's `session.json` and the plugin's data directory.
 - `theme.ts`: the dialog surface and backdrop, the session view background and the markdown styles.
 - `tui.ts`: the slot names (`app`, `session.composer.top`, `sidebar.content`) and the focused editor's text on the renderer.
-- `rpc.ts`: the `type` and `data` of an RPC error a handler returned.
+- `rpc.ts`: the `type` and `data` of an RPC error a handler returned, and `rpc.unavailable` for a server without the server plugin.
 - `git.ts`: how the plugin runs git next to the agent.
 - `compat.ts`: `TESTED_UP_TO` and the untested-version check.
 
@@ -301,11 +312,13 @@ Each assumption and what checks it:
 - The worktree list marks the main checkout, and removal without force refuses local files: a contract test.
 - Every agent request carries the plugin's tracking instruction once: a contract test.
 - The RPC error shape: the configured-host integration fixture reads real `link` errors through `rpcError`.
+- The listing with `features.gui`, the bundle `plugin.gui` serves with the plugin's options, and `rpc.unavailable` for an RPC id no plugin registered: contract tests.
+- The Desktop slot and menu ids, `tabs.open` and the app's own server: not checked against a host; only the desktop app renders them.
 - The `sidebar.content` slot, the `dialog.select.*` ids, the dialog backdrop, the unread rule and the compaction rule: not checked against a host. A unit test covers the compaction rule on hand-written messages.
 - The `cli.json` and `session.json` locations: not checked against a host. They are host files the plugin only reads, with defaults when missing.
 - Markdown styles and theme surfaces: the typecheck and the native TUI tests on the latest packages in `compat.yml`.
 - `gh` and `glab` output: fixture unit tests. A real check needs credentials.
 
-`.github/workflows/compat.yml` runs weekly and on demand against the latest `@opencode/*` release and the OpenTUI version its `@opencode/theme` pins. It installs those versions and the matching `@opencode/cli` in the runner without committing, runs the typecheck, unit, integration, contract and native TUI tests, and keeps going after a failure so the report lists every suite. A failure opens or comments on the issue "Compatibility with OpenCode <version>"; a pass writes the tested versions to the job summary.
+`.github/workflows/compat.yml` runs weekly and on demand against the latest `@opencode/*` release and the OpenTUI version its `@opencode/theme` pins. It installs those versions and the matching `@opencode/cli` in the runner without committing, runs the typecheck, unit, integration, contract, native TUI and Desktop GUI tests, and keeps going after a failure so the report lists every suite. A failure opens or comments on the issue "Compatibility with OpenCode <version>"; a pass writes the tested versions to the job summary.
 
 At runtime, `TESTED_UP_TO` is the pinned `@opencode/plugin` version, read from package.json, so a Dependabot bump that passes CI raises it. On a host newer by minor or major, the TUI keeps every key and says once per version that the release is untested, so a user who hits a break knows the likely cause; holding the takeover back made every host release need a plugin release first. Patch releases, and versions that are not `major.minor.patch` such as `local` source builds, count as tested. The `untestedHosts` option is still accepted, so older configs load, and has no effect. A crash in the browser closes it and opens the built-in list; a crash in the sidebar's Work rows hides them.
