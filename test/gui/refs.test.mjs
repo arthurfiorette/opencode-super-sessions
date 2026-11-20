@@ -44,7 +44,16 @@ let gui;
 afterEach(() => gui?.dispose());
 
 test('the built bundle loads in a window and draws the routed session refs like GitHub', async () => {
+  const info = {
+    id: 'ses_1',
+    title: 'Split the build',
+    projectID: 'proj',
+    location: { directory: '/work/widgets' },
+    time: { created: Date.now(), updated: Date.now() }
+  };
   const client = createClient({
+    'session.get': () => info,
+    'session.list': ({ archived }) => ({ data: archived ? [] : [info] }),
     'rpc.refs': ({ sessionIDs }) => ({ [sessionIDs[0]]: view }),
     'rpc.refresh': ({ sessionIDs }) => ({ [sessionIDs[0]]: view })
   });
@@ -56,8 +65,12 @@ test('the built bundle loads in a window and draws the routed session refs like 
 
   assert.ok(gui.items('style')[0]?.includes('.ss-ref'));
   await gui.command('browse').run();
+  // The browser's row of the session draws its pull requests.
   const line = (ref) =>
-    until(() => document.querySelector(`[data-ref="${key(ref)}"]`)?.closest('a'), key(ref));
+    until(
+      () => document.querySelector(`[data-session="ses_1"] [data-ref="${key(ref)}"]`)?.closest('a'),
+      key(ref)
+    );
 
   const open = await line(stacked);
   const openMark = open.querySelector('.ss-ref-mark');

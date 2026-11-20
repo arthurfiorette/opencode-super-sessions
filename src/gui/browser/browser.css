@@ -1,0 +1,211 @@
+/* The session browser dialog. The dialog's body has a fixed height, so the browser fills it and
+   only the list and the preview scroll. */
+
+.ss-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  outline: none;
+  container-type: inline-size;
+}
+
+.ss-browser-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ss-scope-home {
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+}
+
+.ss-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.ss-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--v2-text-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ss-tab:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+}
+
+.ss-tab[aria-selected="true"] {
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-base);
+}
+
+.ss-tab-count {
+  color: var(--v2-text-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ss-browser-main {
+  display: flex;
+  flex: 1;
+  gap: 12px;
+  min-height: 0;
+}
+
+.ss-list {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* The preview needs room beside the list; a small window keeps the list alone. */
+.ss-preview {
+  display: none;
+  flex: 0 0 38%;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 12px;
+  overflow-y: auto;
+  border-left: 1px solid var(--v2-border-border-muted);
+}
+
+@container (min-width: 720px) {
+  .ss-preview {
+    display: flex;
+  }
+}
+
+.ss-preview-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ss-preview-title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--v2-text-text-base);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ss-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+}
+
+.ss-group-title {
+  margin: 4px 8px;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ss-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: default;
+  user-select: none;
+}
+
+.ss-row:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+}
+
+.ss-row-selected,
+.ss-row-selected:hover {
+  background: var(--v2-background-bg-layer-01);
+}
+
+.ss-row-head,
+.ss-row-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ss-row-marker {
+  display: inline-flex;
+  flex: 0 0 14px;
+  justify-content: center;
+}
+
+.ss-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-row-age,
+.ss-row-extra {
+  flex-shrink: 0;
+  color: var(--v2-text-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Detail lines start under the title, past the marker column. */
+.ss-row-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 22px;
+}
+
+.ss-row-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  visibility: hidden;
+}
+
+.ss-row:hover .ss-row-actions,
+.ss-row:focus-within .ss-row-actions {
+  visibility: visible;
+}
+
+.ss-running {
+  color: var(--v2-state-fg-warning);
+}
+
+.ss-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+}
+
+.ss-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding-bottom: 4px;
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+}
+
+.ss-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

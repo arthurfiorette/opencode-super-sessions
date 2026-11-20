@@ -120,11 +120,19 @@ export function rpcUnavailable() {
 
 /**
  * A fake `Data` event feed: `on` as the app's, and `emit(event)` to deliver an event to the
- * listeners of its `type`.
+ * listeners of its `type`. `session` answers like a server that synced none of the sessions,
+ * with every session idle, except the ids in `running`.
  */
-export function createData() {
+export function createData({ running = [] } = {}) {
   const listeners = new Map();
   return {
+    session: {
+      get: () => undefined,
+      status: (id) => (running.includes(id) ? 'running' : 'idle'),
+      family: () => [],
+      permission: { list: () => [], sync: async () => {} },
+      form: { list: () => [], sync: async () => {} }
+    },
     on(type, handler) {
       const set = listeners.get(type) ?? new Set();
       listeners.set(type, set);
@@ -205,7 +213,12 @@ function createUi() {
     Loader: () => element('div', { role: 'progressbar' }),
     Icon: (props) => element('i', { 'data-icon': props.name }),
     Button: (props) => {
-      const node = element('button', {}, () => props.children);
+      const node = element(
+        'button',
+        props.class ? { class: props.class } : {},
+        () => props.children
+      );
+      node.disabled = props.disabled ?? false;
       node.addEventListener('click', (event) => props.onClick?.(event));
       return node;
     },
@@ -229,7 +242,7 @@ function createUi() {
 /**
  * A fake window context for `setup(ctx)`. `options.session` is the routed session
  * (`ctx.sessions.current()`), settable later with `setSession`; `options.servers` the listed
- * servers. Records what the GUI does: `added` (every `ctx.add`), `opened` (external URLs),
+ * servers; `options.stores` the stored values of declared stores. Records what the GUI does: `added` (every `ctx.add`), `opened` (external URLs),
  * `copied`, `tabs` (`ctx.tabs.open` calls), `toasts` and `dialogs` (each open dialog's
  * `container` in `document.body`).
  */
@@ -266,6 +279,7 @@ export function createContext(plugin, options = {}) {
     plural: (key, count, params = {}) =>
       translate(`${key}.${count === 1 ? 'one' : 'other'}`, { ...params, count }),
     ui: createUi(),
+    stores: createStores(plugin, options.stores),
     appearance: { mode: () => options.mode ?? 'dark', font: () => 'monospace' },
     sessions: { current: session, list: () => (session() ? [session()] : []) },
     screen: { current: () => undefined },
@@ -302,6 +316,35 @@ export function createContext(plugin, options = {}) {
     keybinds: { keybind: () => [], keys: (bind) => bind.split('+'), matches: () => false }
   };
   return { ctx, added, opened, copied, tabs, toasts, dialogs, setSession, abort };
+}
+
+/**
+ * The plugin's declared stores as the host hands them out (`ctx.stores.name`): loaded, reactive,
+ * starting from `values[name]` or the declaration's `initial`.
+ */
+function createStores(plugin, values = {}) {
+  return Object.fromEntries(
+    Object.entries(plugin.stores ?? {}).map(([name, declaration]) => {
+      const [value, setValue] = solid.createSignal(
+        structuredClone(values[name] ?? declaration.initial)
+      );
+      return [
+        name,
+        {
+          get value() {
+            return value();
+          },
+          ready: () => true,
+          update(mutate) {
+            const draft = structuredClone(value());
+            mutate(draft);
+            setValue(() => draft);
+          },
+          set: (next) => setValue(() => next)
+        }
+      ];
+    })
+  );
 }
 
 /** An item `ctx.add` received, read the way the host reads a reactive one. */
