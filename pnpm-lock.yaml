@@ -168,7 +168,7 @@ importers:
     dependencies:
       '@opencode/client':
         specifier: 2.3.2
-        version: 2.3.2(effect@4.1.0)(solid-js@1.9.19)
+        version: 2.3.2(effect@4.1.4)(solid-js@1.9.19)
       '@opencode/plugin':
         specifier: 2.3.2
         version: 2.3.2(@opencode/theme@2.3.2(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentelemetry/semantic-conventions@1.45.0)(@opentui/core@0.8.4(typescript@7.0.2)(web-tree-sitter@0.25.10))(@opentui/solid@0.8.4(solid-js@1.9.19)(typescript@7.0.2)(web-tree-sitter@0.25.10))(redis@6.3.1(@opentelemetry/api@1.9.0))(solid-js@1.9.19)(vite-plugin-solid@2.11.17(solid-js@1.9.19)(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)))(vite@8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
@@ -201,8 +201,8 @@ importers:
         specifier: ^24.19.2
         version: 24.19.2
       effect:
-        specifier: 4.1.0
-        version: 4.1.0
+        specifier: 4.1.4
+        version: 4.1.4
       solid-js:
         specifier: 1.9.19
         version: 1.9.19
@@ -2152,6 +2152,9 @@ packages:
 
   effect@4.1.0:
     resolution: {integrity: sha512-lGx2MJJyrXA8RZb2UpQ/0Nkb5Utaimby7oD92+18noBxLPE85IFOvptdzau8dvcxAOwfwHo9iqapbKeFzqQM/Q==}
+
+  effect@4.1.4:
+    resolution: {integrity: sha512-Tgrv/9FN+TZYyOn8XSli+fVqAfwDrDAkiX5Uu9vztINb675VTQdhD0gWI5Kzvhlh9QqzjZvw72iugqw5pwoghQ==}
 
   electron-to-chromium@1.5.478:
     resolution: {integrity: sha512-pftG+ma5Lm8O6/p45bhYT6StBN5ziQymaRzmCZwFl8DwWHKPPD93FdOmP1aqftcepolQYvrcyTLa17kE8Yf+jg==}
@@ -4199,6 +4202,14 @@ snapshots:
       effect: 4.1.0
       solid-js: 1.9.19
 
+  '@opencode/client@2.3.2(effect@4.1.4)(solid-js@1.9.19)':
+    dependencies:
+      '@opencode/protocol': 2.3.2
+      '@opencode/schema': 2.3.2
+    optionalDependencies:
+      effect: 4.1.4
+      solid-js: 1.9.19
+
   '@opencode/codemode@2.3.2':
     dependencies:
       acorn: 8.15.0
@@ -5504,6 +5515,8 @@ snapshots:
       safe-buffer: 5.2.1
 
   effect@4.1.0: {}
+
+  effect@4.1.4: {}
 
   electron-to-chromium@1.5.478: {}
 
