@@ -1,16 +1,13 @@
 import type { Context } from '@opencode/plugin/gui';
-import { rpcError } from '../../host/rpc.js';
-import { type ProviderId, type Ref, refKind, refNumber } from '../../refs/ref.js';
+import { FORGE_NAMES, linkFailure } from '../../link-failure.js';
+import { type Ref, refKind, refNumber } from '../../refs/ref.js';
 import { linkLabel } from '../../refs/work-link.js';
 import { webUrl } from '../ref-view.js';
 import type { RefsStore, SessionTarget } from '../refs-store.js';
-import { at, rpcOn } from '../server.js';
+import { rpcAt, rpcOn, serverPluginMissing } from '../server.js';
 
 // What the Work list does to a session's work: open, copy, unlink, link and refresh. Mirrors the
 // TUI browser's Work keys and link dialog (`src/page/view.ts`), with the app's dialogs and toasts.
-
-/** A forge's name in messages. */
-const FORGE_NAMES: Record<ProviderId, string> = { github: 'GitHub', gitlab: 'GitLab' };
 
 /** The parts of the context the actions use. */
 export type ActionContext = Pick<Context, 't' | 'system' | 'dialogs' | 'toast'>;
@@ -43,20 +40,21 @@ export function refLabel(ref: Ref): string {
 
 /** The toast for a `link` that failed, by the error the server answered with. */
 export function linkError(ctx: Pick<Context, 't'>, error: unknown): string {
-  const { type, data } = rpcError(error);
-  if (type === 'invalid_reference') return ctx.t('link.invalid');
-  if (type === 'not_found') return ctx.t('link.notFound');
-  if (type === 'unavailable') {
-    const record = typeof data === 'object' && data !== null ? data : {};
-    const provider = 'provider' in record ? record.provider : undefined;
-    const forge =
-      provider === 'github' || provider === 'gitlab' ? FORGE_NAMES[provider] : ctx.t('link.forge');
-    if ('reason' in record && record.reason === 'disabled') {
-      return ctx.t('link.disabled', { forge });
-    }
-    return ctx.t('link.unavailable', { forge });
+  const failure = linkFailure(error);
+  switch (failure.reason) {
+    case 'invalid':
+      return ctx.t('link.invalid');
+    case 'not-found':
+      return ctx.t('link.notFound');
+    case 'disabled':
+      return ctx.t('link.disabled', { forge: failure.forge ?? ctx.t('link.forge') });
+    case 'unavailable':
+      return ctx.t('link.unavailable', { forge: failure.forge ?? ctx.t('link.forge') });
+    case 'missing':
+      return ctx.t('link.missing');
+    default:
+      return ctx.t('link.failed');
   }
-  return ctx.t('link.failed');
 }
 
 /**
@@ -94,7 +92,7 @@ export function workActions(
       try {
         await rpcOn(session.server).unlink(
           { sessionID: session.sessionID, key: item.key },
-          at(session.directory)
+          await rpcAt(session.server, session.directory)
         );
       } catch {
         error(ctx.t('unlink.failed', { label: item.label }));
@@ -117,7 +115,7 @@ export function workActions(
       try {
         const linked = await rpcOn(session.server).link(
           { sessionID: session.sessionID, reference },
-          at(session.directory)
+          await rpcAt(session.server, session.directory)
         );
         ctx.toast.show({
           title: ctx.t('link.done', {
@@ -137,7 +135,7 @@ export function workActions(
       try {
         const answer = await rpcOn(session.server).refresh(
           { sessionIDs: [session.sessionID], force: true },
-          at(session.directory)
+          await rpcAt(session.server, session.directory)
         );
         const failed = answer[session.sessionID]?.failed ?? [];
         if (failed.length > 0) {
@@ -147,8 +145,8 @@ export function workActions(
             })
           );
         }
-      } catch {
-        error(ctx.t('refresh.error'));
+      } catch (failure) {
+        error(ctx.t(serverPluginMissing(failure) ? 'refresh.missing' : 'refresh.error'));
         return;
       }
       await refs.reload(session);

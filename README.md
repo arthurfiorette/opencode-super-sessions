@@ -101,20 +101,24 @@ The same plugin adds to OpenCode Desktop 2.3:
 
 Desktop's own session list in the sidebar stays as it is, since plugins cannot change it. Use the browser to list one project's sessions or to see their pull requests.
 
+Pins, rename, delete, fork and peek are only in the terminal browser. Auto-archive and worktree cleanup run only while a terminal TUI is open, and they treat sessions open in Desktop tabs as open.
+
 Keys in the browser:
 
-| Key                 | Action                                                        |
-| ------------------- | ------------------------------------------------------------- |
-| `up` / `down`       | Select a session                                              |
-| `tab` / `shift+tab` | Next or previous view                                         |
-| `enter`             | Open the session                                              |
-| `cmd+enter`         | Open the session in a background tab                          |
-| `alt+a`             | Switch between this project and all projects                  |
-| `alt+s`             | Archive, or restore in the Archived view                      |
-| `alt+q`             | Mark Done, or not Done                                        |
-| `alt+g`             | Open the session's pull request, issue or link in the browser |
-| `f5`                | Reload the selected session from GitHub or GitLab             |
-| `esc`               | Close the browser                                             |
+| Key                 | Action                                                                   |
+| ------------------- | ------------------------------------------------------------------------ |
+| `up` / `down`       | Select a session                                                         |
+| `tab` / `shift+tab` | Next or previous view, from the search box                               |
+| `enter`             | Open the session                                                         |
+| `cmd+enter`         | Open the session in a background tab (`ctrl+enter` on Windows and Linux) |
+| `alt+a`             | Switch between this project and all projects, when a session is open     |
+| `alt+s`             | Archive, or restore in the Archived view                                 |
+| `alt+q`             | Mark Done, or not Done                                                   |
+| `alt+g`             | Open the session's pull request, issue or link in the browser            |
+| `f5`                | Reload the selected session from GitHub or GitLab                        |
+| `esc`               | Close the browser                                                        |
+
+The `alt` keys are the keys in those places on a QWERTY keyboard, and the browser shows the letter your layout puts there. `closeTabOnArchive` and `colors` apply in Desktop too.
 
 Desktop support uses OpenCode's experimental plugin API for the app, so an OpenCode Desktop update can break it until the plugin catches up. The terminal is not affected.
 
@@ -202,7 +206,7 @@ Both are off by default. Auto-archive never takes pinned, running or waiting ses
 
 Cleanup removes only worktrees OpenCode lists for the project, never your main checkout, and never with force. Removing a worktree deletes its directory, ignored files such as `.env` included. A worktree is always kept when:
 
-- a session in it is running, waiting for you, open in a terminal or pinned
+- a session in it is running, waiting for you, open in a terminal or a Desktop tab, or pinned
 - it has modified, staged or untracked files
 - it has commits no branch or tag contains
 
@@ -223,7 +227,7 @@ The first removal asks for confirmation. "Run cleanup now" in the settings shows
 
 ## Compatibility
 
-The plugin is tested with OpenCode 2.3. On a newer minor or major release it works as usual and shows a warning once. If the browser crashes, the built-in list opens instead.
+The plugin is tested with OpenCode and OpenCode Desktop 2.3. On a newer minor or major release the terminal part works as usual and shows a warning once, and the Desktop part may break (see [OpenCode Desktop](#opencode-desktop)). If the terminal browser crashes, the built-in list opens instead.
 
 ## Limitations
 

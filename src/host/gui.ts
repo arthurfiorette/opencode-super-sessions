@@ -53,6 +53,32 @@ export function openSession(
 }
 
 /**
+ * The sessions open in the window's tabs on one server. `tabs.list()` lists every tab of the strip
+ * and gives a session's tab the `SessionRef` of the session it opened, keyed by the server's
+ * `ServerRef.id`; a subagent opened inside that tab keeps the tab on its root session
+ * (packages/app/src/runtime/plugin/host-apis.tsx:1041 and :601). Drafts have no session.
+ */
+export function openSessionIDs(tabs: Pick<Tabs, 'list'>, server: string): string[] {
+  return tabs.list().flatMap((tab) => (tab.session?.server.id === server ? [tab.session.id] : []));
+}
+
+/**
+ * Closes the session's tab when one is open, as the user does, so it lists under recently closed
+ * tabs. `tabs.close` takes the tab's key and does nothing for a key no tab has
+ * (packages/app/src/runtime/plugin/host-apis.tsx:1088).
+ */
+export function closeSessionTab(
+  tabs: Pick<Tabs, 'list' | 'close'>,
+  session: { server: string; id: string }
+): void {
+  for (const tab of tabs.list()) {
+    if (tab.session?.server.id === session.server && tab.session.id === session.id) {
+      tabs.close(tab.key);
+    }
+  }
+}
+
+/**
  * The desktop app's own server, the one that runs this plugin's server half
  * (`ServerRef.builtin`, packages/plugin/src/gui/host-apis.ts:29). The app lists it among
  * `servers.list()` (packages/app/src/runtime/plugin/host-apis.tsx:586); undefined before the app

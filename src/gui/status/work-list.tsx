@@ -34,7 +34,7 @@ export interface WorkListProps {
  * A session's pull requests, each with its review and CI badges and the checks that failed or
  * wait for an action, the issues they close under them, then the other issues, the work links
  * and the mentioned refs (`workLines`). Says so when the session tracks nothing, while it loads,
- * and when the session's server runs no server half of this plugin.
+ * when the first load failed, and when the session's server runs no server half of this plugin.
  */
 export function WorkList(props: WorkListProps) {
   const ctx = usePlugin();
@@ -71,6 +71,9 @@ export function WorkList(props: WorkListProps) {
         </Match>
         <Match when={state()?.status === 'loading'}>
           <ctx.ui.Loader />
+        </Match>
+        <Match when={state()?.status === 'error'}>
+          <p class="ss-note">{ctx.t('refs.error')}</p>
         </Match>
         <Match when={lines().length === 0}>
           <p class="ss-note">{ctx.t('refs.empty')}</p>

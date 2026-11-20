@@ -1,5 +1,5 @@
 import type { SessionInfo } from '@opencode/client';
-import type { ServerRef } from '@opencode/plugin/gui';
+import { createKeyed, type ServerRef } from '@opencode/plugin/gui';
 import { createEffect, createMemo, createSignal, onCleanup, untrack } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import { listFilters, sessionScope } from '../../host/session-info.js';
@@ -18,7 +18,7 @@ import {
   rowsOf
 } from '../../page/state.js';
 import type { SearchScope } from '../../rpc.js';
-import { at, rpcOn, serverPluginMissing } from '../server.js';
+import { rpcAt, rpcOn, serverPluginMissing } from '../server.js';
 
 // The browser's data for one open dialog: the TUI's page controller (`src/page/state.ts`) bound to
 // the window's `ServerRef`, as `src/page/model.ts` binds it to the TUI's client and `data`. The
@@ -57,20 +57,27 @@ export function createBrowserModel(input: BrowserInput) {
   const [now, setNow] = createSignal(Date.now());
 
   let originInfo: Promise<SessionInfo> | undefined;
-  /** The routed session as the server stores it, read once per open. */
+  /** The routed session as the server stores it, read once per open; a failed read is retried. */
   const originSession = (id: string) => {
-    originInfo ??= Promise.resolve(data().session.get(id)).then(
+    if (originInfo !== undefined) return originInfo;
+    const reading = Promise.resolve(data().session.get(id)).then(
       (known) => known ?? client().session.get({ sessionID: id })
     );
-    return originInfo;
+    originInfo = reading;
+    reading.catch(() => {
+      if (originInfo === reading) originInfo = undefined;
+    });
+    return reading;
   };
   /** The scope as the server's list and search take it. */
   const searchScope = async (scope: PageScope): Promise<SearchScope> =>
     scope === 'all' || origin === undefined
       ? { type: 'all' }
       : sessionScope(await originSession(origin.id));
-  // The routed session's Location answers for the plugin there; on Home, the server's default one.
-  const rpcOptions = () => (origin === undefined ? undefined : at(origin.directory));
+  // The routed session's Location answers for the plugin there; on Home, or when that directory no
+  // longer resolves, the server's default one.
+  const rpcOptions = async () =>
+    origin === undefined ? {} : await rpcAt(server, origin.directory);
   /** Runs an RPC, noting a server without the server half before the error goes on. */
   const rpc = async <T>(call: () => Promise<T>): Promise<T> => {
     try {
@@ -104,17 +111,17 @@ export function createBrowserModel(input: BrowserInput) {
       get: (sessionID) => client().session.get({ sessionID }),
       search: async (request) => {
         const scope = await searchScope(request.scope);
-        return rpc(() =>
+        return rpc(async () =>
           rpcOn(server).search(
             { query: request.query, archived: request.archived, scope, limit: 100 },
-            rpcOptions()
+            await rpcOptions()
           )
         );
       },
-      refs: (sessionIDs) => rpc(() => rpcOn(server).refs({ sessionIDs }, rpcOptions())),
+      refs: (sessionIDs) => rpc(async () => rpcOn(server).refs({ sessionIDs }, await rpcOptions())),
       refresh: (sessionIDs, force) =>
-        rpc(() =>
-          rpcOn(server).refresh(force ? { sessionIDs, force } : { sessionIDs }, rpcOptions())
+        rpc(async () =>
+          rpcOn(server).refresh(force ? { sessionIDs, force } : { sessionIDs }, await rpcOptions())
         ),
       running,
       async pending(sessionID) {
@@ -220,33 +227,44 @@ export function createBrowserModel(input: BrowserInput) {
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(() => void load(), RELOAD_DELAY);
   };
-  const events = data();
-  const offs = [
-    events.on('session.deleted', (event) => controller.removed(event.data.sessionID)),
-    ...(
-      [
-        'session.created',
-        'session.forked',
-        'session.archived',
-        'session.unarchived',
-        'session.moved',
-        'session.renamed'
-      ] as const
-    ).map((type) => events.on(type, changed)),
-    ...(
-      [
-        'session.execution.started',
-        'session.execution.succeeded',
-        'session.execution.failed',
-        'session.execution.interrupted'
-      ] as const
-    ).map((type) =>
-      events.on(type, (event) => {
+  // `data` is the server's live event feed; a restarted server brings a new one, so the listeners
+  // follow it as the refs store's do.
+  createKeyed(data, (events) => {
+    const offs = [
+      events.on('session.deleted', (event) => controller.removed(event.data.sessionID)),
+      // A link or unlink, here or in a TUI, writes the session's metadata: read its refs again.
+      events.on('session.metadata.updated', (event) => {
         controller.invalidate(event.data.sessionID);
-        changed();
-      })
-    )
-  ];
+        void controller.reread([event.data.sessionID]).catch(() => {});
+      }),
+      ...(
+        [
+          'session.created',
+          'session.forked',
+          'session.archived',
+          'session.unarchived',
+          'session.moved',
+          'session.renamed'
+        ] as const
+      ).map((type) => events.on(type, changed)),
+      ...(
+        [
+          'session.execution.started',
+          'session.execution.succeeded',
+          'session.execution.failed',
+          'session.execution.interrupted'
+        ] as const
+      ).map((type) =>
+        events.on(type, (event) => {
+          controller.invalidate(event.data.sessionID);
+          changed();
+        })
+      )
+    ];
+    onCleanup(() => {
+      for (const off of offs) off();
+    });
+  });
   const ticker = setInterval(() => {
     setNow(Date.now());
     void controller.refresh(visibleIDs());
@@ -254,7 +272,6 @@ export function createBrowserModel(input: BrowserInput) {
   onCleanup(() => {
     clearTimeout(reloadTimer);
     clearInterval(ticker);
-    for (const off of offs) off();
     controller.dispose();
   });
 

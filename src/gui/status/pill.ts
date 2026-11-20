@@ -4,12 +4,11 @@ import type {
   ComposerPillView,
   Context
 } from '@opencode/plugin/gui';
-import { checkMark, type LookIcon, refUrl, type Tone } from '../../refs/look.js';
+import { checkMark, type LookIcon, pullTone, refUrl, type Tone } from '../../refs/look.js';
 import {
   type PullCheck,
   type PullDetails,
   type Ref,
-  type RefReview,
   type RefState,
   refKey,
   refNumber
@@ -36,23 +35,6 @@ export function mainPull(
   const state = ref === undefined ? undefined : view.states[refKey(ref)];
   if (ref === undefined || state === undefined) return undefined;
   return state.status === 'open' || state.status === 'draft' ? { ref, state } : undefined;
-}
-
-/**
- * The pill's tone from a pull request's review and CI: failing checks, requested changes or
- * merge conflicts are danger; running checks or a pending review are a warning; passing checks
- * or an approval with nothing else in the way are success. Undefined while nothing is known, and
- * for runs that were only cancelled, which say nothing about the change.
- */
-export function pillTone(review: RefReview | undefined): ComposerPillTone | undefined {
-  if (review === undefined) return undefined;
-  const { checks, decision } = review;
-  if (checks === 'failing' || decision === 'changes_requested' || review.conflicts === true) {
-    return 'danger';
-  }
-  if (checks === 'pending' || decision === 'review_required') return 'warning';
-  if (checks === 'cancelled' || (checks === undefined && decision === undefined)) return undefined;
-  return 'success';
 }
 
 /** Where a check lists in the menu: what needs the user first, passed and skipped ones last. */
@@ -98,7 +80,8 @@ export function pillView(
   const open = (url: string) => () => {
     if (webUrl(url)) ctx.system.openExternal(url);
   };
-  const tone = pillTone(state.review);
+  const shared = pullTone(state.review);
+  const tone = shared === undefined ? undefined : pillToneOf(shared);
   const checks = [...(details(refKey(ref))?.checks ?? [])].sort(
     (a, b) => CHECK_ORDER[a.status] - CHECK_ORDER[b.status]
   );

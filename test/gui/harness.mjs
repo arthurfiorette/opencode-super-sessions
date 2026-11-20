@@ -76,8 +76,9 @@ export async function until(read, what = 'condition') {
 /**
  * A fake `OpenCodeClient`. `handlers` answers calls by name: `'session.list'` for
  * `client.session.list(input, options)`, `'rpc.refs'` for this plugin's `refs` RPC. A call without
- * a handler rejects with its name. Every call is recorded in `calls`. `plugin.list` lists the
- * server plugin unless a handler replaces it, so RPC calls do not wait for a cold Location.
+ * a handler rejects with its name. Every call is recorded in `calls`. Unless a handler replaces
+ * them, `plugin.list` lists the server plugin, so RPC calls do not wait for a cold Location, and
+ * `location.get` resolves every directory; neither is recorded then.
  */
 export function createClient(handlers = {}) {
   const calls = [];
@@ -88,7 +89,8 @@ export function createClient(handlers = {}) {
     return Promise.resolve().then(() => handler(input, options));
   };
   const defaults = {
-    'plugin.list': () => ({ data: [{ id: PLUGIN_ID, features: { server: true, rpc: true } }] })
+    'plugin.list': () => ({ data: [{ id: PLUGIN_ID, features: { server: true, rpc: true } }] }),
+    'location.get': () => ({})
   };
   const namespace = (prefix) =>
     new Proxy(
@@ -242,16 +244,19 @@ function createUi() {
 /**
  * A fake window context for `setup(ctx)`. `options.session` is the routed session
  * (`ctx.sessions.current()`), settable later with `setSession`; `options.servers` the listed
- * servers; `options.stores` the stored values of declared stores. Records what the GUI does:
- * `added` (every `ctx.add`), `opened` (external URLs),
- * `copied`, `tabs` (`ctx.tabs.open` calls), `toasts`, `dialogs` (each open dialog's
- * `container` in `document.body`), `asked` (each `confirm` and `prompt` with its options) and
- * `layout` (`ctx.layout.open` calls). `replies` answers `confirm` and `prompt` in order; push to
+ * servers; `options.stores` the stored values of declared stores; `options.tabs` the open tabs
+ * (`ctx.tabs.list()`, `{ key, session }`), settable later with `setTabs`. Records what the GUI
+ * does: `added` (every `ctx.add`), `opened` (external URLs), `copied`, `tabs` (`ctx.tabs.open`
+ * calls), `closed` (`ctx.tabs.close` keys), `toasts`, `dialogs` (each open dialog's `container`
+ * in `document.body`), `asked` (each `confirm` and `prompt` with its options) and `layout`
+ * (`ctx.layout.open` calls). `replies` answers `confirm` and `prompt` in order; push to
  * it before the GUI asks. An unanswered question resolves as dismissed.
  */
 export function createContext(plugin, options = {}) {
   const [session, setSession] = solid.createSignal(options.session);
+  const [openTabs, setTabs] = solid.createSignal(options.tabs ?? []);
   const servers = options.servers ?? [options.session?.server ?? createServer()];
+  const closed = [];
   const abort = new AbortController();
   const added = [];
   const opened = [];
@@ -298,11 +303,11 @@ export function createContext(plugin, options = {}) {
       copy: async (text) => void copied.push(text)
     },
     tabs: {
-      list: () => [],
+      list: openTabs,
       open: (target, openOptions) => void tabs.push({ ...target, ...openOptions }),
       focus() {},
       move() {},
-      close() {}
+      close: (key) => void closed.push(key)
     },
     toast: {
       show(toast) {
@@ -350,7 +355,9 @@ export function createContext(plugin, options = {}) {
     asked,
     replies,
     layout,
+    closed,
     setSession,
+    setTabs,
     abort
   };
 }

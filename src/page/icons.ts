@@ -1,7 +1,7 @@
 import type { ResolvedTheme } from '@opencode/theme/tui';
 import { RGBA } from '@opentui/core';
-import { type Options, stateColor } from '../config.js';
-import { type LookIcon, refGlyph } from '../refs/look.js';
+import type { Options } from '../config.js';
+import { type LookIcon, refGlyph, stateColor } from '../refs/look.js';
 import type { RefKind, RefStatus } from '../refs/ref.js';
 import type { LinkProvider } from '../refs/work-link.js';
 
@@ -122,5 +122,5 @@ export function refColor(
   theme: ResolvedTheme,
   mode: 'dark' | 'light'
 ): string | RGBA {
-  return status === undefined ? theme.text.muted : stateColor(options, status, mode);
+  return status === undefined ? theme.text.muted : stateColor(options.colors, status, mode);
 }

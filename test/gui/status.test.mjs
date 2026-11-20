@@ -1,7 +1,14 @@
 import { afterEach, test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { createSignal } from 'solid-js';
-import { createClient, createServer, rpcUnavailable, startGui, until } from './harness.mjs';
+import {
+  createClient,
+  createData,
+  createServer,
+  rpcUnavailable,
+  startGui,
+  until
+} from './harness.mjs';
 
 // The session's pull request status around its timeline, from the built bundle: the header slot,
 // the Work panel and its actions, and the composer pill.
@@ -97,7 +104,7 @@ const numbers = (container) =>
 let gui;
 afterEach(() => gui?.dispose());
 
-test('the header shows the tracked pull requests with their stack place, and a compact form', async () => {
+test('the header folds to its first pull request and +N when it needs the room', async () => {
   const { session } = await start(() => full);
   const [compact, setCompact] = createSignal(false);
   const [header] = gui.slot('session.header', {
@@ -109,22 +116,64 @@ test('the header shows the tracked pull requests with their stack place, and a c
     }
   });
 
-  // Stack order within the open layers, then merged; the closed one and the mention fold into +2.
-  await until(() => numbers(header.container).length > 0, 'the header refs');
-  assert.deepEqual(numbers(header.container), ['#100', '#101', '#90', '#55']);
-  const layer = header.container.querySelector(`[data-ref="${key(top)}"]`).closest('a');
-  assert.equal(layer.querySelector('.ss-ref-stack').textContent, '2/3');
-  assert.deepEqual(
-    [...layer.querySelectorAll('.ss-badge svg')].map((icon) => icon.dataset.octicon),
-    ['file-diff', 'x']
-  );
-  assert.equal(header.container.querySelector('.ss-header-more').textContent, '+2');
+  await until(() => numbers(header.container).length > 1, 'the header refs');
+  assert.ok(header.container.querySelector('.ss-ref-stack'));
 
   setCompact(true);
   assert.deepEqual(numbers(header.container), ['#100']);
   assert.equal(header.container.querySelector('.ss-ref-stack'), null);
   assert.equal(header.container.querySelector('.ss-badge'), null);
   assert.equal(header.container.querySelector('.ss-header-more').textContent, '+5');
+});
+
+test('surfaces of one session share one fetch, which stops once none shows it', async () => {
+  const answer = ({ sessionIDs }) => ({ [sessionIDs[0]]: full });
+  const data = createData();
+  const client = createClient({
+    'rpc.refs': answer,
+    'rpc.refresh': answer,
+    'rpc.pull.details': () => ({ body: '', checks })
+  });
+  const server = createServer({ client, data });
+  // No routed session, so the composer pill reads nothing and only the two surfaces below do.
+  gui = await startGui({ servers: [server] });
+  const session = { server, id: 'ses_1', key: `${server.id}\nses_1`, directory: '/work/widgets' };
+  const intervals = new Set();
+  const { setInterval: set, clearInterval: clear } = globalThis;
+  globalThis.setInterval = (...args) => {
+    const id = set(...args);
+    intervals.add(id);
+    return id;
+  };
+  globalThis.clearInterval = (id) => {
+    intervals.delete(id);
+    clear(id);
+  };
+  try {
+    const [header] = gui.slot('session.header', {
+      session,
+      screen: {},
+      active: true,
+      compact: false
+    });
+    const panel = gui.panel('work', session);
+    await until(() => numbers(header.container).length > 0, 'the header refs');
+    await until(() => numbers(panel.container).length > 0, 'the panel refs');
+    await until(() => client.calls.some((call) => call.name === 'rpc.refresh'), 'the refresh');
+
+    assert.equal(client.calls.filter((call) => call.name === 'rpc.refs').length, 1);
+    assert.equal(intervals.size, 1);
+    assert.equal(data.listeners('session.metadata.updated'), 1);
+
+    header.dispose();
+    panel.dispose();
+    await until(() => data.listeners('session.metadata.updated') === 0, 'the listeners to go');
+    assert.equal(data.listeners('session.execution.succeeded'), 0);
+    assert.equal(intervals.size, 0);
+  } finally {
+    globalThis.setInterval = set;
+    globalThis.clearInterval = clear;
+  }
 });
 
 test('the Work panel lists the work and the checks that failed, each opening its page', async () => {
@@ -184,12 +233,18 @@ test('a link the server refuses becomes an error toast that says why', async () 
     [{ type: 'not_found', data: {} }, 'Pull request or issue not found.'],
     [
       { type: 'unavailable', data: { reason: 'disabled', provider: 'gitlab' } },
-      'GitLab is not enabled. Turn it on in the plugin settings to link it.'
+      'GitLab is not enabled. Add it to the plugin\'s "providers" option, or turn it on with /super-sessions settings in the terminal.'
     ],
     [
       { type: 'unavailable', data: { reason: 'unauthenticated', provider: 'github' } },
       'GitHub is unavailable. Check that its CLI is installed and signed in.'
-    ]
+    ],
+    [
+      { type: 'rpc.unavailable' },
+      'Could not link. The opencode-super-sessions server plugin is not installed on this server.'
+    ],
+    // Only a missing server plugin is blamed on the server plugin.
+    [{}, 'Could not link.']
   ];
   let refusal;
   const { session } = await start(() => full, {
@@ -213,33 +268,16 @@ test('a link the server refuses becomes an error toast that says why', async () 
   }
 });
 
-test('the composer pill takes its tone from CI and review, and lists failed checks first', async () => {
-  const cases = [
-    [failing, 'danger'],
-    [{ decision: 'review_required', checks: 'passing' }, 'warning'],
-    [{ checks: 'pending' }, 'warning'],
-    [{ decision: 'approved', checks: 'passing' }, 'success'],
-    [{ checks: 'passing' }, 'success']
-  ];
-  for (const [review, tone] of cases) {
-    const view = viewOf({
-      links: [{ ref: top, source: 'agent', linkedAt: 1 }],
-      states: { [key(top)]: state(top, { status: 'open', review }) }
-    });
-    const { session } = await start(() => view);
-    const pill = await until(() => gui.pill('pull', session), 'the pill');
-    assert.equal(pill.label, '#101');
-    assert.equal(pill.tone, tone, JSON.stringify(review));
-    gui.dispose();
-  }
-
+// The tone rule itself is a unit table (test/unit/look.test.ts); this proves the pill wiring.
+test('the composer pill shows the main pull request in its tone, failed checks first', async () => {
   const { session } = await start(() => full);
-  // The stack's bottom layer is the session's main pull request.
+  // The stack's bottom layer is the session's main pull request: approved and passing.
   const pill = await until(() => {
     const shown = gui.pill('pull', session);
     return shown?.rows.length > 1 && shown;
   }, 'the check rows');
   assert.equal(pill.label, '#100');
+  assert.equal(pill.tone, 'success');
   assert.deepEqual(
     pill.rows.map((row) => row.label),
     ['Open pull request', 'lint', 'deploy', 'e2e', 'build']

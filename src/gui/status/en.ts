@@ -25,11 +25,16 @@ export const statusEn = {
   'link.invalid': 'Not a URL or a pull request or issue reference.',
   'link.notFound': 'Pull request or issue not found.',
   'link.forge': 'The forge',
-  'link.disabled': '{{forge}} is not enabled. Turn it on in the plugin settings to link it.',
+  'link.disabled':
+    '{{forge}} is not enabled. Add it to the plugin\'s "providers" option, or turn it on with /super-sessions settings in the terminal.',
   'link.unavailable': '{{forge}} is unavailable. Check that its CLI is installed and signed in.',
-  'link.failed': 'Could not link. Enable the opencode-super-sessions server plugin.',
+  'link.missing':
+    'Could not link. The opencode-super-sessions server plugin is not installed on this server.',
+  'link.failed': 'Could not link.',
   'refresh.failed': 'Could not refresh from {{forges}}.',
-  'refresh.error': 'Could not refresh. Is the opencode-super-sessions server plugin enabled?',
+  'refresh.missing':
+    'Could not refresh. The opencode-super-sessions server plugin is not installed on this server.',
+  'refresh.error': 'Could not refresh.',
   'pill.open': 'Open pull request',
   'pill.more': '{{count}} more checks'
 } as const;

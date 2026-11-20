@@ -24,7 +24,6 @@ export const browserEn = {
   'browser.pluginMissing':
     'The opencode-super-sessions server plugin is not installed on this server, so sessions show without pull requests and issues.',
   'browser.group.Today': 'Today',
-  'browser.group.Pinned': 'Pinned',
   'browser.group.Running': 'Running',
   'browser.group.In messages': 'In messages',
   'browser.untitled': 'Untitled session',

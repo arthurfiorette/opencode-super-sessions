@@ -1,9 +1,9 @@
 import { createKeyed, type ServerRef } from '@opencode/plugin/gui';
-import { type Accessor, createMemo, createRoot, onCleanup } from 'solid-js';
+import { type Accessor, createMemo, createRoot, onCleanup, untrack } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import type { SessionRefView } from '../rpc.js';
 import { createSidebarState, type SidebarController } from '../sidebar-state.js';
-import { at, rpcOn, serverPluginMissing } from './server.js';
+import { rpcAt, rpcOn, serverPluginMissing } from './server.js';
 
 // One fetcher per session for every GUI surface that shows its refs (the header, the Work panel,
 // the composer pill), so they agree and ask the server once. It lives in setup, not in module
@@ -33,9 +33,11 @@ export interface SessionTarget {
  * - `ready`: `view` is the latest answer; undefined when the server knows no refs for it.
  * - `unavailable`: the session's server runs no server half of this plugin, so there are no refs
  *   to show.
+ * - `error`: the first read failed for another reason. The next answer that comes in, from a
+ *   session event, the minute's refresh or a reload, replaces it.
  */
 export interface RefsState {
-  readonly status: 'loading' | 'ready' | 'unavailable';
+  readonly status: 'loading' | 'ready' | 'unavailable' | 'error';
   readonly view: SessionRefView | undefined;
 }
 
@@ -75,17 +77,22 @@ export function createRefsStore(): RefsStore {
   function open(key: string, target: SessionTarget): Entry {
     return createRoot((dispose) => {
       let closed = false;
-      /** One RPC call; marks the session unavailable when its server has no server half. */
+      /**
+       * One RPC call. Marks the session unavailable when its server has no server half, and
+       * failed when nothing answered for it yet, so no surface waits on it forever.
+       */
       const call = async (method: 'refs' | 'refresh') => {
         try {
           const answer = await rpcOn(target.server)[method](
             { sessionIDs: [target.sessionID] },
-            at(target.directory)
+            await rpcAt(target.server, target.directory)
           );
           return answer[target.sessionID];
         } catch (error) {
           if (!closed && serverPluginMissing(error)) {
             setStates(key, { status: 'unavailable', view: undefined });
+          } else if (!closed && untrack(() => states[key]?.status) === 'loading') {
+            setStates(key, { status: 'error', view: undefined });
           }
           throw error;
         }
@@ -116,7 +123,11 @@ export function createRefsStore(): RefsStore {
           });
         }
       );
-      const timer = setInterval(() => void controller.refresh(), REFRESH_INTERVAL);
+      // A server without the server half answers every minute the same way; a session event or
+      // a reload asks again, and a `ready` answer brings the polling back.
+      const timer = setInterval(() => {
+        if (untrack(() => states[key]?.status) !== 'unavailable') void controller.refresh();
+      }, REFRESH_INTERVAL);
       onCleanup(() => {
         closed = true;
         clearInterval(timer);

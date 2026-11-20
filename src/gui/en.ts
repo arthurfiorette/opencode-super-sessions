@@ -8,6 +8,7 @@ export const en = {
   'refs.empty': 'This session tracks no pull requests, issues or links.',
   'refs.none': 'Open a session to see what it tracks.',
   'refs.unavailable': 'The opencode-super-sessions server plugin is not installed on this server.',
+  'refs.error': 'Could not load what this session tracks.',
   'ref.stack': 'Place in its stack',
   'badge.changesRequested': 'Changes requested',
   'badge.approved': 'Approved',

@@ -18,7 +18,8 @@ export type SuperSessionsClient = RpcClient<typeof SuperSessions>;
 const LOAD_WAIT = 5000;
 const LOAD_POLL = 25;
 
-// Locations whose plugins have loaded, per client, by directory (`''` for the default one).
+// Locations whose plugins have loaded, per client, by directory (`''` for the default one). Keyed
+// by client, so two Desktop windows, each with its own clients, never share entries.
 const loaded = new WeakMap<RpcHost, Map<string, Promise<void>>>();
 
 /**

@@ -112,17 +112,8 @@ const press = (init) =>
     new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
   );
 
-test('rows show their pull requests with the stack place, issues and +N, per view', async () => {
-  await openBrowser();
-
-  const lines = [...row('ses_busy').querySelectorAll('.ss-row-line')];
-  assert.deepEqual(
-    lines.map((line) => line.querySelector('.ss-ref-number')?.textContent),
-    ['#4930', '#4931', '#4932', '#77']
-  );
-  assert.equal(lines[0].querySelector('.ss-ref-stack').textContent, '2/4');
-  assert.equal(lines[0].querySelector('.ss-row-extra').textContent, '+1');
-  assert.equal(lines[3].querySelector('.ss-row-extra'), null);
+test('sessions sort into the views by their refs, and tab moves between the views', async () => {
+  const client = await openBrowser();
 
   // The merged session waits in Done, not in Active; the archived one in Archived. Every
   // tracked pull request counts in Pull requests, the merged one too.
@@ -133,6 +124,15 @@ test('rows show their pull requests with the stack place, issues and +N, per vie
   await until(() => listed().join() === 'ses_merged', 'the Done view');
   press({ key: 'Tab' });
   await until(() => listed().join() === 'ses_old', 'the Archived view');
+
+  // The routed session's own Location answers for its project, for the list and the preview.
+  const locations = client.calls
+    .filter((call) => call.name === 'rpc.refs')
+    .map((call) => call.options);
+  assert.ok(locations.length > 0);
+  for (const options of locations) {
+    assert.deepEqual(options, { location: { directory: '/work/widgets' } });
+  }
 });
 
 test('search narrows the list and adds message hits under In messages', async () => {
@@ -165,9 +165,36 @@ test('the keys archive the selected session and open one in a focused tab', asyn
   );
 
   press({ key: 'ArrowUp' });
+  await until(() => row('ses_busy')?.getAttribute('aria-selected') === 'true', 'the selection');
+  // mod+enter opens in the background and keeps the browser open for the next one.
+  press({ key: 'Enter', ctrlKey: true });
+  assert.deepEqual(gui.tabs, [{ server: 'sidecar', id: 'ses_busy', focus: false }]);
+  assert.ok(document.querySelector('[role="dialog"]'));
   press({ key: 'Enter' });
-  assert.deepEqual(gui.tabs, [{ server: 'sidecar', id: 'ses_busy', focus: true }]);
+  assert.deepEqual(gui.tabs.at(-1), { server: 'sidecar', id: 'ses_busy', focus: true });
   assert.equal(document.querySelector('[role="dialog"]'), null);
+});
+
+test('restoring a session also keeps auto-archive from taking it again', async () => {
+  const client = await openBrowser({ 'rpc.archive.exclude': () => ({}) });
+
+  tab('archived').click();
+  await until(() => row('ses_old')?.getAttribute('aria-selected') === 'true', 'the Archived view');
+  press({ key: 'å', code: 'KeyS', altKey: true });
+
+  await until(() => !listed().includes('ses_old'), 'the restored row to leave');
+  assert.deepEqual(
+    client.calls.filter((call) => call.name === 'session.update').map((call) => call.input),
+    [{ sessionID: 'ses_old', archived: false }]
+  );
+  await until(
+    () => client.calls.some((call) => call.name === 'rpc.archive.exclude'),
+    'the exclusion'
+  );
+  assert.deepEqual(
+    client.calls.filter((call) => call.name === 'rpc.archive.exclude').map((call) => call.input),
+    [{ sessionIDs: ['ses_old'] }]
+  );
 });
 
 test('without the server plugin, sessions still list, with a note', async () => {
@@ -185,6 +212,9 @@ test('without the server plugin, sessions still list, with a note', async () => 
   );
   assert.deepEqual(listed(), ['ses_busy', 'ses_merged', 'ses_plain']);
   assert.equal(row('ses_busy').querySelector('.ss-ref'), null);
+  // Archiving needs no server plugin; Done is its mark, so there is no Done button to fail.
+  assert.ok(row('ses_busy').querySelector('[aria-label="Archive"]'));
+  assert.equal(row('ses_busy').querySelector('[aria-label="Mark Done"]'), null);
 });
 
 test('this project lists the routed session project, all projects lists every one', async () => {

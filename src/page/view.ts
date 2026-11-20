@@ -26,7 +26,6 @@ import {
 import { openUrl, refUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
 import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
-import { rpcError } from '../host/rpc.js';
 import {
   activityTime,
   forkSession,
@@ -38,6 +37,7 @@ import {
 } from '../host/session-api.js';
 import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.js';
 import { copyLink } from '../link.js';
+import { FORGE_NAMES, linkFailure } from '../link-failure.js';
 import { type ProviderId, type PullDetails, refKey, refKind, refNumber } from '../refs/ref.js';
 import { rowRefs, workLinks } from '../refs/summary.js';
 import { LINK_PROVIDER_NAMES, linkLabel } from '../refs/work-link.js';
@@ -129,7 +129,6 @@ const RELOAD_KEY = 'f5';
 const RELOAD_TOAST_DELAY = 300;
 // Two left clicks on one row within this many milliseconds open it.
 const DOUBLE_CLICK = 400;
-const FORGE_NAMES: Record<ProviderId, string> = { github: 'GitHub', gitlab: 'GitLab' };
 
 /** Which optional pieces the header row shows. */
 interface HeaderFit {
@@ -2052,18 +2051,19 @@ function attached(root: Renderable, node: Renderable): boolean {
 
 /** Turns an RPC `link` failure into a short message. */
 function linkError(error: unknown): string {
-  const { type, data } = rpcError(error);
-  if (type === 'invalid_reference') return 'Not a URL or a pull request or issue reference.';
-  if (type === 'not_found') return 'Pull request or issue not found.';
-  if (type === 'unavailable') {
-    const record = typeof data === 'object' && data !== null ? data : {};
-    const provider = 'provider' in record ? record.provider : undefined;
-    const forge =
-      provider === 'gitlab' || provider === 'github' ? FORGE_NAMES[provider] : 'The forge';
-    if ('reason' in record && record.reason === 'disabled') {
-      return `${forge} is not enabled. Turn it on in the settings to link it.`;
-    }
-    return `${forge} is unavailable. Run /super-sessions status for details.`;
+  const failure = linkFailure(error);
+  switch (failure.reason) {
+    case 'invalid':
+      return 'Not a URL or a pull request or issue reference.';
+    case 'not-found':
+      return 'Pull request or issue not found.';
+    case 'disabled':
+      return `${failure.forge ?? 'The forge'} is not enabled. Turn it on in the settings to link it.`;
+    case 'unavailable':
+      return `${failure.forge ?? 'The forge'} is unavailable. Run /super-sessions status for details.`;
+    case 'missing':
+      return 'Could not link. Enable the opencode-super-sessions server plugin.';
+    default:
+      return 'Could not link.';
   }
-  return 'Could not link. Enable the opencode-super-sessions server plugin.';
 }

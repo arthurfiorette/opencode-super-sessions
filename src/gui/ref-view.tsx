@@ -1,11 +1,13 @@
 import { usePlugin } from '@opencode/plugin/gui';
 import { For, type JSX, Show } from 'solid-js';
 import {
-  GITHUB_COLORS,
   type LookIcon,
   openBadges,
+  parseColors,
   refGlyph,
   refUrl,
+  type StateColors,
+  stateColor,
   type Tone
 } from '../refs/look.js';
 import { type Ref, type RefState, type RefStatus, refKey, refNumber } from '../refs/ref.js';
@@ -54,14 +56,15 @@ export function toneClass(tone: Tone): string {
 }
 
 /**
- * GitHub's color for a ref state in the app's light or dark mode, or undefined for an unknown
- * state, which reads muted so it never passes for open.
+ * The color of a ref state in the app's light or dark mode: the `colors` option's override, else
+ * GitHub's. Undefined for an unknown state, which reads muted so it never passes for open.
  */
-export function stateColor(
+function refColor(
+  colors: StateColors,
   status: RefStatus | undefined,
   mode: 'light' | 'dark'
 ): string | undefined {
-  return status === undefined ? undefined : GITHUB_COLORS[status][mode];
+  return status === undefined ? undefined : stateColor(colors, status, mode);
 }
 
 /** Whether a URL is an http(s) page, the only kind the GUI hands to the system browser. */
@@ -130,7 +133,8 @@ export interface RefLineProps {
 export function RefLine(props: RefLineProps) {
   const ctx = usePlugin();
   const status = () => props.state?.status;
-  const color = () => stateColor(status(), ctx.appearance.mode());
+  const colors = parseColors(ctx.options.colors);
+  const color = () => refColor(colors, status(), ctx.appearance.mode());
   return (
     <ExternalLink class="ss-ref" url={refUrl(props.item, props.state)} title={props.state?.title}>
       <span

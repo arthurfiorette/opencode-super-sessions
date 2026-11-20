@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { PullCheck, Ref, RefKind, RefReview, RefState, RefStatus } from './ref.js';
 
 // How a ref looks, decided once for every surface: the TUI draws these decisions with Nerd Font
@@ -52,6 +53,37 @@ export const GITHUB_COLORS: Record<RefStatus, { dark: string; light: string }> =
   completed: { dark: '#ab7df8', light: '#8250df' },
   not_planned: { dark: '#9198a1', light: '#59636e' }
 };
+
+const hex = z.string().regex(/^#[0-9a-f]{6}$/i, { message: 'Use a #rrggbb color.' });
+const color = z.union([hex, z.strictObject({ dark: hex, light: hex })]);
+
+/** The `colors` option: a color per ref state, one for both modes or one per mode. */
+export const colorsSchema = z.strictObject({
+  open: color.optional(),
+  draft: color.optional(),
+  merged: color.optional(),
+  closed: color.optional(),
+  completed: color.optional(),
+  not_planned: color.optional()
+});
+
+export type StateColors = z.output<typeof colorsSchema>;
+
+/**
+ * The `colors` option as the Desktop GUI gets it, unparsed from the plugin's options. A value
+ * that does not parse counts as no override: the server plugin already warns about it.
+ */
+export function parseColors(value: unknown): StateColors {
+  const parsed = colorsSchema.safeParse(value ?? {});
+  return parsed.success ? parsed.data : {};
+}
+
+/** The hex color of a ref state in the current mode: the user's override, else GitHub's. */
+export function stateColor(colors: StateColors, status: RefStatus, mode: 'dark' | 'light'): string {
+  const override = colors[status];
+  if (typeof override === 'string') return override;
+  return (override ?? GITHUB_COLORS[status])[mode];
+}
 
 /**
  * Web page of a ref. The snapshot's URL wins; before the first snapshot arrives the URL is built
@@ -212,6 +244,24 @@ export function reviewBadges(review: RefReview | undefined, counts = true, ci = 
     });
   }
   return badges;
+}
+
+/**
+ * One tone for an open pull request's review and CI together, which the Desktop composer pill
+ * takes: failing checks, requested changes or merge conflicts are an error; running checks or a
+ * pending review are a warning; passing checks or an approval with nothing else in the way are
+ * success. Undefined while nothing is known, and for runs that were only cancelled, which say
+ * nothing about the change.
+ */
+export function pullTone(review: RefReview | undefined): Exclude<Tone, 'muted'> | undefined {
+  if (review === undefined) return undefined;
+  const { checks, decision } = review;
+  if (checks === 'failing' || decision === 'changes_requested' || review.conflicts === true) {
+    return 'error';
+  }
+  if (checks === 'pending' || decision === 'review_required') return 'warning';
+  if (checks === 'cancelled' || (checks === undefined && decision === undefined)) return undefined;
+  return 'success';
 }
 
 /** {@link reviewBadges} for a ref's state, or none unless it is an open or draft pull request. */

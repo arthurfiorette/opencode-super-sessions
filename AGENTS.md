@@ -7,7 +7,7 @@ Standalone OpenCode V2 plugin. User docs live in `README.md`. Contribution guide
 - Do not modify OpenCode or import its private Core/Server modules. Use public V2 APIs only, and check the installed types before relying on one.
 - Do not publish npm releases or change user configuration without explicit authorization.
 - Never commit credentials or local OpenCode state.
-- Keep all `@opencode/*` dependencies pinned to the same exact version.
+- Keep all `@opencode/*` dependencies pinned to the same exact version, and `effect` to the exact version that `@opencode/plugin` depends on.
 - `./rpc` must stay importable by clients without loading OpenTUI.
 - New host assumptions (command ids, priorities, event fields, payload shapes, API semantics, host file paths) go in `src/host/*` with a link to the host source line, and get a contract test in `test/contract` that reads the host through that accessor. See the Compatibility section of `CONTRIBUTING.md`.
 
@@ -25,7 +25,7 @@ Changes must preserve these. `CONTRIBUTING.md` explains the reasoning.
 - The plugin never makes a model request on its own. Notices to the agent are posted only from the `prompt` hook, before a steer prompt to an idle session, with `resume: false`.
 - Snapshot refreshes never write session metadata; only link changes do.
 - A keymap `run` that may fall through stays synchronous and returns a literal `false`.
-- Archiving happens only through the TUI's HTTP client (`setArchived`), on a user action, the user's title suffix, or auto-archive the user turned on. Auto-archive never takes pinned, running or waiting sessions, or sessions the user restored from it.
+- Archiving happens only through the TUI's or the Desktop window's HTTP client (`setArchived`), on a user action, the user's title suffix, or auto-archive the user turned on. Auto-archive never takes pinned, running or waiting sessions, or sessions the user restored from it.
 - Cleanup only removes worktrees `context.worktree.list` reports, never the main checkout, always with `force: false`, and never before the user confirmed once. Unknown facts keep a worktree, keep reasons beat every rule, local changes and commits only the worktree reaches always keep, and the decision runs again on freshly read sessions and git state right before each removal.
 - On a host newer than `TESTED_UP_TO` by minor or major, the plugin keeps working and warns once per version. A browser crash falls back to the built-in list; a crash in the sidebar's Work rows hides those rows.
 - The TUI degrades without the server plugin, `gh` or `glab`: titles and archiving still work.
@@ -34,6 +34,8 @@ Changes must preserve these. `CONTRIBUTING.md` explains the reasoning.
 
 - Run `pnpm check` before committing.
 - TUI changes need a native render test that mounts the page through OpenTUI under Bun, including cold lazy-loading. Never insert raw text nodes into box renderables.
+- Desktop GUI changes need a test against the built bundle through `test/gui/harness.mjs`.
+- Window code (`src/gui` and every module it imports) never imports `node:*`: the app hands the window inert placeholders for Node.js built-ins.
 - Package tests must exercise the packed build.
 - Cleanup changes need a decision test for every rule and keep reason they touch; removal has no undo.
 - No skipped placeholder tests or tests that duplicate implementation logic.

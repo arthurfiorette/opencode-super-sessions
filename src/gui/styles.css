@@ -1,5 +1,6 @@
 /* Colors come from the app's CSS variables, so the GUI follows the user's theme. Ref states take
-   GitHub's colors inline instead (`stateColor` in ref-view.tsx), as the TUI does. */
+   GitHub's colors or the `colors` option inline instead (`refColor` in ref-view.tsx), as the TUI
+   does. */
 
 .ss-ref {
   display: inline-flex;
