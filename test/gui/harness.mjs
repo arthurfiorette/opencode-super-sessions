@@ -230,8 +230,10 @@ function createUi() {
  * A fake window context for `setup(ctx)`. `options.session` is the routed session
  * (`ctx.sessions.current()`), settable later with `setSession`; `options.servers` the listed
  * servers. Records what the GUI does: `added` (every `ctx.add`), `opened` (external URLs),
- * `copied`, `tabs` (`ctx.tabs.open` calls), `toasts` and `dialogs` (each open dialog's
- * `container` in `document.body`).
+ * `copied`, `tabs` (`ctx.tabs.open` calls), `toasts`, `dialogs` (each open dialog's
+ * `container` in `document.body`), `asked` (each `confirm` and `prompt` with its options) and
+ * `layout` (`ctx.layout.open` calls). `replies` answers `confirm` and `prompt` in order; push to
+ * it before the GUI asks. An unanswered question resolves as dismissed.
  */
 export function createContext(plugin, options = {}) {
   const [session, setSession] = solid.createSignal(options.session);
@@ -243,6 +245,9 @@ export function createContext(plugin, options = {}) {
   const tabs = [];
   const toasts = [];
   const dialogs = [];
+  const asked = [];
+  const replies = [];
+  const layout = [];
   const messages = plugin.i18n?.en ?? {};
   const translate = (key, params = {}) =>
     (messages[key] ?? key).replace(/\{\{(\w+)\}\}/g, (_, name) => String(params[name] ?? ''));
@@ -297,11 +302,42 @@ export function createContext(plugin, options = {}) {
         dialogs.push(mounted);
         return handle;
       },
-      active: () => dialogs.some((dialog) => dialog.container.isConnected)
+      active: () => dialogs.some((dialog) => dialog.container.isConnected),
+      confirm: async (options) => {
+        asked.push({ kind: 'confirm', options });
+        return replies.shift() ?? false;
+      },
+      prompt: async (options) => {
+        asked.push({ kind: 'prompt', options });
+        return replies.shift();
+      }
+    },
+    layout: {
+      narrow: () => false,
+      ready: () => true,
+      open: (key, target, openOptions) =>
+        void layout.push({ key, session: target.id, ...openOptions }),
+      state: (key, target) =>
+        layout.some((entry) => entry.key === key && entry.session === target.id)
+          ? 'visible'
+          : 'closed'
     },
     keybinds: { keybind: () => [], keys: (bind) => bind.split('+'), matches: () => false }
   };
-  return { ctx, added, opened, copied, tabs, toasts, dialogs, setSession, abort };
+  return {
+    ctx,
+    added,
+    opened,
+    copied,
+    tabs,
+    toasts,
+    dialogs,
+    asked,
+    replies,
+    layout,
+    setSession,
+    abort
+  };
 }
 
 /** An item `ctx.add` received, read the way the host reads a reactive one. */
@@ -312,8 +348,10 @@ function read(entry) {
 /**
  * Loads the built bundle and runs its `setup` with a fake context (see {@link createContext}).
  * Returns the context's records, `items(registryId)` to read what the GUI contributed,
- * `command(id)` to read one command, `slot(at, input)` to render a `Slot`, and `dispose` to tear
- * the plugin and everything it rendered down.
+ * `command(id)` to read one command, `slot(at, input)` to render a `Slot`, `panel(id, session)` to
+ * render a side `Panel`'s tab of the same id, `pill(id, session)` to read what a `ComposerPill`
+ * shows (reactive, so read it again after a change), and `dispose` to tear the plugin and
+ * everything it rendered down.
  */
 export async function startGui(options = {}) {
   const plugin = await loadBundle();
@@ -341,6 +379,17 @@ export async function startGui(options = {}) {
         .map((slot) => mount(fake.ctx, () => slot.render(input)));
       rendered.push(...shown);
       return shown;
+    },
+    panel(id, session) {
+      const panel = items('panel').find((item) => item.id === id);
+      const [tab] = panel.list({ session, screen: {}, open: [id] });
+      const shown = mount(fake.ctx, () => panel.render({ tab, session, screen: {} }));
+      rendered.push(shown);
+      return shown;
+    },
+    pill(id, session) {
+      const pill = items('composer-pill').find((item) => item.id === id);
+      return pill.show({ session, screen: {} });
     },
     dispose() {
       for (const mounted of [...rendered, ...fake.dialogs]) mounted.dispose();

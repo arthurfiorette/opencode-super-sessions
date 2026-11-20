@@ -65,7 +65,7 @@ export function stateColor(
 }
 
 /** Whether a URL is an http(s) page, the only kind the GUI hands to the system browser. */
-function webUrl(url: string): boolean {
+export function webUrl(url: string): boolean {
   try {
     const { protocol } = new URL(url);
     return protocol === 'https:' || protocol === 'http:';
@@ -75,7 +75,7 @@ function webUrl(url: string): boolean {
 }
 
 /** Props of {@link ExternalLink}. */
-interface ExternalLinkProps {
+export interface ExternalLinkProps {
   readonly url: string;
   readonly class: string;
   readonly title?: string | undefined;
@@ -86,7 +86,7 @@ interface ExternalLinkProps {
  * A link that opens its page in the system browser. The click stops here, so a row it sits in
  * does not take it as a selection, and the window never navigates away from the app.
  */
-function ExternalLink(props: ExternalLinkProps) {
+export function ExternalLink(props: ExternalLinkProps) {
   const ctx = usePlugin();
   const href = () => (webUrl(props.url) ? props.url : undefined);
   return (
@@ -116,6 +116,10 @@ export interface RefLineProps {
   readonly titled?: boolean;
   /** Draws the review and CI badges of an open pull request. Defaults to true. */
   readonly badged?: boolean;
+  /** Draws `passed/total` among the badges. Defaults to true; the session header has no room. */
+  readonly counts?: boolean;
+  /** Draws a stacked pull request's place in its stack. Defaults to true. */
+  readonly stacked?: boolean;
 }
 
 /**
@@ -137,7 +141,7 @@ export function RefLine(props: RefLineProps) {
         <Octicon name={OCTICONS[refGlyph(props.item.kind, status())]} class="ss-ref-icon" />
         <span class="ss-ref-number">{refNumber(props.item)}</span>
       </span>
-      <Show when={props.state?.stack}>
+      <Show when={(props.stacked ?? true) && props.state?.stack}>
         {(stack) => (
           <span class="ss-ref-stack" title={ctx.t('ref.stack')}>
             <Octicon name="stack" size={12} />
@@ -146,7 +150,7 @@ export function RefLine(props: RefLineProps) {
         )}
       </Show>
       <Show when={props.badged ?? true}>
-        <For each={openBadges(props.state)}>
+        <For each={openBadges(props.state, props.counts ?? true)}>
           {(badge) => (
             <span
               class={`ss-badge ss-badge-${badge.kind} ${toneClass(badge.tone)}`}

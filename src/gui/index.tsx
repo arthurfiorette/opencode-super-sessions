@@ -2,6 +2,7 @@ import { Command, Plugin, Style } from '@opencode/plugin/gui';
 import { en } from './en.js';
 import { TrackedWork } from './placeholder.js';
 import { createRefsStore } from './refs-store.js';
+import { addStatus } from './status/index.js';
 import css from './styles.css?inline';
 
 // The OpenCode Desktop GUI, loaded from the package's `./gui-experimental` export. The host gives
@@ -12,6 +13,7 @@ export default Plugin.define({
   setup(ctx) {
     ctx.add(Style, css);
     const refs = createRefsStore();
+    addStatus(ctx, refs);
     ctx.add(
       Command,
       (): Command => ({

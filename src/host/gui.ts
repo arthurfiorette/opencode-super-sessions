@@ -31,6 +31,14 @@ export const HEADER_SLOT = 'session.header' satisfies keyof SlotMap;
 export const PANEL_MENU = 'session.panel';
 
 /**
+ * The layout key of one of the plugin's side panel tabs, which `ctx.layout.open` and `state` take:
+ * `${plugin}:${tab id}` (packages/plugin/src/gui/host-apis.ts:813, registries.ts:158).
+ */
+export function panelKey(plugin: string, tab: string): string {
+  return `${plugin}:${tab}`;
+}
+
+/**
  * Opens a session in a tab. `tabs.open` keeps an open tab of the session where it is instead of
  * adding a second one, and opens in the background unless `focus` is set
  * (packages/plugin/src/gui/host-apis.ts:1606). The desktop app applies it after the interface
