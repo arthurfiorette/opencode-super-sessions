@@ -18,6 +18,7 @@
   flex-shrink: 0;
   align-items: center;
   gap: 4px;
+  color: var(--ss-state-color, inherit);
 }
 
 .ss-ref-icon {

@@ -94,7 +94,7 @@ Sessions that match only in their message text appear a moment later, in an `In 
 
 The same plugin adds to OpenCode Desktop 2.3:
 
-- the session browser as a dialog. Press `cmd+shift+s` (`ctrl+shift+s` on Windows and Linux) or run "Super Sessions: Browse sessions" from the command palette. It has the same views, search and project scope as the terminal browser, and shows the selected session's work on the right.
+- the session browser as a dialog. Press `cmd+shift+s` (`ctrl+shift+s` on Windows and Linux) or run "Super Sessions: Browse sessions" from the command palette. It has the same views, search and project scope as the terminal browser, and shows the selected session's context usage, work and latest messages on the right. The `preview` and `previewWidth` options apply to it too.
 - the session's pull requests and issues in the session header, with their state, review and CI
 - a Work side panel, from the side panel's `+` menu or "Super Sessions: Show work", with the failed checks of open pull requests. You can open, copy, link and unlink work there.
 - the session's open pull request above the message box, colored by its checks and review, with a menu of its checks

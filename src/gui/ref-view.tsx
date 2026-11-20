@@ -139,7 +139,9 @@ export function RefLine(props: RefLineProps) {
     <ExternalLink class="ss-ref" url={refUrl(props.item, props.state)} title={props.state?.title}>
       <span
         class={`ss-ref-mark ss-state-${status() ?? 'unknown'}`}
-        style={color() === undefined ? undefined : { color: color() }}
+        // A variable instead of `color`, so a surface such as the browser's selected row can
+        // override the state color from its stylesheet.
+        style={color() === undefined ? undefined : { '--ss-state-color': color() }}
         data-ref={refKey(props.item)}
       >
         <Octicon name={OCTICONS[refGlyph(props.item.kind, status())]} class="ss-ref-icon" />

@@ -123,18 +123,21 @@ export function rpcUnavailable() {
 /**
  * A fake `Data` event feed: `on` as the app's, and `emit(event)` to deliver an event to the
  * listeners of its `type`. `session` answers like a server that synced none of the sessions,
- * with every session idle, except the ids in `running`.
+ * with every session idle, except the ids in `running`, and no cost. `models` is the model list
+ * of every Location.
  */
-export function createData({ running = [] } = {}) {
+export function createData({ running = [], models = [] } = {}) {
   const listeners = new Map();
   return {
     session: {
       get: () => undefined,
       status: (id) => (running.includes(id) ? 'running' : 'idle'),
       family: () => [],
+      cost: () => 0,
       permission: { list: () => [], sync: async () => {} },
       form: { list: () => [], sync: async () => {} }
     },
+    location: { model: { list: () => models } },
     on(type, handler) {
       const set = listeners.get(type) ?? new Set();
       listeners.set(type, set);
@@ -232,6 +235,7 @@ function createUi() {
     Tooltip: (props) =>
       element('span', { 'data-tooltip': String(props.value ?? '') }, () => props.children),
     Keybind: (props) => element('kbd', {}, () => props.keys.join('+')),
+    Markdown: (props) => element('div', { 'data-markdown': '' }, () => props.text),
     TextInput: (props) => {
       const node = element('input', { 'aria-label': props.label });
       node.value = props.value ?? '';

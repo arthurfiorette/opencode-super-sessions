@@ -1,6 +1,13 @@
 import { afterEach, test } from 'bun:test';
 import assert from 'node:assert/strict';
-import { createClient, createServer, rpcUnavailable, startGui, until } from './harness.mjs';
+import {
+  createClient,
+  createData,
+  createServer,
+  rpcUnavailable,
+  startGui,
+  until
+} from './harness.mjs';
 
 const { sessionRefViewSchema } = await import('../../dist/rpc.js');
 
@@ -61,14 +68,16 @@ const SESSIONS = [
   session('ses_plain', 'Read the logs', { created: NOW - 3 * HOUR })
 ];
 const ARCHIVED = [session('ses_old', 'Old spike', { archived: NOW - HOUR })];
-const VIEWS = { ses_busy: busy, ses_merged: merged };
+// It tracks nothing: the server answers an empty view.
+const plain = sessionRefViewSchema.parse({ links: [], branchRefs: [], states: {} });
+const VIEWS = { ses_busy: busy, ses_merged: merged, ses_plain: plain };
 
 /** The fixture views of the given sessions, as the `refs` and `refresh` RPCs answer. */
 const viewsOf = (ids) =>
   Object.fromEntries(ids.flatMap((id) => (VIEWS[id] ? [[id, VIEWS[id]]] : [])));
 
 /** A server with the fixtures and the server plugin, unless `handlers` replace its RPCs. */
-function fixtureServer(handlers = {}) {
+function fixtureServer(handlers = {}, data = {}) {
   const client = createClient({
     'session.get': ({ sessionID }) =>
       [...SESSIONS, ...ARCHIVED].find((item) => item.id === sessionID),
@@ -81,15 +90,15 @@ function fixtureServer(handlers = {}) {
     'rpc.search': () => [],
     ...handlers
   });
-  return createServer({ client });
+  return createServer({ client, data: createData(data) });
 }
 
 let gui;
 afterEach(() => gui?.dispose());
 
 /** Starts the GUI with `ses_busy` routed, opens the browser and waits for its first row. */
-async function openBrowser(handlers) {
-  const server = fixtureServer(handlers);
+async function openBrowser(handlers, data) {
+  const server = fixtureServer(handlers, data);
   gui = await startGui({
     session: { server, id: 'ses_busy', key: `${server.id}\nses_busy`, directory: '/work/widgets' },
     servers: [server]
@@ -119,6 +128,9 @@ test('sessions sort into the views by their refs, and tab moves between the view
   // tracked pull request counts in Pull requests, the merged one too.
   await until(() => count('done') === '1', 'the Done count');
   assert.deepEqual(listed(), ['ses_busy', 'ses_plain']);
+  // A session without refs is its title line alone, with no empty block under it.
+  assert.ok(row('ses_busy').querySelector('.ss-row-lines .ss-ref'));
+  assert.equal(row('ses_plain').querySelector('.ss-row-lines'), null);
   assert.deepEqual(['active', 'done', 'archived', 'pulls'].map(count), ['2', '1', '1', '5']);
   tab('done').click();
   await until(() => listed().join() === 'ses_merged', 'the Done view');
@@ -234,4 +246,106 @@ test('this project lists the routed session project, all projects lists every on
     [false, undefined, undefined],
     [true, undefined, undefined]
   ]);
+});
+
+const MODEL = { providerID: 'acme', id: 'large' };
+/** A session's exchange, oldest first: a prompt, then a reply that read a file and ran a test. */
+const exchange = (id, prompt) => [
+  { id: `${id}_u`, type: 'user', text: prompt, time: { created: NOW - HOUR } },
+  {
+    id: `${id}_a`,
+    type: 'assistant',
+    model: MODEL,
+    time: { created: NOW - HOUR, completed: NOW - HOUR },
+    tokens: { input: 12_000, output: 345, reasoning: 0, cache: { read: 0, write: 0 } },
+    content: [
+      { type: 'text', text: `Answer to ${prompt}` },
+      {
+        type: 'tool',
+        id: 't1',
+        name: 'read',
+        time: { created: NOW - HOUR },
+        state: { status: 'completed', input: { path: '/work/widgets/src/build.ts' } }
+      },
+      {
+        type: 'tool',
+        id: 't2',
+        name: 'bash',
+        time: { created: NOW - HOUR },
+        state: { status: 'completed', input: { command: 'pnpm test\npnpm lint' } }
+      }
+    ]
+  }
+];
+/**
+ * `message.list` with the browser's Done lookup (`type: 'user'`) and the preview's page, which the
+ * server answers newest first.
+ */
+const messages = (pages) => (input) =>
+  input.type === 'user'
+    ? { data: [{ time: { created: NOW - 2 * HOUR } }], cursor: {} }
+    : Promise.resolve(pages(input.sessionID)).then((page) => ({
+        data: [...page].reverse(),
+        cursor: {}
+      }));
+const chat = () =>
+  [...document.querySelectorAll('.ss-preview [data-chat]')].map((node) => [
+    node.dataset.chat,
+    node.textContent
+  ]);
+
+test('the preview shows the context usage and the latest messages, tools in one line', async () => {
+  await openBrowser(
+    { 'message.list': messages((id) => exchange(id, 'Split the build')) },
+    { models: [{ ...MODEL, limit: { context: 100_000 } }] }
+  );
+
+  await until(() => chat().length > 0, 'the transcript');
+  assert.deepEqual(chat(), [
+    ['user', 'Split the build'],
+    ['text', 'Answer to Split the build'],
+    ['tool', 'Read src/build.ts'],
+    ['tool', '$ pnpm test…']
+  ]);
+  // 12,000 input and 345 output tokens of a 100,000 token window.
+  const context = [...document.querySelectorAll('.ss-context-item')].map(
+    (node) => node.textContent
+  );
+  assert.deepEqual(context, ['12,345 tokens', '12% used', 'idle']);
+});
+
+test('moving the selection on never shows a slower answer for the row passed', async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let answered = false;
+  await openBrowser({
+    'message.list': messages((id) =>
+      id === 'ses_busy'
+        ? gate.then(() => {
+            answered = true;
+            return exchange(id, 'Busy prompt');
+          })
+        : exchange(id, 'Plain prompt')
+    )
+  });
+
+  press({ key: 'ArrowDown' });
+  await until(() => chat()[0]?.[1] === 'Plain prompt', 'the second session in the preview');
+  release();
+  await until(() => answered, 'the first answer');
+  // Its reply settles in the tasks queued before this one.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(chat()[0]?.[1], 'Plain prompt');
+  assert.ok(!document.querySelector('.ss-preview').textContent.includes('Busy prompt'));
+});
+
+test('a running session sits under Running with the running mark', async () => {
+  await openBrowser(undefined, { running: ['ses_plain'] });
+
+  await until(() => row('ses_plain')?.querySelector('[data-marker="running"]'), 'the mark');
+  const group = row('ses_plain').closest('.ss-group').querySelector('.ss-group-title');
+  assert.equal(group.textContent, 'Running');
+  assert.equal(row('ses_busy').querySelector('[data-marker]'), null);
 });

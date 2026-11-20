@@ -14,25 +14,27 @@ import {
   untrack
 } from 'solid-js';
 import { closeSessionTab, openSession } from '../../host/gui.js';
-import { activityTime, isBusy, setArchived } from '../../host/session-info.js';
-import { formatAge } from '../../page/age.js';
+import { isBusy, setArchived } from '../../host/session-info.js';
 import {
   keepSelection,
+  MESSAGES_GROUP,
   moveSelection,
   type PageScope,
   type PageView,
   type PullRow,
+  RUNNING_GROUP,
   rowsOf,
   VIEWS
 } from '../../page/state.js';
 import { refUrl } from '../../refs/look.js';
 import { refKey } from '../../refs/ref.js';
 import { rowRefs, workLinks } from '../../refs/summary.js';
+import { Octicon, type OcticonName } from '../octicons.js';
 import type { RefsStore } from '../refs-store.js';
 import { rpcOn, serverFor } from '../server.js';
-import { WorkList } from '../status/work-list.js';
 import { type BrowserModel, type BrowserTarget, createBrowserModel } from './model.js';
 import type { BrowserPrefs } from './prefs.js';
+import { Preview } from './preview.js';
 import { PullItem, SessionRow } from './row.js';
 
 // The session browser dialog: the TUI's browser (src/page/view.ts) in the window, on the same
@@ -42,12 +44,28 @@ import { PullItem, SessionRow } from './row.js';
 // session's pull request, issue or link in the web browser, alt+a switches the scope and f5
 // reloads the session from its forge.
 
-/** The dialog's chords without `alt`, also shown in its hints. */
-const KEYS = {
-  open: 'enter',
-  background: 'mod+enter',
-  reload: 'f5'
-} as const;
+/** The dialog's chords without `alt` that its hints show. */
+const KEYS = { open: 'enter' } as const;
+
+/** The TUI's tab icons (`tabLabel` in src/page/view.ts); Active has none. */
+const TAB_ICONS: Record<PageView, OcticonName | undefined> = {
+  active: undefined,
+  done: 'check-circle',
+  archived: 'archive',
+  pulls: 'git-pull-request'
+};
+
+/**
+ * The orange end of the title's fade, by app mode: the TUI's (`TITLE_ORANGE` in
+ * src/page/icons.ts). The app has no orange variable, so it is a fixed color here too; the fade
+ * starts from the app's warning color, as the TUI's starts from the theme's.
+ */
+const TITLE_ORANGE = { dark: '#fe8019', light: '#af3a03' } as const;
+
+/** The preview's share of the dialog's width: the TUI's `previewWidth` option, 0.4 by default. */
+function previewShareOf(value: unknown): number {
+  return typeof value === 'number' && value >= 0.2 && value <= 0.7 ? value : 0.4;
+}
 
 /** What an `alt` chord does. */
 type AltAction = 'archive' | 'done' | 'web' | 'scope';
@@ -111,8 +129,10 @@ export function openBrowser(
           server,
           origin: routed === undefined ? undefined : { id: routed.id, directory: routed.directory }
         };
+  // The dialog's title keeps naming it for screen readers; browser.css hides it from view, since
+  // the browser draws its own header with the TUI's gradient title and its own `esc`.
   ctx.dialogs.open((dialog) => (
-    <ctx.ui.Dialog title={ctx.t('browser.title')} size="x-large">
+    <ctx.ui.Dialog title={ctx.t('browser.title')} size="x-large" closable={target === undefined}>
       <Show when={target} fallback={<p class="ss-note">{ctx.t('browser.noServer')}</p>}>
         {(current) => (
           <SessionBrowser target={current()} prefs={prefs} refs={refs} close={dialog.close} />
@@ -211,6 +231,17 @@ function SessionBrowser(props: SessionBrowserProps) {
   const live = (session: SessionInfo): SessionInfo =>
     target.server.data.session.get(session.id) ?? session;
   const running = (session: SessionInfo) => isBusy(live(session)) || model.isRunning(session.id);
+  /** What the session waits on the user for, as the app's own lists know it. */
+  const waiting = (id: string): 'permission' | 'question' | undefined => {
+    const sessions = target.server.data.session;
+    if ((sessions.permission.list(id)?.length ?? 0) > 0) return 'permission';
+    if ((sessions.form.list(id)?.length ?? 0) > 0) return 'question';
+    return undefined;
+  };
+  // The TUI's `preview` and `previewWidth` options, which the GUI gets unparsed.
+  const showPreview = ctx.options.preview !== false;
+  const previewShare = previewShareOf(ctx.options.previewWidth);
+  const titleEnd = () => TITLE_ORANGE[ctx.appearance.mode() === 'light' ? 'light' : 'dark'];
 
   // The scope's first value loads the lists; a later one starts over in the other scope.
   createEffect(
@@ -445,188 +476,206 @@ function SessionBrowser(props: SessionBrowserProps) {
     store.search !== undefined && !pullView()
       ? ctx.t('browser.empty.search')
       : ctx.t(`browser.empty.${view()}`);
-  /** A group title the copy names, such as `Today`; a day's date as the grouping wrote it. */
-  const groupTitle = (title: string) => {
-    const key = `browser.group.${title}`;
-    const translated = ctx.t(key);
-    return translated === key ? title : translated;
-  };
 
   return (
     // The keys of the list and its search field bubble here. A native listener: Solid delegates
     // `onKeyDown` to the document, after the dialog's own listeners and too late to keep `tab`
     // from moving the focus.
-    <div ref={root} class="ss-browser" tabIndex={-1} on:keydown={onKeyDown}>
-      <div class="ss-browser-bar">
-        <div class="ss-tabs" role="tablist" aria-label={ctx.t('browser.views')}>
-          <For each={VIEWS}>
-            {(item) => (
-              <button
-                type="button"
-                role="tab"
-                class="ss-tab"
-                aria-selected={view() === item}
-                data-view={item}
-                onClick={() => switchView(item)}
-              >
-                <span>{ctx.t(`browser.view.${item}`)}</span>
-                <span class="ss-tab-count">{model.counts()[item]}</span>
-              </button>
-            )}
-          </For>
+    <div
+      ref={root}
+      class="ss-browser"
+      data-preview={showPreview ? 'on' : 'off'}
+      style={{ '--ss-preview-share': `${previewShare * 100}%` }}
+      tabIndex={-1}
+      on:keydown={onKeyDown}
+    >
+      <div class="ss-browser-main">
+        <div class="ss-browser-left">
+          <div class="ss-browser-bar">
+            <span class="ss-title" aria-hidden="true" style={{ '--ss-title-end': titleEnd() }}>
+              {ctx.t('browser.title')}
+            </span>
+            <div class="ss-tabs" role="tablist" aria-label={ctx.t('browser.views')}>
+              <For each={VIEWS}>
+                {(item) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    class="ss-tab"
+                    aria-selected={view() === item}
+                    data-view={item}
+                    onClick={() => switchView(item)}
+                  >
+                    <Show when={TAB_ICONS[item]}>
+                      {(icon) => <Octicon name={icon()} size={14} class="ss-tab-icon" />}
+                    </Show>
+                    <span class="ss-tab-label">{ctx.t(`browser.view.${item}`)}</span>
+                    <span
+                      class="ss-tab-count"
+                      classList={{ 'ss-tab-empty': model.counts()[item] === 0 }}
+                    >
+                      {model.counts()[item]}
+                    </span>
+                  </button>
+                )}
+              </For>
+            </div>
+            <span class="ss-esc-bar">
+              <CloseHint close={props.close} />
+            </span>
+          </div>
+          <ctx.ui.TextInput
+            type="search"
+            size="large"
+            autofocus
+            label={ctx.t('browser.search')}
+            placeholder={ctx.t(pullView() ? 'browser.search.pulls' : 'browser.search.placeholder')}
+            value={query()}
+            onInput={(value) => {
+              setQuery(value);
+              setSelected(undefined);
+              setPull(undefined);
+            }}
+          />
+          <Show when={model.missing()}>
+            <p class="ss-note">{ctx.t('browser.pluginMissing')}</p>
+          </Show>
+          <Show when={store.search?.status === 'error' && !pullView()}>
+            <p class="ss-note">{ctx.t('browser.search.failed')}</p>
+          </Show>
+          <div class="ss-list" role="listbox" aria-label={ctx.t(`browser.view.${view()}`)}>
+            <Switch>
+              <Match when={store.status === 'loading'}>
+                <div class="ss-state">
+                  <ctx.ui.Loader size="large" />
+                </div>
+              </Match>
+              <Match when={store.status === 'error'}>
+                <div class="ss-state">
+                  <p class="ss-note">{ctx.t('browser.error')}</p>
+                  <ctx.ui.Button variant="neutral" size="small" onClick={() => void model.load()}>
+                    {ctx.t('browser.retry')}
+                  </ctx.ui.Button>
+                </div>
+              </Match>
+              <Match when={pullView()}>
+                <Show when={pulls().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
+                  <For each={model.pullGroups()}>
+                    {(group) => (
+                      <section class="ss-group">
+                        <GroupTitle title={group.title} />
+                        <For each={group.pulls}>
+                          {(item) => (
+                            <PullItem
+                              pull={item}
+                              selected={pull() === item.key}
+                              ref={track(item.key)}
+                              onSelect={() => setPull(item.key)}
+                              onOpen={() => open(item.sessions[0])}
+                            />
+                          )}
+                        </For>
+                      </section>
+                    )}
+                  </For>
+                </Show>
+              </Match>
+              <Match when={true}>
+                <Show when={rows().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
+                  <For each={model.groups()}>
+                    {(group) => (
+                      <section class="ss-group">
+                        <Show when={group.title}>{(title) => <GroupTitle title={title()} />}</Show>
+                        <For each={group.sessions}>
+                          {(session) => (
+                            <SessionRow
+                              session={live(session)}
+                              view={store.refs[session.id]}
+                              selected={selected() === session.id}
+                              running={running(session)}
+                              waiting={waiting(session.id)}
+                              now={model.now()}
+                              archivedAge={view() === 'archived' && store.search === undefined}
+                              actions={actions(session)}
+                              ref={track(session.id)}
+                              onSelect={() => setSelected(session.id)}
+                              onOpen={() => open(session)}
+                            />
+                          )}
+                        </For>
+                      </section>
+                    )}
+                  </For>
+                </Show>
+              </Match>
+            </Switch>
+          </div>
+        </div>
+        {/* A full-height column beside the list, with `esc` on the line of the list's header. */}
+        <Show when={showPreview}>
+          <aside class="ss-preview">
+            <div class="ss-esc-preview">
+              <CloseHint close={props.close} />
+            </div>
+            <Show
+              when={current()}
+              fallback={<p class="ss-note">{ctx.t('browser.preview.empty')}</p>}
+            >
+              {(session) => (
+                <Preview
+                  server={target.server}
+                  session={live(session())}
+                  running={running(session())}
+                  now={model.now()}
+                  refs={props.refs}
+                />
+              )}
+            </Show>
+          </aside>
+        </Show>
+      </div>
+      {/* The TUI's footer: actions on the selected row on the left, the scope on the right. */}
+      <div class="ss-hints">
+        <div class="ss-hints-actions">
+          <Hint keys={KEYS.open} label={ctx.t('browser.hint.open')} />
+          <Show
+            when={pullView()}
+            fallback={
+              <>
+                <Hint
+                  keys={alt('archive')}
+                  label={ctx.t(
+                    view() === 'archived' ? 'browser.hint.restore' : 'browser.hint.archive'
+                  )}
+                />
+                <Show when={!model.missing()}>
+                  <Hint keys={alt('done')} label={ctx.t('browser.hint.done')} />
+                </Show>
+              </>
+            }
+          >
+            <Show when={!model.missing()}>
+              <Hint keys={alt('web')} label={ctx.t('browser.hint.web')} />
+            </Show>
+          </Show>
         </div>
         <Show
           when={!home}
           fallback={
-            // A disabled button shows no tooltip, so Home says why in plain text.
+            // On Home no project is routed, so there is no scope to switch to; this says why.
             <span class="ss-scope-home">
               {`${ctx.t('browser.scope.all')}. ${ctx.t('browser.scope.home')}`}
             </span>
           }
         >
-          <ctx.ui.Tooltip
-            value={ctx.t('browser.scope.toggle')}
-            keys={ctx.keybinds.keys(alt('scope'))}
-          >
-            <ctx.ui.Button
-              variant="ghost"
-              size="small"
-              icon={scope() === 'all' ? 'globe' : 'folder'}
-              class="ss-scope"
-              onClick={toggleScope}
-            >
-              {ctx.t(scope() === 'all' ? 'browser.scope.all' : 'browser.scope.project')}
-            </ctx.ui.Button>
+          <ctx.ui.Tooltip value={ctx.t('browser.scope.toggle')}>
+            <button type="button" class="ss-hint ss-scope" onClick={toggleScope}>
+              <ctx.ui.Keybind keys={ctx.keybinds.keys(alt('scope'))} />
+              <span>
+                {ctx.t(scope() === 'all' ? 'browser.hint.thisProject' : 'browser.hint.allProjects')}
+              </span>
+            </button>
           </ctx.ui.Tooltip>
-        </Show>
-      </div>
-      <ctx.ui.TextInput
-        type="search"
-        size="large"
-        autofocus
-        label={ctx.t('browser.search')}
-        placeholder={ctx.t(pullView() ? 'browser.search.pulls' : 'browser.search.placeholder')}
-        value={query()}
-        onInput={(value) => {
-          setQuery(value);
-          setSelected(undefined);
-          setPull(undefined);
-        }}
-      />
-      <Show when={model.missing()}>
-        <p class="ss-note">{ctx.t('browser.pluginMissing')}</p>
-      </Show>
-      <Show when={store.search?.status === 'error' && !pullView()}>
-        <p class="ss-note">{ctx.t('browser.search.failed')}</p>
-      </Show>
-      <div class="ss-browser-main">
-        <div class="ss-list" role="listbox" aria-label={ctx.t(`browser.view.${view()}`)}>
-          <Switch>
-            <Match when={store.status === 'loading'}>
-              <div class="ss-state">
-                <ctx.ui.Loader size="large" />
-              </div>
-            </Match>
-            <Match when={store.status === 'error'}>
-              <div class="ss-state">
-                <p class="ss-note">{ctx.t('browser.error')}</p>
-                <ctx.ui.Button variant="neutral" size="small" onClick={() => void model.load()}>
-                  {ctx.t('browser.retry')}
-                </ctx.ui.Button>
-              </div>
-            </Match>
-            <Match when={pullView()}>
-              <Show when={pulls().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
-                <For each={model.pullGroups()}>
-                  {(group) => (
-                    <section class="ss-group">
-                      <h3 class="ss-group-title">{groupTitle(group.title)}</h3>
-                      <For each={group.pulls}>
-                        {(item) => (
-                          <PullItem
-                            pull={item}
-                            selected={pull() === item.key}
-                            now={model.now()}
-                            ref={track(item.key)}
-                            onSelect={() => setPull(item.key)}
-                            onOpen={() => open(item.sessions[0])}
-                          />
-                        )}
-                      </For>
-                    </section>
-                  )}
-                </For>
-              </Show>
-            </Match>
-            <Match when={true}>
-              <Show when={rows().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
-                <For each={model.groups()}>
-                  {(group) => (
-                    <section class="ss-group">
-                      <Show when={group.title}>
-                        {(title) => <h3 class="ss-group-title">{groupTitle(title())}</h3>}
-                      </Show>
-                      <For each={group.sessions}>
-                        {(session) => (
-                          <SessionRow
-                            session={live(session)}
-                            view={store.refs[session.id]}
-                            selected={selected() === session.id}
-                            running={running(session)}
-                            now={model.now()}
-                            archivedAge={view() === 'archived' && store.search === undefined}
-                            actions={actions(session)}
-                            ref={track(session.id)}
-                            onSelect={() => setSelected(session.id)}
-                            onOpen={() => open(session)}
-                          />
-                        )}
-                      </For>
-                    </section>
-                  )}
-                </For>
-              </Show>
-            </Match>
-          </Switch>
-        </div>
-        <aside class="ss-preview">
-          <Show when={current()} fallback={<p class="ss-note">{ctx.t('browser.preview.empty')}</p>}>
-            {(session) => (
-              <>
-                <div class="ss-preview-head">
-                  <h3 class="ss-preview-title">
-                    {live(session()).title || ctx.t('browser.untitled')}
-                  </h3>
-                  <span class="ss-row-age">
-                    {formatAge(model.now() - activityTime(live(session())))}
-                  </span>
-                </div>
-                <h4 class="ss-group-title">{ctx.t('browser.preview.work')}</h4>
-                <WorkList
-                  refs={props.refs}
-                  target={{
-                    server: target.server,
-                    sessionID: session().id,
-                    directory: session().location.directory
-                  }}
-                  actions
-                />
-              </>
-            )}
-          </Show>
-        </aside>
-      </div>
-      <div class="ss-hints">
-        <Hint keys={KEYS.open} label={ctx.t('browser.hint.open')} />
-        <Hint keys={KEYS.background} label={ctx.t('browser.hint.background')} />
-        <Hint keys={alt('archive')} label={ctx.t('browser.hint.archive')} />
-        <Show when={!model.missing()}>
-          <Hint keys={alt('done')} label={ctx.t('browser.hint.done')} />
-          <Hint keys={alt('web')} label={ctx.t('browser.hint.web')} />
-          <Hint keys={KEYS.reload} label={ctx.t('browser.hint.reload')} />
-        </Show>
-        <Show when={!home}>
-          <Hint keys={alt('scope')} label={ctx.t('browser.hint.scope')} />
         </Show>
       </div>
     </div>
@@ -641,5 +690,40 @@ function Hint(props: { keys: string; label: string }) {
       <ctx.ui.Keybind keys={ctx.keybinds.keys(props.keys)} />
       <span>{props.label}</span>
     </span>
+  );
+}
+
+/** The muted `esc` the TUI shows at the top right; a click closes the browser too. */
+function CloseHint(props: { close: () => void }) {
+  const ctx = usePlugin();
+  return (
+    <button type="button" class="ss-esc" aria-label={ctx.t('browser.close')} onClick={props.close}>
+      esc
+    </button>
+  );
+}
+
+/**
+ * A group header in the TUI's colors (`renderLine` in src/page/view.ts): Running in the running
+ * color, In messages muted below the stronger matches, the others, such as day groups, in the
+ * accent color.
+ */
+function GroupTitle(props: { title: string }) {
+  const ctx = usePlugin();
+  const key = () => `browser.group.${props.title}`;
+  const text = () => {
+    const translated = ctx.t(key());
+    return translated === key() ? props.title : translated;
+  };
+  return (
+    <h3
+      class="ss-group-title"
+      classList={{
+        'ss-group-running': props.title === RUNNING_GROUP,
+        'ss-group-messages': props.title === MESSAGES_GROUP
+      }}
+    >
+      {text()}
+    </h3>
   );
 }

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { SessionInfo, SessionMessageAssistant, SessionMessageInfo } from '@opencode/client';
+import type { SessionInfo, SessionMessageInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import type { ResolvedTheme } from '@opencode/theme/tui';
 import type { RGBA } from '@opentui/core';
@@ -11,9 +11,12 @@ import { type PullDetails, type Ref, refKey } from '../refs/ref.js';
 import { type WorkLine, workLines } from '../refs/work.js';
 import type { SessionRefView } from '../rpc.js';
 import { createFailedChecks, linkRow, workRow, workStatus } from '../work-row.js';
+import { contextUsage } from './preview-model.js';
 import { fitText } from './row.js';
 
-// The Desktop GUI's Work list draws the same lines; they live in `src/refs/work.ts`.
+export { titlecase } from './preview-model.js';
+// The Desktop GUI's Work list draws the same lines; they live in `src/refs/work.ts`. Its preview
+// computes the context usage with the same `contextUsage`, from the node-free `./preview-model.ts`.
 export { type WorkLine, workLines };
 
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -322,45 +325,6 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
 }
 
 /**
- * Tokens in the context window now, from the latest assistant step with usage after the last
- * completed compaction and before the revert boundary, with the share of the model's limit
- * (`contextUsage` in packages/tui/src/util/session.ts and `lastAssistantWithUsage` in
- * packages/client/src/solid/usage.ts, MIT). Only the loaded pages are searched.
- */
-function contextUsage(
-  messages: readonly SessionMessageInfo[],
-  models: readonly { providerID: string; id: string; limit: { context: number } }[] | undefined,
-  boundary: string | undefined
-): { tokens: number; percent: number | undefined } | undefined {
-  const boundaryIndex = boundary ? messages.findIndex((message) => message.id === boundary) : -1;
-  if (boundary && boundaryIndex === -1) return undefined;
-  const end = boundaryIndex === -1 ? messages.length : boundaryIndex;
-  const compaction = messages.findLastIndex(
-    (message, index) =>
-      message.type === 'compaction' && message.status === 'completed' && index < end
-  );
-  const last = messages.findLast(
-    (message, index): message is SessionMessageAssistant =>
-      message.type === 'assistant' &&
-      message.tokens !== undefined &&
-      index > compaction &&
-      index < end
-  );
-  const usage = last?.tokens;
-  if (!last || !usage) return undefined;
-  const tokens =
-    usage.input + usage.output + usage.reasoning + usage.cache.read + usage.cache.write;
-  if (tokens <= 0) return undefined;
-  const model = models?.find(
-    (item) => item.providerID === last.model.providerID && item.id === last.model.id
-  );
-  return {
-    tokens,
-    percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : undefined
-  };
-}
-
-/**
  * Project name, plus the session directory relative to the project root when it is elsewhere
  * (a subdirectory or a worktree), or its full path when it sits outside the project. Sessions
  * of the global project have no project name, only their directory.
@@ -380,9 +344,4 @@ function placeOf(
     return { project: name, directory: context.ui.format.path(directory) };
   }
   return { project: name, directory: relative };
-}
-
-/** Capitalizes each word, as the host does for agent names (packages/tui/src/util/locale.ts, MIT). */
-export function titlecase(text: string): string {
-  return text.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }

@@ -27,6 +27,21 @@ export function shipsGui(plugin: Pick<PluginInfo, 'features'>): boolean {
  */
 export const HEADER_SLOT = 'session.header' satisfies keyof SlotMap;
 
+/**
+ * The markup of the app's dialog frame, which the browser's CSS (src/gui/browser/browser.css)
+ * matches to grow past the `x-large` size: `[data-component="dialog-v2"][data-size="x-large"]`
+ * around a `[data-slot="dialog-container"]` sized by `--dialog-height` and `width`
+ * (packages/ui/src/overlays/dialog/dialog.tsx:131, dialog.css:178). CSS cannot import this
+ * constant; it records the assumption. When the markup changes, the rule matches nothing and the
+ * browser opens at the plain `x-large` size.
+ *
+ * The same CSS hides the frame's `[data-slot="dialog-header"]`, keeping its title for screen
+ * readers, and turns the `[data-scrollable]` wrapper around the content into a column the browser
+ * fills (`Dialog` in packages/app/src/runtime/plugin/ui.tsx:152-157). When those change, the app's
+ * title shows above the browser's own header, or the dialog scrolls as a whole.
+ */
+export const DIALOG_FRAME = '[data-component="dialog-v2"][data-size="x-large"]';
+
 /** The `+` menu before the side panel's tabs, where `MenuItem` adds entries (registries.ts:89). */
 export const PANEL_MENU = 'session.panel';
 
