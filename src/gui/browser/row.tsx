@@ -5,13 +5,13 @@ import { activityTime, isUnread } from '../../host/session-info.js';
 import { formatAge } from '../../page/age.js';
 import type { PullRow } from '../../page/state.js';
 import { type Ref, refKey } from '../../refs/ref.js';
-import { rowRefs, type ShownLink, sidebarRefs, workLinks } from '../../refs/summary.js';
+import { rowRefs, type ShownLink, workLinks } from '../../refs/summary.js';
 import type { SessionRefView } from '../../rpc.js';
 import { Octicon } from '../octicons.js';
 import { RefLine, WorkLinkLine } from '../ref-view.js';
 
-// The browser's rows: a session with its pull request, issue and link lines, a pull request of
-// the Pull requests view, and the preview's Work list.
+// The browser's rows: a session with its pull request, issue and link lines, and a pull request
+// of the Pull requests view. The preview's Work list is the Work panel's (src/gui/status).
 
 /**
  * Issue and link lines a row lists before the rest fold into `+N more`, as the TUI's rows do
@@ -211,43 +211,5 @@ export function PullItem(props: PullItemProps) {
         )}
       </Show>
     </div>
-  );
-}
-
-/** Props of {@link WorkList}. */
-export interface WorkListProps {
-  readonly view: SessionRefView | undefined;
-}
-
-/**
- * A session's pull requests, issues and work links, read-only, in the order the TUI's sidebar
- * lists them.
- */
-export function WorkList(props: WorkListProps) {
-  const ctx = usePlugin();
-  const refs = createMemo(() => (props.view === undefined ? [] : sidebarRefs(props.view).refs));
-  const links = createMemo(() => (props.view === undefined ? [] : workLinks(props.view)));
-  return (
-    <Show
-      when={refs().length > 0 || links().length > 0}
-      fallback={<p class="ss-note">{ctx.t('browser.preview.none')}</p>}
-    >
-      <ul class="ss-work-list">
-        <For each={refs()}>
-          {(ref) => (
-            <li>
-              <RefLine item={ref} state={props.view?.states[refKey(ref)]} />
-            </li>
-          )}
-        </For>
-        <For each={links()}>
-          {(link) => (
-            <li>
-              <WorkLinkLine link={link} />
-            </li>
-          )}
-        </For>
-      </ul>
-    </Show>
   );
 }

@@ -4,6 +4,8 @@ import { openBrowser } from './browser/dialog.js';
 import { browserEn } from './browser/en.js';
 import { browserPrefs } from './browser/prefs.js';
 import { en } from './en.js';
+import { createRefsStore } from './refs-store.js';
+import { addStatus } from './status/index.js';
 import css from './styles.css?inline';
 
 // The OpenCode Desktop GUI, loaded from the package's `./gui-experimental` export. The host gives
@@ -15,6 +17,8 @@ export default Plugin.define({
   setup(ctx) {
     ctx.add(Style, css);
     ctx.add(Style, browserCss);
+    const refs = createRefsStore();
+    addStatus(ctx, refs);
     ctx.add(
       Command,
       (): Command => ({
@@ -22,7 +26,7 @@ export default Plugin.define({
         title: ctx.t('command.browse'),
         bind: 'mod+shift+s',
         editable: true,
-        run: () => openBrowser(ctx, ctx.stores.browser)
+        run: () => openBrowser(ctx, ctx.stores.browser, refs)
       })
     );
   }

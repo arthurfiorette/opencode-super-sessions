@@ -26,10 +26,12 @@ import {
 import { refUrl } from '../../refs/look.js';
 import { refKey } from '../../refs/ref.js';
 import { rowRefs, workLinks } from '../../refs/summary.js';
+import type { RefsStore } from '../refs-store.js';
 import { rpcOn, serverFor } from '../server.js';
+import { WorkList } from '../status/work-list.js';
 import { type BrowserModel, type BrowserTarget, createBrowserModel } from './model.js';
 import type { BrowserPrefs } from './prefs.js';
-import { PullItem, SessionRow, WorkList } from './row.js';
+import { PullItem, SessionRow } from './row.js';
 
 // The session browser dialog: the TUI's browser (src/page/view.ts) in the window, on the same
 // controller and grouping. Keys, checked against the app's and the text field's (see `onKeyDown`):
@@ -63,9 +65,14 @@ const ALT_CODES: Record<string, 'archive' | 'done' | 'web' | 'scope'> = {
 
 /**
  * Opens the browser over whatever the window shows. "This project" is the routed session's
- * project, so it is read once here; on Home the dialog lists every project.
+ * project, so it is read once here; on Home the dialog lists every project. `refs` is the store
+ * the Work panel reads too, so the preview shares its entries and refreshes.
  */
-export function openBrowser(ctx: Context, prefs: Persisted<BrowserPrefs, BrowserPrefs>): void {
+export function openBrowser(
+  ctx: Context,
+  prefs: Persisted<BrowserPrefs, BrowserPrefs>,
+  refs: RefsStore
+): void {
   const routed = ctx.sessions.current();
   const server = serverFor(ctx, routed);
   const target: BrowserTarget | undefined =
@@ -78,7 +85,9 @@ export function openBrowser(ctx: Context, prefs: Persisted<BrowserPrefs, Browser
   ctx.dialogs.open((dialog) => (
     <ctx.ui.Dialog title={ctx.t('browser.title')} size="x-large">
       <Show when={target} fallback={<p class="ss-note">{ctx.t('browser.noServer')}</p>}>
-        {(current) => <SessionBrowser target={current()} prefs={prefs} close={dialog.close} />}
+        {(current) => (
+          <SessionBrowser target={current()} prefs={prefs} refs={refs} close={dialog.close} />
+        )}
       </Show>
     </ctx.ui.Dialog>
   ));
@@ -88,6 +97,7 @@ export function openBrowser(ctx: Context, prefs: Persisted<BrowserPrefs, Browser
 interface SessionBrowserProps {
   readonly target: BrowserTarget;
   readonly prefs: Persisted<BrowserPrefs, BrowserPrefs>;
+  readonly refs: RefsStore;
   readonly close: () => void;
 }
 
@@ -476,7 +486,15 @@ function SessionBrowser(props: SessionBrowserProps) {
                   </span>
                 </div>
                 <h4 class="ss-group-title">{ctx.t('browser.preview.work')}</h4>
-                <WorkList view={store.refs[session().id]} />
+                <WorkList
+                  refs={props.refs}
+                  target={{
+                    server: target.server,
+                    sessionID: session().id,
+                    directory: session().location.directory
+                  }}
+                  actions
+                />
               </>
             )}
           </Show>

@@ -104,9 +104,12 @@ test('the built bundle loads in a window and draws the routed session refs like 
 
   (await line(stacked)).click();
   assert.deepEqual(gui.opened, ['https://github.com/acme/widgets/pull/4930']);
-  // The session's own Location answers for it.
-  assert.deepEqual(
-    client.calls.filter((call) => call.name === 'rpc.refs').map((call) => call.options),
-    [{ location: { directory: '/work/widgets' } }]
-  );
+  // The session's own Location answers for it, for the list and for the preview's Work list.
+  const locations = client.calls
+    .filter((call) => call.name === 'rpc.refs')
+    .map((call) => call.options);
+  assert.ok(locations.length > 0);
+  for (const options of locations) {
+    assert.deepEqual(options, { location: { directory: '/work/widgets' } });
+  }
 });

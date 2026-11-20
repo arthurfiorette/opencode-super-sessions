@@ -1,0 +1,88 @@
+/* The session header's refs, the Work panel and the Work list. Colors come from the app's CSS
+   variables, as in ../styles.css. */
+
+.ss-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ss-header-more {
+  flex-shrink: 0;
+  color: var(--v2-text-text-muted);
+}
+
+.ss-work-panel {
+  height: 100%;
+  padding: 8px 12px;
+  overflow: auto;
+}
+
+.ss-work-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ss-work-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ss-work-item > .ss-ref {
+  flex: 1;
+}
+
+/* The row's buttons take no room until the row is hovered or one of them has focus. */
+.ss-work-actions {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.ss-work-item:hover .ss-work-actions,
+.ss-work-item:focus-within .ss-work-actions {
+  display: inline-flex;
+}
+
+.ss-work-checks ul {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 0 20px;
+  list-style: none;
+}
+
+.ss-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--v2-text-text-base);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ss-check-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-check:hover .ss-check-name {
+  text-decoration: underline;
+}
+
+.ss-work-label {
+  margin-top: 6px;
+  color: var(--v2-text-text-faint);
+  font-size: 12px;
+}

@@ -253,6 +253,8 @@ The app hands a window bundle an inert placeholder for every Node.js built-in an
 
 `setup` is synchronous and keeps all state inside it. `src/gui/refs-store.ts` holds one fetcher per session for every surface that shows its refs: `refs` on the first read, `refresh` when a run of the session ends and every minute, and `refs` again on `session.metadata.updated`, while anything reads it. RPC goes to the session's own server and Location (`src/gui/server.ts`); a server without the server plugin answers `rpc.unavailable`, and the GUI shows sessions without refs there.
 
+`src/gui/status` adds the refs around a session's timeline through that store: the session header's pull requests and issues (`rowRefs`), the Work side panel and the composer pill of the main open pull request. The panel draws `WorkList`, which lists `workLines` from `src/refs/work.ts`, the same lines as the TUI preview's Work section, with open, copy, unlink, link and refresh. The failed checks under a pull request and the pill's check rows come from `pull.details`.
+
 ## Providers
 
 `src/providers/provider.ts` defines a forge as a static half and a runtime half:
@@ -286,7 +288,7 @@ The `@opencode/*` pins only fix the types and the tests. At runtime the plugin r
 - `events.ts`: where prompt text, assistant text and `!` commands sit in events and in stored messages (`storedHistory` for the history scan), the index keys shared with the backfill, and the last user message in a `session.context` that starts at the latest compaction.
 - `tool-hook.ts`: the shell tool's name and its `execute.after` payload.
 - `session-api.ts`: forking and the prompts a fork can start before, the project scope of the list for a Location, notices. It re-exports `session-info.ts`, which holds what the Desktop GUI may import too: archiving and title regeneration over HTTP, the project scope of a stored session, the list filters, the running test, the unread rule, the activity time.
-- `gui.ts`: the `./gui-experimental` export and `features.gui`, the `session.header` slot and the `session.panel` menu, `tabs.open`, the app's own server.
+- `gui.ts`: the `./gui-experimental` export and `features.gui`, the `session.header` slot and the `session.panel` menu, the layout key of a side panel tab, `tabs.open`, the app's own server.
 - `worktree.ts`: worktree listing and removal without force.
 - `files.ts`: paths of `cli.json`, the host's `session.json` and the plugin's data directory.
 - `theme.ts`: the dialog surface and backdrop, the session view background and the markdown styles.
@@ -313,7 +315,7 @@ Each assumption and what checks it:
 - Every agent request carries the plugin's tracking instruction once: a contract test.
 - The RPC error shape: the configured-host integration fixture reads real `link` errors through `rpcError`.
 - The listing with `features.gui`, the bundle `plugin.gui` serves with the plugin's options, and `rpc.unavailable` for an RPC id no plugin registered: contract tests.
-- The Desktop slot and menu ids, `tabs.open` and the app's own server: not checked against a host; only the desktop app renders them.
+- The Desktop slot and menu ids, the panel tab key, `tabs.open` and the app's own server: not checked against a host; only the desktop app renders them.
 - The `sidebar.content` slot, the `dialog.select.*` ids, the dialog backdrop, the unread rule and the compaction rule: not checked against a host. A unit test covers the compaction rule on hand-written messages.
 - The `cli.json` and `session.json` locations: not checked against a host. They are host files the plugin only reads, with defaults when missing.
 - Markdown styles and theme surfaces: the typecheck and the native TUI tests on the latest packages in `compat.yml`.

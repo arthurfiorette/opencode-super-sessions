@@ -45,7 +45,6 @@ export const browserEn = {
   'browser.reload.failed': 'Could not reload the session from its forge.',
   'browser.preview.empty': 'Select a session to see what it tracks.',
   'browser.preview.work': 'Work',
-  'browser.preview.none': 'This session tracks no pull requests, issues or links.',
   'browser.hint.open': 'Open',
   'browser.hint.background': 'Open in background',
   'browser.hint.archive': 'Archive or restore',
