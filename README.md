@@ -28,7 +28,8 @@ It replaces OpenCode's session list with a larger overlay where you can:
 
 ## Requirements
 
-- OpenCode 2.2.5 or a later 2.2 patch release.
+- OpenCode 2.4.0 or later.
+- For the Desktop part, OpenCode Desktop 2.4 or later.
 - A [Nerd Font](https://www.nerdfonts.com/) in your terminal. A Mono variant keeps the columns aligned. The Notion and Sentry icons need Nerd Fonts 3.3 or later.
 - `gh` for GitHub or `glab` for GitLab, logged in (see [Forge support](#forge-support)). Without them the browser still works, without pull requests and issues.
 
@@ -92,7 +93,7 @@ Sessions that match only in their message text appear a moment later, in an `In 
 
 ## OpenCode Desktop
 
-The same plugin adds to OpenCode Desktop 2.3:
+The same plugin adds to OpenCode Desktop 2.4:
 
 - the session browser as a dialog. Press `cmd+shift+s` (`ctrl+shift+s` on Windows and Linux) or run "Super Sessions: Browse sessions" from the command palette. It has the same views, search and project scope as the terminal browser, and shows the selected session's context usage, work and latest messages on the right. The `preview` and `previewWidth` options apply to it too.
 - the session's pull requests and issues in the session header, with their state, review and CI
@@ -227,7 +228,7 @@ The first removal asks for confirmation. "Run cleanup now" in the settings shows
 
 ## Compatibility
 
-The plugin is tested with OpenCode and OpenCode Desktop 2.3. On a newer minor or major release the terminal part works as usual and shows a warning once, and the Desktop part may break (see [OpenCode Desktop](#opencode-desktop)). If the terminal browser crashes, the built-in list opens instead.
+The plugin needs OpenCode 2.4.0 or later and is tested with OpenCode and OpenCode Desktop 2.4. On a newer minor or major release the terminal part works as usual and shows a warning once, and the Desktop part may break (see [OpenCode Desktop](#opencode-desktop)). If the terminal browser crashes, the built-in list opens instead.
 
 ## Limitations
 

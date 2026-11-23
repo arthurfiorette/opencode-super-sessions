@@ -55,18 +55,18 @@
     "test-types": "tsc --noEmit && tsc --noEmit -p tsconfig.gui.json"
   },
   "dependencies": {
-    "@opencode/client": "2.3.2",
-    "@opencode/plugin": "2.3.2",
-    "@opencode/theme": "2.3.2",
+    "@opencode/client": "2.4.0",
+    "@opencode/plugin": "2.4.0",
+    "@opencode/theme": "2.4.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@arthurfiorette/biomejs-config": "^2.0.1",
     "@biomejs/biome": "^2.6.7",
     "@happy-dom/global-registrator": "^21.0.4",
-    "@opencode/sdk": "2.3.2",
-    "@opentui/core": "0.8.4",
-    "@opentui/solid": "0.8.4",
+    "@opencode/sdk": "2.4.0",
+    "@opentui/core": "0.9.4",
+    "@opentui/solid": "0.9.4",
     "@types/node": "^24.19.2",
     "effect": "4.1.0",
     "solid-js": "1.9.19",
@@ -76,9 +76,9 @@
     "vite-plugin-solid": "^2.11.17"
   },
   "peerDependencies": {
-    "@opentui/core": ">=0.8.0",
-    "@opentui/solid": ">=0.8.0",
-    "solid-js": "^1.9.0"
+    "@opentui/core": ">=0.9.4",
+    "@opentui/solid": ">=0.9.4",
+    "solid-js": "^1.9.12"
   },
   "peerDependenciesMeta": {
     "@opentui/core": {
