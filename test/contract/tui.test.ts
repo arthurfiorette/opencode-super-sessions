@@ -71,8 +71,10 @@ test('the real TUI hands session.list, the peek arrows and its dialogs to the pl
 
   // ctrl+p dispatches the host's palette command (COMMAND_PALETTE) from the browser's mode;
   // esc closes the palette and hands the keys back to the browser.
-  // The palette's title row; the browser footer only says "commands" in lower case.
-  const palette = /Commands\s+esc/;
+  // The palette's title row, where its search sits under the new designs the host turns on by
+  // default (packages/tui/src/component/command-palette.tsx:68 and config/index.tsx:394 at
+  // v2.4.0). The browser's own search says "Search sessions".
+  const palette = /Search commands\s+esc/;
   await tui.press('p', { ctrl: true });
   await tui.waitFor(palette);
   await tui.press('escape');

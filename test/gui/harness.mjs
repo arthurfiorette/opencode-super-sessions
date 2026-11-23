@@ -17,7 +17,7 @@ GlobalRegistrator.register();
 const root = new URL('../../', import.meta.url);
 const sdk = path.dirname(fileURLToPath(import.meta.resolve('@opencode/plugin/gui')));
 // The host's module list and plugin context are not exports of the SDK; the window host reads
-// the same files (packages/app/src/runtime/plugin/module.ts and host.tsx at v2.3.2).
+// the same files (packages/app/src/runtime/plugin/module.ts and host.tsx at v2.4.0).
 const { pluginSharedModules, pluginWindowModules } = await import(path.join(sdk, 'modules.js'));
 const { PluginContext } = await import(path.join(sdk, 'internal.js'));
 const solid = await import('solid-js');
@@ -295,6 +295,11 @@ export function createContext(plugin, options = {}) {
       translate(`${key}.${count === 1 ? 'one' : 'other'}`, { ...params, count }),
     ui: createUi(),
     stores: createStores(plugin, options.stores),
+    // The app-wide name of each declared icon, `<plugin id>:<name>`
+    // (`pluginIconName` in packages/plugin/src/gui/host.ts at v2.4.0).
+    icons: Object.fromEntries(
+      Object.keys(plugin.icons ?? {}).map((name) => [name, `${PLUGIN_ID}:${name}`])
+    ),
     appearance: { mode: () => options.mode ?? 'dark', font: () => 'monospace' },
     sessions: { current: session, list: () => (session() ? [session()] : []) },
     screen: { current: () => undefined },

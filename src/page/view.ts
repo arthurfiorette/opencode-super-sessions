@@ -118,9 +118,9 @@ const HINT_GAP = 2;
 const DONE_KEY = 'ctrl+q';
 // Letters type into the search and ctrl+f is the host's pin. ctrl+b is only the search input's
 // cursor-left here (OpenTUI's input bindings), which `left` also does; the host's ctrl+b,
-// `session.background` (packages/tui/src/config/keybind.ts:129), sits in the session view's
-// base-mode layer (packages/tui/src/routes/session/index.tsx:1459), which the browser's mode
-// turns off.
+// `session.background` (packages/tui/src/config/keybind.ts:129 in OpenCode v2.4.0), sits in the
+// session view's base-mode layer (packages/tui/src/routes/session/index.tsx:1467), which the
+// browser's mode turns off.
 const FORK_KEY = 'ctrl+b';
 // ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e and ctrl+k edit the search, ctrl+h is backspace in
 // many terminals; the host binds nothing to f5.
@@ -497,7 +497,8 @@ export default function SessionBrowser(props: PageProps) {
       return;
     }
     // The host leaves a session that is deleted under it, for the home page or the next tab
-    // (packages/tui/src/app.tsx:1366, context/session-tabs.tsx:342); the browser stays open.
+    // (packages/tui/src/app.tsx:1383, context/session-tabs.tsx:351 in OpenCode v2.4.0); the
+    // browser stays open.
     const route = context.ui.router.current();
     if (route.type === 'session' && context.data.session.root(route.sessionID) === session.id) {
       leaving.add(route.sessionID);

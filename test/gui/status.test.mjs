@@ -278,6 +278,9 @@ test('the composer pill shows the main pull request in its tone, failed checks f
   }, 'the check rows');
   assert.equal(pill.label, '#100');
   assert.equal(pill.tone, 'success');
+  // An icon name the bundle does not declare draws nothing in the app.
+  const declared = Object.entries(gui.ctx.icons).find(([, id]) => id === pill.icon)?.[0];
+  assert.match(gui.plugin.icons[declared] ?? '', /^<svg [^>]*viewBox="0 0 16 16"/);
   assert.deepEqual(
     pill.rows.map((row) => row.label),
     ['Open pull request', 'lint', 'deploy', 'e2e', 'build']

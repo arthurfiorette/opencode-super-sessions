@@ -6,6 +6,7 @@ import { openBrowser } from './browser/dialog.js';
 import { browserEn } from './browser/en.js';
 import { browserPrefs } from './browser/prefs.js';
 import { en } from './en.js';
+import { octiconSvg } from './octicons.js';
 import { reportPresence } from './presence.js';
 import { createRefsStore } from './refs-store.js';
 import { addStatus } from './status/index.js';
@@ -17,11 +18,17 @@ import css from './styles.css?inline';
 export default Plugin.define({
   i18n: { en: { ...en, ...browserEn } },
   stores: { browser: browserPrefs },
+  // The app's icon catalog has no pull request glyph, and the pill, the panel tab and its menu
+  // item take only icon names.
+  icons: {
+    pull: octiconSvg('git-pull-request'),
+    pullDraft: octiconSvg('git-pull-request-draft')
+  },
   setup(ctx) {
     ctx.add(Style, css);
     ctx.add(Style, browserCss);
     const refs = createRefsStore();
-    addStatus(ctx, refs);
+    addStatus(ctx, refs, ctx.icons);
     reportPresence(ctx);
     // The open browser, if any. Its keys only ever open it: pressed again, they leave it open
     // rather than stack a second browser or reach a command under it.

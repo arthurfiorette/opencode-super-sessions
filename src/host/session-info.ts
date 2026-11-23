@@ -5,7 +5,7 @@ import type { SearchScope } from '../rpc.js';
 // The session API helpers that need no Node.js module, so the Desktop GUI bundle can import them:
 // a window turns `node:*` imports into inert placeholders. `session-api.ts` re-exports them for
 // the server plugin and the TUI. test/contract checks each against a real host. Line numbers
-// refer to the OpenCode repository at v2.2.7.
+// refer to the OpenCode repository at v2.4.0.
 
 /** The part of an HTTP client (the TUI's `context.client`) that updates sessions. */
 export interface SessionUpdater {
@@ -40,10 +40,10 @@ export function regenerateTitle(client: SessionUpdater, sessionID: string): Prom
 /**
  * "This project" for a session, read from what the host stored on it instead of its directory. It
  * gives what `projectScope` gives for the session's directory: the host stores the project and
- * the directory's path inside it on creation (packages/core/src/session.ts:308) and reads an
+ * the directory's path inside it on creation (packages/core/src/session.ts:312) and reads an
  * empty path back as no `subpath` (packages/core/src/session/info.ts:47). For a directory that is
  * gone, such as a removed worktree, where `location.get` fails with `LocationNotFoundError`
- * (packages/server/src/location.ts:27).
+ * (packages/server/src/location.ts:26).
  */
 export function sessionScope(info: SessionInfo): Exclude<SearchScope, { type: 'all' }> {
   if (info.projectID === 'global') return { type: 'directory', directory: info.location.directory };
@@ -52,7 +52,7 @@ export function sessionScope(info: SessionInfo): Exclude<SearchScope, { type: 'a
 
 /**
  * `session.list` filters for a scope in the browser's list. The host matches `subpath` exactly
- * (packages/core/src/session/store.ts:154), so an empty subpath lists the project root's sessions
+ * (packages/core/src/session/store.ts:162), so an empty subpath lists the project root's sessions
  * only, like the built-in list.
  */
 export function listFilters(
@@ -102,15 +102,15 @@ export type ActivityInfo = Pick<SessionInfo, 'time' | 'metadata'>;
  * When the user or the agent last worked in a session: its creation, or the start or end of its
  * latest run, whichever is newest. The list, its day groups and ages, search ties and the cleanup
  * inactivity rule use it instead of `time.updated`, which every `session.update({ metadata })`
- * moves (packages/core/src/session/projector.ts:985), so the plugin's own bookkeeping (the history
+ * moves (packages/core/src/session/projector.ts:988), so the plugin's own bookkeeping (the history
  * scan marker, `pushed`, `closes` links, unlinks, Done marks) would read as activity.
  *
- * In 2.2.7, `time.busy` is set when an execution starts (projector.ts:1064) and `time.idle` when
- * it succeeds, fails or is interrupted by the user (projector.ts:857); both keep `time.updated` as it
- * was. Every prompt the TUI sends starts a run (packages/tui/src/component/prompt/index.tsx:1367),
- * and so do compaction (packages/core/src/session/session.ts:275) and a run resumed after a
+ * `time.busy` is set when an execution starts (projector.ts:1067) and `time.idle` when it
+ * succeeds, fails or is interrupted by the user (projector.ts:860); both keep `time.updated` as it
+ * was. Every prompt the TUI sends starts a run (packages/tui/src/component/prompt/index.tsx:1371),
+ * and so do compaction (packages/core/src/session/session.ts:276) and a run resumed after a
  * restart. A fork's `time.created` is when it was forked (projector.ts:186). Not counted: a `!`
- * command, which records its messages without a run (session.ts:192) and moves only
+ * command, which records its messages without a run (session.ts:193) and moves only
  * `time.updated`, and a prompt sent with `resume: false`, until the next run; renames, moves,
  * archiving, agent and model picks, permission changes and reverts, which are not work in the
  * session.

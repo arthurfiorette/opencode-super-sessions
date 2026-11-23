@@ -70,7 +70,10 @@ const recorder = Plugin.define({
   async setup(context) {
     probe ??= context;
     await context.tool.hook('execute.after', (event) => {
-      hooks.push(structuredClone(event));
+      // `info` is the live tool definition, schemas and functions included, which cannot be
+      // cloned. A hook that throws fails the tool call it reports.
+      const { info: _info, ...payload } = event;
+      hooks.push(structuredClone(payload));
     });
     // What src/server/notices.ts does, for prompts of the notice test only.
     await context.session.hook('prompt', async (event) => {

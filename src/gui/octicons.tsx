@@ -85,6 +85,15 @@ const PATHS = {
 /** The name of an octicon this file carries. */
 export type OcticonName = keyof typeof PATHS;
 
+/**
+ * An octicon as an SVG document in `currentColor`, for `Plugin.define({ icons })`: the app draws
+ * a declared icon wherever an SDK field takes only an icon name, such as the composer pill.
+ */
+export function octiconSvg(name: OcticonName): string {
+  const paths = PATHS[name].map((d) => `<path d="${d}"/>`).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor">${paths}</svg>`;
+}
+
 /** Props of {@link Octicon}. */
 export interface OcticonProps {
   readonly name: OcticonName;

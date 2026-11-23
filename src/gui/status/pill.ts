@@ -2,7 +2,9 @@ import type {
   ComposerPillRow,
   ComposerPillTone,
   ComposerPillView,
-  Context
+  Context,
+  IconName,
+  PluginIconName
 } from '@opencode/plugin/gui';
 import { checkMark, type LookIcon, pullTone, refUrl, type Tone } from '../../refs/look.js';
 import {
@@ -20,8 +22,11 @@ import { webUrl } from '../ref-view.js';
 
 // The composer pill: the session's main open pull request and its checks, above the composer.
 
-/** An icon of the app's catalog; the SDK names the type but does not export it. */
-type IconName = NonNullable<ComposerPillRow['icon']>;
+/** The plugin's own icons the status views draw, by their names in `Plugin.define({ icons })`. */
+export interface StatusIcons {
+  readonly pull: PluginIconName;
+  readonly pullDraft: PluginIconName;
+}
 
 /** Check rows the pill's menu lists before the rest fold into `+N more`. */
 const CHECKS_SHOWN = 12;
@@ -71,6 +76,7 @@ function pillToneOf(tone: Tone): ComposerPillTone | undefined {
  */
 export function pillView(
   ctx: Pick<Context, 't' | 'system'>,
+  icons: StatusIcons,
   view: SessionRefView | undefined,
   details: (key: string) => PullDetails | undefined
 ): ComposerPillView | undefined {
@@ -115,7 +121,7 @@ export function pillView(
   }
   return {
     label: refNumber(ref),
-    icon: ref.provider === 'github' ? 'github' : 'branch',
+    icon: state.status === 'draft' ? icons.pullDraft : icons.pull,
     ...(tone === undefined ? {} : { tone }),
     title: state.title,
     rows

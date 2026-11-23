@@ -5,7 +5,7 @@ import { isBusy } from './session-info.js';
 
 // Session API calls whose meaning the types do not carry: which route archives, what an empty
 // title does, how a project scope filters. test/contract checks each against a real host. Line
-// numbers refer to the OpenCode repository at v2.2.7. The helpers without a Node.js import live in
+// numbers refer to the OpenCode repository at v2.4.0. The helpers without a Node.js import live in
 // `session-info.ts`, which the Desktop GUI bundle imports, and are re-exported here.
 
 export {
@@ -31,11 +31,11 @@ export interface PromptEvent {
 /**
  * Whether a notice admitted from the `prompt` hook reaches the model only together with this
  * prompt. The hook runs before the prompt is admitted (packages/core/src/session/prompt.ts:42,
- * session.ts:171), the prompt's admission wakes the session (session.ts:187), and that wake
+ * session.ts:170), the prompt's admission wakes the session (session.ts:186), and that wake
  * delivers every pending steer at once (packages/core/src/session/inbox.ts:576). So the session
  * must be idle and the prompt a steer:
  * - while a turn runs, a pending steer keeps it going one more step
- *   (packages/core/src/session/runner/llm.ts:178), which could take the notice alone before the
+ *   (packages/core/src/session/runner/llm.ts:177), which could take the notice alone before the
  *   prompt is admitted;
  * - a queued prompt waits for its own turn, and a notice beside it would make a request of its own.
  * A notice left behind by a prompt that then fails to admit waits for the next wake.
@@ -58,9 +58,9 @@ interface SyntheticPoster {
 
 /**
  * Posts a notice the user sees as a `◈ description` row and the model reads as `text`, a user
- * message (packages/core/src/session/runner/to-llm-message.ts:255). It never wakes the session
- * (packages/core/src/session/session.ts:323): the host posts its own `!` command results the
- * same way (session.ts:226).
+ * message (packages/core/src/session/runner/to-llm-message.ts:274). It never wakes the session
+ * (packages/core/src/session/synthetic.ts:47): the host posts its own `!` command results the
+ * same way (packages/core/src/session/session.ts:227).
  */
 export function postNotice(
   session: SyntheticPoster,
@@ -90,7 +90,7 @@ export interface Prompt {
 /**
  * Every user message of a session, newest first, the list the host's /fork dialog offers
  * (packages/tui/src/routes/session/dialog-fork.tsx:57). The host reads its synced transcript,
- * which starts with the newest 20 messages (packages/client/src/solid/data.ts:1826), so this
+ * which starts with the newest 20 messages (packages/client/src/solid/data.ts:2013), so this
  * pages `message.list` instead. The cursor
  * carries the order but not the `type` filter (packages/server/src/handlers/message.ts:24), so
  * every page asks for `type` again, and a cursor comes back even on the last page, so a short
@@ -120,7 +120,7 @@ export async function sessionPrompts(
 /**
  * Forks a session into a new one. With `before`, the copy holds the messages older than that
  * message and leaves it and everything after out; without it, the copy runs through the newest
- * message (packages/core/src/session.ts:339). The host's /fork then carries the left-out prompt
+ * message (packages/core/src/session.ts:343). The host's /fork then carries the left-out prompt
  * into the new session's composer through a `prompt` field on its session route
  * (packages/tui/src/routes/session/dialog-fork.tsx:43); the plugin route type has no such field
  * (`Route` in @opencode/plugin/tui), so a fork from the browser opens with an empty composer.
@@ -136,7 +136,7 @@ export function forkSession(
 /**
  * "This project" for a Location, the way the built-in list scopes it
  * (packages/tui/src/component/dialog-session-list.tsx:63): the host's `global` project by
- * directory, any other project by id and the directory's path inside it. In 2.2.7 a directory
+ * directory, any other project by id and the directory's path inside it. Since 2.2.7 a directory
  * outside version control gets a project of its own (packages/core/src/project.ts:471), so the
  * `global` branch is for hosts that still use it.
  */

@@ -280,7 +280,6 @@ function textPart(props: TranscriptProps, row: () => Row<'text'>): JSX.Element {
       get streaming() {
         return row().message.time.completed === undefined;
       },
-      internalBlockMode: 'top-level',
       tableOptions: { style: 'grid', cellPaddingX: 1 },
       get conceal() {
         return concealed(props);
@@ -1596,8 +1595,10 @@ function notice(props: TranscriptProps, message: Row<'notice'>['message']): JSX.
 }
 
 /**
- * `↳ Shell finished · description` for a background shell or subagent that completed, otherwise
- * the notice text after a `◈` (`SessionNoticeMessageV2`).
+ * `↳ Shell finished · description` for a background shell, subagent or Code Mode script that
+ * completed, otherwise the notice text after a `◈` (`SessionNoticeMessageV2`). A script's notice
+ * names its job id (packages/core/src/codemode/job.ts:19 and
+ * packages/tui/src/routes/session/index.tsx:2122 at v2.4.0).
  */
 function completionNotice(
   props: TranscriptProps,
@@ -1611,7 +1612,7 @@ function completionNotice(
     message.type === 'system'
       ? (message.description ?? 'Instructions updated')
       : (message.description ?? '');
-  if (source !== 'subagent' && source !== 'shell') {
+  if (source !== 'subagent' && source !== 'shell' && source !== 'codemode') {
     return inlineRow(props, {
       icon: () => (source === 'goal' ? '◎' : '◈'),
       color: () => theme().text.muted,
@@ -1619,11 +1620,21 @@ function completionNotice(
     });
   }
   const state = string(metadata.state);
-  const actor = source === 'shell' ? 'Shell' : titlecase(string(metadata.agent) ?? 'Subagent');
+  const actor =
+    source === 'shell'
+      ? 'Shell'
+      : source === 'codemode'
+        ? 'Script'
+        : titlecase(string(metadata.agent) ?? 'Subagent');
   const word =
     state === 'completed' ? 'finished' : state === 'error' ? 'failed' : (state ?? 'finished');
   const heading = `${state === 'completed' ? '↳' : '!'} ${actor} ${word}`;
-  const description = source === 'shell' ? text.replace(/\s+/g, ' ').trim() : text;
+  const description =
+    source === 'codemode'
+      ? (string(metadata.jobID) ?? '')
+      : source === 'shell'
+        ? text.replace(/\s+/g, ' ').trim()
+        : text;
   return jsx('box', {
     marginLeft: 3,
     children: jsx('text', {
@@ -1727,7 +1738,6 @@ function compaction(props: TranscriptProps, row: () => Row<'compaction'>): JSX.E
           get content() {
             return content();
           },
-          internalBlockMode: 'top-level',
           tableOptions: { style: 'grid', cellPaddingX: 1 },
           get conceal() {
             return concealed(props);

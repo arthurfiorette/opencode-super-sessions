@@ -14,7 +14,7 @@ import { HEADER_SLOT, PANEL_MENU, panelKey } from '../../host/gui.js';
 import type { RefsStore, SessionTarget } from '../refs-store.js';
 import { createPullDetails } from './details.js';
 import { HeaderStatus } from './header.js';
-import { mainPull, pillView } from './pill.js';
+import { mainPull, pillView, type StatusIcons } from './pill.js';
 import css from './status.css?inline';
 import { WorkList } from './work-list.js';
 
@@ -31,8 +31,11 @@ function targetOf(
   return { server: session.server, sessionID: session.id, directory: session.directory };
 }
 
-/** Adds the header slot, the Work panel with its menu item and command, and the composer pill. */
-export function addStatus(ctx: Context, refs: RefsStore): void {
+/**
+ * Adds the header slot, the Work panel with its menu item and command, and the composer pill.
+ * `icons` are the plugin's declared icons, from `ctx.icons`.
+ */
+export function addStatus(ctx: Context, refs: RefsStore, icons: StatusIcons): void {
   ctx.add(Style, css);
 
   ctx.add(Slot, {
@@ -58,7 +61,7 @@ export function addStatus(ctx: Context, refs: RefsStore): void {
     id: WORK,
     region: 'side',
     list: (input) => (input.open.includes(WORK) ? [tab] : []),
-    closed: (): ClosedPanelTab => ({ icon: 'link' }),
+    closed: (): ClosedPanelTab => ({ icon: icons.pull }),
     render: (props) => (
       <div class="ss-work-panel">
         <WorkList refs={refs} target={targetOf(props.session)} actions />
@@ -88,7 +91,7 @@ export function addStatus(ctx: Context, refs: RefsStore): void {
       menu: PANEL_MENU,
       id: WORK,
       title: ctx.t('work.title'),
-      icon: 'link',
+      icon: icons.pull,
       opened: ctx.layout.state(key, session) !== 'closed',
       run: show
     };
@@ -114,7 +117,7 @@ export function addStatus(ctx: Context, refs: RefsStore): void {
       const current = routed();
       if (current === undefined || current.sessionID !== input.session.id) return undefined;
       if (current.server.id !== input.session.server.id) return undefined;
-      return pillView(ctx, state()?.view, details);
+      return pillView(ctx, icons, state()?.view, details);
     }
   });
 }

@@ -1,10 +1,10 @@
 // Command ids, modes and priorities of the host TUI keymap that the takeover and the peek keys
 // depend on. None of them is a documented plugin API: they are what packages/tui does in OpenCode
-// v2.2.7, and test/contract/tui.test.ts drives the real TUI to check that they still win. A
+// v2.4.0, and test/contract/tui.test.ts drives the real TUI to check that they still win. A
 // keymap `run` must return a literal `false` to fall through to the next layer; a returned
 // Promise counts as handled (packages/tui/src/context/keymap.tsx:247).
 
-/** The host's session list command (packages/tui/src/app.tsx:765). */
+/** The host's session list command (packages/tui/src/app.tsx:781). */
 export const SESSION_LIST = 'session.list';
 
 /** Argument the takeover passes on to the built-in list: `/sessions classic`. */
@@ -22,7 +22,7 @@ export const HOST_COMMANDS = {
 } as const;
 
 /**
- * The host's command palette (packages/tui/src/context/keymap.tsx:53, run in app.tsx:756). The
+ * The host's command palette (packages/tui/src/context/keymap.tsx:53, run in app.tsx:772). The
  * browser dispatches it on ctrl+p, which the browser's mode would otherwise swallow; the palette
  * opens as a host dialog above the browser.
  */
@@ -41,7 +41,7 @@ export const OVER_HOST = 1;
 
 /**
  * The prompt's history layer sits at priority 1 and registers again on every cursor move
- * (packages/tui/src/component/prompt/index.tsx:1022), so a priority-1 layer always lost `up` to
+ * (packages/tui/src/component/prompt/index.tsx:1028), so a priority-1 layer always lost `up` to
  * `prompt.history.previous`. The peek keys go one above it.
  */
 export const OVER_PROMPT = 2;
@@ -49,11 +49,11 @@ export const OVER_PROMPT = 2;
 /** The keymap mode with no dialog open (packages/tui/src/context/keymap.tsx:41). */
 export const BASE_MODE = 'base';
 
-/** The mode every host dialog pushes (packages/tui/src/ui/dialog.tsx:354). */
+/** The mode every host dialog pushes (packages/tui/src/ui/dialog.tsx:390). */
 export const DIALOG_MODE = 'modal';
 
 /**
- * The host's select dialog commands (packages/tui/src/ui/dialog-select.tsx:480 to 530). The
+ * The host's select dialog commands (packages/tui/src/ui/dialog-select.tsx:473 to 523). The
  * settings dialog registers the same ids, so the keys the user set for them apply there too.
  */
 export const DIALOG_SELECT = {

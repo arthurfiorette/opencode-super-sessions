@@ -405,7 +405,6 @@ export function PullPreview(props: PullPreviewProps): JSX.Element {
         get content() {
           return details()?.body.trim() ?? '';
         },
-        internalBlockMode: 'top-level',
         tableOptions: { style: 'grid', cellPaddingX: 1 },
         conceal: true,
         get fg() {
