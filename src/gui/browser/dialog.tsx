@@ -1,5 +1,11 @@
 import type { SessionInfo } from '@opencode/client';
-import { type Context, createLatest, type Persisted, usePlugin } from '@opencode/plugin/gui';
+import {
+  type Context,
+  createLatest,
+  type DialogHandle,
+  type Persisted,
+  usePlugin
+} from '@opencode/plugin/gui';
 import {
   createEffect,
   createMemo,
@@ -113,13 +119,15 @@ function altChord(action: AltAction, layout: ReadonlyMap<string, string> | undef
 /**
  * Opens the browser over whatever the window shows. "This project" is the routed session's
  * project, so it is read once here; on Home the dialog lists every project. `refs` is the store
- * the Work panel reads too, so the preview shares its entries and refreshes.
+ * the Work panel reads too, so the preview shares its entries and refreshes. `closed` runs once
+ * the dialog closes, however it closes.
  */
 export function openBrowser(
   ctx: Context,
   prefs: Persisted<BrowserPrefs, BrowserPrefs>,
-  refs: RefsStore
-): void {
+  refs: RefsStore,
+  closed: () => void = () => {}
+): DialogHandle {
   const routed = ctx.sessions.current();
   const server = serverFor(ctx, routed);
   const target: BrowserTarget | undefined =
@@ -131,15 +139,19 @@ export function openBrowser(
         };
   // The dialog's title keeps naming it for screen readers; browser.css hides it from view, since
   // the browser draws its own header with the TUI's gradient title and its own `esc`.
-  ctx.dialogs.open((dialog) => (
-    <ctx.ui.Dialog title={ctx.t('browser.title')} size="x-large" closable={target === undefined}>
-      <Show when={target} fallback={<p class="ss-note">{ctx.t('browser.noServer')}</p>}>
-        {(current) => (
-          <SessionBrowser target={current()} prefs={prefs} refs={refs} close={dialog.close} />
-        )}
-      </Show>
-    </ctx.ui.Dialog>
-  ));
+  return ctx.dialogs.open((dialog) => {
+    // The dialog's root is disposed when it closes, by esc, a click outside or `dialog.close`.
+    onCleanup(closed);
+    return (
+      <ctx.ui.Dialog title={ctx.t('browser.title')} size="x-large" closable={target === undefined}>
+        <Show when={target} fallback={<p class="ss-note">{ctx.t('browser.noServer')}</p>}>
+          {(current) => (
+            <SessionBrowser target={current()} prefs={prefs} refs={refs} close={dialog.close} />
+          )}
+        </Show>
+      </ctx.ui.Dialog>
+    );
+  });
 }
 
 /** A row or pull request the user picked; `id` is a session id or a pull request's key. */

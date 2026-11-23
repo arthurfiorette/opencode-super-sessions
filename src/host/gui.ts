@@ -42,6 +42,55 @@ export const HEADER_SLOT = 'session.header' satisfies keyof SlotMap;
  */
 export const DIALOG_FRAME = '[data-component="dialog-v2"][data-size="x-large"]';
 
+/** The parts of a DOM `KeyboardEvent` {@link claimCommandKeys} uses; this file also builds without DOM types. */
+interface KeyEvent {
+  readonly isComposing: boolean;
+  preventDefault(): void;
+  stopPropagation(): void;
+}
+
+/** The parts of the window {@link claimCommandKeys} listens on. */
+interface KeyTarget<E> {
+  addEventListener(type: 'keydown', listener: (event: E) => void, options: { capture: true }): void;
+  removeEventListener(
+    type: 'keydown',
+    listener: (event: E) => void,
+    options: { capture: true }
+  ): void;
+}
+
+/**
+ * Takes a command's keys before the app's own commands see them, and runs `run` instead.
+ *
+ * Since 2.4.0 the app binds `mod+shift+s` to its own "Archive session"
+ * (packages/app/src/session/commands/use-session-commands.tsx:577 at v2.4.0). When a plugin
+ * command shares a key with a built-in, the built-in wins: commands rank by `when`, then by a
+ * user-set keybind, then by registration order, and built-ins register first
+ * (packages/app/src/shell/commands/keymap.ts:82). The plugin `scope` field would rank higher, but
+ * a scope around the whole window also turns off the app's `ctrl+r` rename everywhere
+ * (packages/app/src/runtime/plugin/commands.tsx:80, message-timeline.tsx:301).
+ *
+ * The app's keymap reads keys in the capture phase on the document root (keymap.ts:20), so a
+ * capture listener on the window runs first and can stop the key there. `matches` reads the
+ * command's effective keybind, so a key the user rebinds in Settings > Shortcuts follows.
+ *
+ * @returns A function that removes the listener.
+ */
+export function claimCommandKeys<E extends KeyEvent>(
+  target: KeyTarget<E>,
+  matches: (event: E) => boolean,
+  run: () => void
+): () => void {
+  const listener = (event: E) => {
+    if (event.isComposing || !matches(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    run();
+  };
+  target.addEventListener('keydown', listener, { capture: true });
+  return () => target.removeEventListener('keydown', listener, { capture: true });
+}
+
 /** The `+` menu before the side panel's tabs, where `MenuItem` adds entries (registries.ts:89). */
 export const PANEL_MENU = 'session.panel';
 

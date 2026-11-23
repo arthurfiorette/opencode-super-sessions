@@ -121,6 +121,33 @@ const press = (init) =>
     new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
   );
 
+// OpenCode Desktop 2.4 binds the same keys to "Archive session", and its keymap runs first in the
+// capture phase on the document root. A user pressing the browser's keys archived the session on
+// screen instead, once per press.
+test('the browser keys open one browser and never reach the app command under them', async () => {
+  const server = fixtureServer();
+  gui = await startGui({
+    session: { server, id: 'ses_busy', key: `${server.id}\nses_busy`, directory: '/work/widgets' },
+    servers: [server]
+  });
+  const app = [];
+  const archive = (event) => app.push(event.key);
+  document.documentElement.addEventListener('keydown', archive, { capture: true });
+  try {
+    const keys = { key: 's', metaKey: true, shiftKey: true, bubbles: true, cancelable: true };
+    document.body.dispatchEvent(new KeyboardEvent('keydown', keys));
+    await until(() => row('ses_busy'), 'the first row');
+    // Pressed again over the open browser, from its search field.
+    search().dispatchEvent(new KeyboardEvent('keydown', keys));
+    assert.deepEqual(app, []);
+    assert.equal(document.querySelectorAll('[role="dialog"]').length, 1);
+    assert.equal(gui.dialogs.length, 1);
+    assert.equal(server.client.calls.filter((call) => call.name === 'session.update').length, 0);
+  } finally {
+    document.documentElement.removeEventListener('keydown', archive, { capture: true });
+  }
+});
+
 test('sessions sort into the views by their refs, and tab moves between the views', async () => {
   const client = await openBrowser();
 

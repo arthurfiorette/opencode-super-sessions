@@ -346,7 +346,27 @@ export function createContext(plugin, options = {}) {
           ? 'visible'
           : 'closed'
     },
-    keybinds: { keybind: () => [], keys: (bind) => bind.split('+'), matches: () => false }
+    keybinds: {
+      keybind: () => [],
+      keys: (bind) => bind.split('+'),
+      // The command's default `bind`, read as the app reads it on macOS: `mod` is cmd.
+      matches(command, event) {
+        const bind = added
+          .filter((entry) => entry.registry === 'command')
+          .map((entry) => (typeof entry.item === 'function' ? entry.item() : entry.item))
+          .find((item) => `${PLUGIN_ID}.${item.id}` === command)?.bind;
+        if (bind === undefined) return false;
+        const parts = bind.toLowerCase().split('+');
+        const has = (name) => parts.includes(name);
+        return (
+          event.key.toLowerCase() === parts.at(-1) &&
+          event.metaKey === (has('mod') || has('cmd')) &&
+          event.ctrlKey === has('ctrl') &&
+          event.shiftKey === has('shift') &&
+          event.altKey === has('alt')
+        );
+      }
+    }
   };
   return {
     ctx,

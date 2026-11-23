@@ -1,4 +1,6 @@
-import { Command, Plugin, Style } from '@opencode/plugin/gui';
+import { Command, type DialogHandle, Plugin, Style } from '@opencode/plugin/gui';
+import { onCleanup } from 'solid-js';
+import { claimCommandKeys } from '../host/gui.js';
 import browserCss from './browser/browser.css?inline';
 import { openBrowser } from './browser/dialog.js';
 import { browserEn } from './browser/en.js';
@@ -21,6 +23,16 @@ export default Plugin.define({
     const refs = createRefsStore();
     addStatus(ctx, refs);
     reportPresence(ctx);
+    // The open browser, if any. Its keys only ever open it: pressed again, they leave it open
+    // rather than stack a second browser or reach a command under it.
+    let browser: DialogHandle | undefined;
+    const browse = () => {
+      if (browser !== undefined) return;
+      const handle = openBrowser(ctx, ctx.stores.browser, refs, () => {
+        if (browser === handle) browser = undefined;
+      });
+      browser = handle;
+    };
     ctx.add(
       Command,
       (): Command => ({
@@ -28,8 +40,16 @@ export default Plugin.define({
         title: ctx.t('command.browse'),
         bind: 'mod+shift+s',
         editable: true,
-        run: () => openBrowser(ctx, ctx.stores.browser, refs)
+        run: browse
       })
+    );
+    // OpenCode Desktop 2.4 archives the open session on the same keys; see claimCommandKeys.
+    onCleanup(
+      claimCommandKeys<KeyboardEvent>(
+        window,
+        (event) => ctx.keybinds.matches(`${ctx.id}.browse`, event),
+        browse
+      )
     );
   }
 });
