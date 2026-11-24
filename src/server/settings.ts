@@ -43,7 +43,8 @@ export function serverDefaults(options: Options): ServerSettings {
     cleanupMerged: options.cleanup.merged,
     cleanupInactiveDays: options.cleanup.inactiveDays ?? null,
     cleanupDoneDays: options.cleanup.doneDays ?? null,
-    cleanupUnchanged: options.cleanup.unchanged
+    cleanupUnchanged: options.cleanup.unchanged,
+    groups: options.groups
   };
 }
 
@@ -67,7 +68,8 @@ export function applySettings(options: Options, settings: ServerSettings): Optio
     ...options,
     providers: providerList(settings.providers),
     detect: { mentions: settings.trackMentions, prompts: settings.trackPrompts },
-    notices: settings.linkNotices
+    notices: settings.linkNotices,
+    groups: settings.groups
   };
 }
 

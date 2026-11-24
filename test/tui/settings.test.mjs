@@ -19,6 +19,10 @@ test('the settings dialog loads cold and writes a server setting changed with ri
   const defaults = serverDefaults(options);
   let values = { ...defaults };
   const writes = [];
+  // Text prompts the dialog opened, and what the user types into the next ones.
+  const prompts = [];
+  const answers = [];
+  const toasts = [];
   let renderer;
   let shown;
   const layers = [];
@@ -67,11 +71,19 @@ test('the settings dialog loads cold and writes a server setting changed with ri
         show(render) {
           shown = render;
         },
-        clear() {}
+        clear() {},
+        prompt: async (input) => {
+          prompts.push(input);
+          return answers.shift();
+        }
       },
       router: { current: route },
       tabs: { list: () => [] },
-      toast: { show() {} }
+      toast: {
+        show(toast) {
+          toasts.push(toast.message);
+        }
+      }
     }
   };
   const pins = { ids: () => [], has: () => false };
@@ -105,11 +117,48 @@ test('the settings dialog loads cold and writes a server setting changed with ri
     right();
     await rendered.waitForFrame((frame) => /Delete merged worktrees\s+on/.test(frame));
     assert.deepEqual(writes, [{ cleanupMerged: true }]);
+
+    // Groups show only once the Active view groups by group, right under that choice.
+    const command = (id) =>
+      layers.flatMap((layer) => layer.commands).find((item) => item.id === id);
+    const search = rendered.renderer.currentFocusedRenderable;
+    search.value = '';
+    // Both rows carry the keyword, and "Group issues" does not.
+    await rendered.mockInput.typeText('stage');
+    await rendered.waitForFrame(
+      (frame) => /Group Active sessions by\s+day/.test(frame) && !frame.includes('Group issues')
+    );
+    assert.doesNotMatch(rendered.captureCharFrame(), /Groups\s+none/);
+    right();
+    await rendered.waitForFrame((frame) =>
+      /Group Active sessions by\s+group\s*\n.*Groups\s+none/.test(frame)
+    );
+    command('dialog.select.next').run();
+    // Groups take a list, so enter opens a prompt and left/right leave them alone.
+    right();
+    answers.push('Pinned', 'Coding, Testing');
+    command('dialog.select.submit').run();
+    await until(() => prompts.length === 1);
+    assert.deepEqual(writes, [{ cleanupMerged: true }]);
+    assert.match(toasts.at(-1), /^Groups not saved: /);
+    command('dialog.select.submit').run();
+    await until(() => writes.length === 2);
+    assert.deepEqual(writes[1], { groups: ['Coding', 'Testing'] });
+    assert.equal(prompts[1].value, '');
   } finally {
     settings.dispose();
     rendered.renderer.destroy();
   }
 });
+
+/** Polls `ready` for at most two seconds. */
+async function until(ready) {
+  const deadline = Date.now() + 2000;
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error('Timed out');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 
 /** Resolves once a `type` renderable has the focus, listening for the renderer's focus event. */
 function focusOn(renderer, type) {

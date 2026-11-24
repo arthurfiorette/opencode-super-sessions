@@ -26,6 +26,7 @@ import {
 import { openUrl, refUrl } from '../browser.js';
 import { useCliSettings } from '../cli-settings.js';
 import { COMMAND_PALETTE, HOST_COMMANDS, OVER_HOST } from '../host/keymap.js';
+import { rpcError } from '../host/rpc.js';
 import {
   activityTime,
   forkSession,
@@ -42,7 +43,7 @@ import { type ProviderId, type PullDetails, refKey, refKind, refNumber } from '.
 import { rowRefs, workLinks } from '../refs/summary.js';
 import { LINK_PROVIDER_NAMES, linkLabel } from '../refs/work-link.js';
 import { excludeFromAutoArchive } from '../settings/maintenance.js';
-import { tuiSettingsFor } from '../settings/store.js';
+import { serverSettingsFor, tuiSettingsFor } from '../settings/store.js';
 import { ICONS, titleGradient } from './icons.js';
 import { guardActions, type PageProps, type PeekBannerProps, routeKey } from './page.js';
 import { Preview } from './preview.js';
@@ -114,7 +115,8 @@ const ESC_GAP = 2;
 const FOOTER_PADDING = 2;
 const HINT_GAP = 2;
 // Free in the host's default keymap and in the search input's own bindings: ctrl+e and ctrl+k
-// edit the line there, ctrl+n moves through host dialogs, ctrl+x is the host's leader.
+// edit the line there (ctrl+e only while not grouping by group, see GROUP_KEY), ctrl+n moves
+// through host dialogs, ctrl+x is the host's leader.
 const DONE_KEY = 'ctrl+q';
 // Letters type into the search and ctrl+f is the host's pin. ctrl+b is only the search input's
 // cursor-left here (OpenTUI's input bindings), which `left` also does; the host's ctrl+b,
@@ -122,9 +124,13 @@ const DONE_KEY = 'ctrl+q';
 // session view's base-mode layer (packages/tui/src/routes/session/index.tsx:1467), which the
 // browser's mode turns off.
 const FORK_KEY = 'ctrl+b';
-// ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e and ctrl+k edit the search, ctrl+h is backspace in
+// ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e (while not grouping by group) and ctrl+k edit the search,
+// ctrl+h is backspace in
 // many terminals; the host binds nothing to f5.
 const RELOAD_KEY = 'f5';
+// The search input's end of line, as ctrl+a is its start of line, which the scope key took. Bound
+// only while grouping by group, so grouping by day leaves it to the search.
+const GROUP_KEY = 'ctrl+e';
 // A reload that answers sooner than this shows no "Reloading…" toast, which would only flash.
 const RELOAD_TOAST_DELAY = 300;
 // Two left clicks on one row within this many milliseconds open it.
@@ -172,6 +178,7 @@ export default function SessionBrowser(props: PageProps) {
   const [projectID, setProjectID] = createSignal<string>();
   const cli = useCliSettings();
   const settings = tuiSettingsFor(context);
+  const serverSettings = serverSettingsFor(context);
   let input: InputRenderable | undefined;
   let listBox: BoxRenderable | undefined;
   let panelBox: BoxRenderable | undefined;
@@ -626,6 +633,50 @@ export default function SessionBrowser(props: PageProps) {
     }
     void controller.refresh([session.id]);
   };
+  /**
+   * Whether the Active view groups by group, which alone decides ctrl+e: grouping by day keeps it
+   * the search's end of line, for long lists.
+   */
+  const hasGroups = () => settings.groupBy() === 'group';
+  /** Moves the selected session to the group the user picks, or out of its group. */
+  const moveToGroup = async () => {
+    const session = selected();
+    const groups = serverSettings.groups();
+    if (!session || !hasGroups()) return;
+    if (groups.length === 0) {
+      toast('No groups yet. Add them under Groups in the settings (ctrl+o).');
+      return;
+    }
+    const stored = data.refs[session.id]?.group;
+    // A group that is no longer listed counts as none, as in the list.
+    const current = stored !== undefined && groups.includes(stored) ? stored : null;
+    // `null` stands for no group: the dialog resolves `undefined` when dismissed.
+    const group = await context.ui.dialog.select<string | null>({
+      title: 'Move to group',
+      options: [
+        ...groups.map((name) => ({ title: name, value: name })),
+        { title: 'No group', value: null }
+      ],
+      current
+    });
+    // "No group" still clears a dropped group, which would come back with its name.
+    if (group === undefined || group === (stored ?? null)) return;
+    try {
+      await model.rpc()['group.set']({ sessionID: session.id, group }, model.rpcOptions());
+    } catch (error) {
+      // Another terminal may have changed the groups since this one read them.
+      toast(
+        rpcError(error).type === 'unknown_group'
+          ? `${group} is no longer a group.`
+          : 'Could not move the session.',
+        'error'
+      );
+      return;
+    }
+    toast(group === null ? 'Moved out of its group' : `Moved to ${group}`, 'success');
+    // The cached read, not a forge refresh, so the row moves at once.
+    await controller.reread([session.id]).catch(() => {});
+  };
   const openRef = () => {
     const pull = pullView() ? selectedPull() : undefined;
     if (pull !== undefined) {
@@ -850,6 +901,15 @@ export default function SessionBrowser(props: PageProps) {
         key: DONE_KEY,
         run: toggleDone
       },
+      ...(hasGroups()
+        ? [
+            {
+              title: 'Move to group',
+              key: shortcut('super-sessions.group', GROUP_KEY),
+              run: moveToGroup
+            }
+          ]
+        : []),
       { title: 'Next view', key: 'tab', run: () => nextView(1) },
       { title: 'Previous view', key: 'shift+tab', run: () => nextView(-1) },
       {
@@ -1098,6 +1158,13 @@ export default function SessionBrowser(props: PageProps) {
       run: () => void toggleDone()
     },
     {
+      id: 'super-sessions.group',
+      title: 'Move to group',
+      bind: GROUP_KEY,
+      enabled: () => sessionRows() && hasGroups(),
+      run: () => void moveToGroup()
+    },
+    {
       id: HOST_COMMANDS.rename,
       title: 'Rename session',
       enabled: sessionRows,
@@ -1320,8 +1387,8 @@ export default function SessionBrowser(props: PageProps) {
       const value = line();
       return value.kind === 'header'
         ? `h:${value.title}`
-        : value.kind === 'blank'
-          ? 'b'
+        : value.kind === 'blank' || value.kind === 'empty'
+          ? value.kind
           : value.kind === 'pull'
             ? `p:${value.pull.key}`
             : value.kind === 'wrap' || value.kind === 'issue' || value.kind === 'pr'
@@ -1335,6 +1402,19 @@ export default function SessionBrowser(props: PageProps) {
         if (value.kind === 'pull') return renderPull(line, value.pull);
         // A text node, because an empty box in this column collapses to zero height.
         if (value.kind === 'blank') return jsx('text', { height: 1, flexShrink: 0, children: ' ' });
+        if (value.kind === 'empty') {
+          return jsx('box', {
+            height: 1,
+            flexShrink: 0,
+            paddingLeft: 1,
+            children: jsx('text', {
+              get fg() {
+                return theme().text.muted;
+              },
+              children: value.text
+            })
+          });
+        }
         if (value.kind === 'header') {
           return jsx('box', {
             height: 1,
@@ -1358,7 +1438,10 @@ export default function SessionBrowser(props: PageProps) {
         // Reads the latest line, but tolerates the moment before the key memo rebuilds this node.
         const session = () => {
           const current = line();
-          return current.kind === 'blank' || current.kind === 'header' || current.kind === 'pull'
+          return current.kind === 'blank' ||
+            current.kind === 'empty' ||
+            current.kind === 'header' ||
+            current.kind === 'pull'
             ? initial
             : current.session;
         };

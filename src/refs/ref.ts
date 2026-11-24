@@ -3,6 +3,35 @@ import { z } from 'zod';
 /** Session metadata key that holds this plugin's links. Other metadata keys are preserved on write. */
 export const METADATA_KEY = 'super-sessions';
 
+/** Longest group name a session stores, the limit of the `groups` option. */
+export const GROUP_NAME_MAX = 40;
+
+/** Most groups the `groups` option and setting take. */
+export const GROUPS_MAX = 20;
+
+// Headers the Active view already draws (src/page/state.ts), which a group of the same name, in
+// any case, would be mistaken for.
+const BUILT_IN_GROUPS = ['Pinned', 'Running', 'Today', 'No group'];
+
+/** A group the user sorts Active sessions into, such as a stage of their work. */
+export const groupNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(GROUP_NAME_MAX)
+  .refine(
+    (name) => !BUILT_IN_GROUPS.some((header) => header.toLowerCase() === name.toLowerCase()),
+    { message: `Use a name other than ${BUILT_IN_GROUPS.join(', ')}.` }
+  );
+
+/** The groups a session can be put in, in display order. Shared by the option and the setting. */
+export const groupsSchema = z
+  .array(groupNameSchema)
+  .max(GROUPS_MAX)
+  .refine((names) => new Set(names).size === names.length, {
+    message: 'Group names must be unique.'
+  });
+
 export const providerIdSchema = z.enum(['github', 'gitlab']);
 export const refKindSchema = z.enum(['pr', 'issue']);
 
@@ -93,7 +122,11 @@ export const sessionRefsSchema = z.strictObject({
   // Keys of links the agent was told about in a notice (src/server/notices.ts): links from user
   // messages, the user's own links and issues a tracked pull request closes. Keys, not a time,
   // since a link keeps its first `linkedAt` when its source changes.
-  noticed: z.array(z.string().min(1)).optional()
+  noticed: z.array(z.string().min(1)).optional(),
+  // The group the user or the agent put the session in (`group.set`, `set_session_group`), which
+  // the Active view lists it under when grouping by group. A name the `groups` option no longer
+  // has reads as no group. Like `urls`, older versions read a value with it as unparseable.
+  group: z.string().min(1).max(GROUP_NAME_MAX).optional()
 });
 
 /**

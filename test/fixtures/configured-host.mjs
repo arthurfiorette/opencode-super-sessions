@@ -117,7 +117,7 @@ const host = await OpenCode.create({
       plugins: [
         {
           package: fileURLToPath(new URL('../../', import.meta.url)),
-          options: { ghPath: 'gh-fixture' }
+          options: { ghPath: 'gh-fixture', groups: ['Coding', 'Testing'] }
         }
       ]
     })
@@ -184,6 +184,29 @@ try {
     relinked.links.map((link) => link.ref.number),
     [12]
   );
+
+  // A group is one of the options' groups, stored next to the links and read back in the view.
+  await rpc['group.set']({ sessionID, group: 'Testing' }, { location });
+  const grouped = await stored();
+  assert.equal(grouped['super-sessions'].group, 'Testing');
+  assert.deepEqual(grouped['another-plugin'], { keep: true });
+  assert.deepEqual(
+    grouped['super-sessions'].links.map((link) => link.ref.number),
+    [12]
+  );
+  assert.equal(
+    (await rpc.refs({ sessionIDs: [sessionID] }, { location }))[sessionID].group,
+    'Testing'
+  );
+  await assert.rejects(
+    rpc['group.set']({ sessionID, group: 'Shipping' }, { location }),
+    (error) =>
+      rpcError(error).type === 'unknown_group' &&
+      JSON.stringify(rpcError(error).data) === JSON.stringify({ groups: ['Coding', 'Testing'] })
+  );
+  assert.equal((await stored())['super-sessions'].group, 'Testing');
+  await rpc['group.set']({ sessionID, group: null }, { location });
+  assert.equal((await stored())['super-sessions'].group, undefined);
 
   // PR 34 on the session's branch was opened before the session, so it is another session's
   // work, and so is the issue it closes, until this session pushes the branch.

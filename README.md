@@ -47,12 +47,12 @@ Restart OpenCode, or run `opencode service restart` if it runs as a service. The
 
 `tab` and `shift+tab` switch between the views:
 
-| View          | Shows                                                                                                               |
-| ------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Active        | Sessions that are not archived or Done, as Pinned, Running, then one group per day of the last activity             |
-| Done          | Sessions whose pull requests are all merged or closed, or whose issues are all closed, and sessions you marked Done |
-| Archived      | Archived sessions                                                                                                   |
-| Pull requests | Every pull request tracked by a session in scope                                                                    |
+| View          | Shows                                                                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Active        | Sessions that are not archived or Done, as Pinned, Running, then one group per day of the last activity, or per [group](#session-groups) |
+| Done          | Sessions whose pull requests are all merged or closed, or whose issues are all closed, and sessions you marked Done                      |
+| Archived      | Archived sessions                                                                                                                        |
+| Pull requests | Every pull request tracked by a session in scope                                                                                         |
 
 On terminals at least 120 columns wide, a preview on the right shows the selected session's context usage, its pull requests and issues with their failed checks, and its transcript.
 
@@ -68,6 +68,7 @@ The footer shows the common keys, and `ctrl+/` (or `?` while the search is empty
 | `ctrl+a`            | Switch between this project and all projects                                    |
 | `ctrl+s`            | Archive, or restore in the Archived view                                        |
 | `ctrl+q`            | Mark Done, or not Done                                                          |
+| `ctrl+e`            | Move to a group, while grouping Active sessions by group                        |
 | `ctrl+f`            | Pin or unpin. `<leader>1` to `<leader>9` open the first nine pins               |
 | `ctrl+r`            | Rename                                                                          |
 | `ctrl+t`            | Generate a new title                                                            |
@@ -90,6 +91,28 @@ With the mouse, a click selects a row and a double click opens it. A click on a 
 Typing filters the list by session title and by pull request or issue number and title. `123`, `#123`, `pr 123` and `!12` find sessions tracking that number in any repository. `owner/repo#123` and full URLs find that exact ref. Work links match by id, such as `COR-1466`, by title, and by their full URL. A link to a page outside the trackers also matches any part of its URL.
 
 Sessions that match only in their message text appear a moment later, in an `In messages` group at the bottom.
+
+### Session groups
+
+Groups let the Active view follow the stage each session is in, instead of the day it last ran. In the settings (`ctrl+o`), set "Group Active sessions by" to group, then enter the names under "Groups", which shows right below it, separated by commas. Both apply at once. The same can go in the plugin entry's `options`, as defaults the settings override:
+
+```json
+{
+  "plugins": [
+    {
+      "package": "opencode-super-sessions",
+      "options": {
+        "groupBy": "group",
+        "groups": ["Investigating", "Coding", "Testing", "PR open"]
+      }
+    }
+  ]
+}
+```
+
+Active then shows Pinned, Running, every group in its order, empty ones included, and a No group section with the sessions you have not moved yet, instead of the day groups. A session in a group you later remove counts as in no group. Search, Done, Archived and Pull requests keep their grouping.
+
+While grouping by group, `ctrl+e` in the browser moves the selected session to a group or out of it. Grouping by day gives `ctrl+e` back to the search, where it moves the cursor to the end. The agent can do the same with the `set_session_group` tool, which exists only while there are groups, so a command or skill can move its session to `Testing` when tests start.
 
 ## OpenCode Desktop
 
@@ -171,31 +194,33 @@ Forge state is kept in memory only: open pull requests for 2 minutes, closed one
 
 Options go in the plugin entry's `options`, as in the [GitLab example](#gitlab). Restart OpenCode after changing them. Unknown or invalid options turn the plugin off with a warning.
 
-| Option                    | Default         | Description                                                                           |
-| ------------------------- | --------------- | ------------------------------------------------------------------------------------- |
-| `providers`               | `["github"]`    | Forges to ask: `"github"`, `"gitlab"` or both                                         |
-| `ghPath`                  | `"gh"`          | GitHub CLI command or absolute path                                                   |
-| `glabPath`                | `"glab"`        | GitLab CLI command or absolute path                                                   |
-| `gitlab.hosts`            | `[]`            | Self-managed GitLab hosts without `gitlab` in the name, such as `code.example.com`    |
-| `scope`                   | `"project"`     | Sessions the browser lists at first: `"project"` or `"all"`                           |
-| `preview`                 | `true`          | Show the preview pane                                                                 |
-| `previewWidth`            | `0.4`           | Preview share of the browser width, from `0.2` to `0.7`                               |
-| `rows.refs`               | `true`          | Show pull request, issue and link lines under each session                            |
-| `rows.groupIssues`        | `false`         | Join a session's issues and links on one line instead of one line each                |
-| `titleScroll`             | `"auto"`        | Scroll cut titles on hover: `"auto"` follows OpenCode's `animations`, `"on"`, `"off"` |
-| `detect.prompts`          | `true`          | Track refs and tracker links from your prompts                                        |
-| `detect.mentions`         | `true`          | Record refs mentioned in the assistant's replies                                      |
-| `notices`                 | `true`          | Tell the agent, with your next message, what was linked without it                    |
-| `search.body`             | `true`          | Index message text for search                                                         |
-| `closeTabOnArchive`       | `true`          | Close a session's tab when archiving it                                               |
-| `archiveSuffix`           | unset           | Archive a session renamed to end with this text, such as `" !"`                       |
-| `autoArchiveDays`         | unset           | Archive Done sessions after this many days. `0` archives them right away              |
-| `cleanup.deletedSessions` | `false`         | Remove worktrees whose sessions were all deleted                                      |
-| `cleanup.merged`          | `false`         | Remove worktrees whose pull request merged and that hold nothing the merge left out   |
-| `cleanup.inactiveDays`    | unset           | Remove worktrees whose sessions had no activity for this many days                    |
-| `cleanup.doneDays`        | unset           | Remove worktrees this many days after their sessions became Done                      |
-| `cleanup.unchanged`       | `false`         | Remove worktrees of finished sessions with no commits beyond the default branch       |
-| `colors.<state>`          | GitHub's colors | `"#rrggbb"`, or `{ "dark": "#rrggbb", "light": "#rrggbb" }`                           |
+| Option                    | Default         | Description                                                                                             |
+| ------------------------- | --------------- | ------------------------------------------------------------------------------------------------------- |
+| `providers`               | `["github"]`    | Forges to ask: `"github"`, `"gitlab"` or both                                                           |
+| `ghPath`                  | `"gh"`          | GitHub CLI command or absolute path                                                                     |
+| `glabPath`                | `"glab"`        | GitLab CLI command or absolute path                                                                     |
+| `gitlab.hosts`            | `[]`            | Self-managed GitLab hosts without `gitlab` in the name, such as `code.example.com`                      |
+| `scope`                   | `"project"`     | Sessions the browser lists at first: `"project"` or `"all"`                                             |
+| `preview`                 | `true`          | Show the preview pane                                                                                   |
+| `previewWidth`            | `0.4`           | Preview share of the browser width, from `0.2` to `0.7`                                                 |
+| `rows.refs`               | `true`          | Show pull request, issue and link lines under each session                                              |
+| `rows.groupIssues`        | `false`         | Join a session's issues and links on one line instead of one line each                                  |
+| `titleScroll`             | `"auto"`        | Scroll cut titles on hover: `"auto"` follows OpenCode's `animations`, `"on"`, `"off"`                   |
+| `groupBy`                 | `"day"`         | Group Active sessions by `"day"` or by [`"group"`](#session-groups)                                     |
+| `groups`                  | `[]`            | Up to 20 group names of 40 characters, in display order, other than Pinned, Running, Today and No group |
+| `detect.prompts`          | `true`          | Track refs and tracker links from your prompts                                                          |
+| `detect.mentions`         | `true`          | Record refs mentioned in the assistant's replies                                                        |
+| `notices`                 | `true`          | Tell the agent, with your next message, what was linked without it                                      |
+| `search.body`             | `true`          | Index message text for search                                                                           |
+| `closeTabOnArchive`       | `true`          | Close a session's tab when archiving it                                                                 |
+| `archiveSuffix`           | unset           | Archive a session renamed to end with this text, such as `" !"`                                         |
+| `autoArchiveDays`         | unset           | Archive Done sessions after this many days. `0` archives them right away                                |
+| `cleanup.deletedSessions` | `false`         | Remove worktrees whose sessions were all deleted                                                        |
+| `cleanup.merged`          | `false`         | Remove worktrees whose pull request merged and that hold nothing the merge left out                     |
+| `cleanup.inactiveDays`    | unset           | Remove worktrees whose sessions had no activity for this many days                                      |
+| `cleanup.doneDays`        | unset           | Remove worktrees this many days after their sessions became Done                                        |
+| `cleanup.unchanged`       | `false`         | Remove worktrees of finished sessions with no commits beyond the default branch                         |
+| `colors.<state>`          | GitHub's colors | `"#rrggbb"`, or `{ "dark": "#rrggbb", "light": "#rrggbb" }`                                             |
 
 The `colors` states are `open`, `draft`, `merged` and `closed` for pull requests, and `open`, `completed` and `not_planned` for issues.
 
