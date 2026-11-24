@@ -3,7 +3,7 @@ import { SuperSessions } from '../rpc.js';
 
 // How the TUI reaches the server plugin's RPC, and how its errors come back. The rejection is
 // `unknown` in the client types; test/fixtures/configured-host.mjs reads real `link` errors
-// through this accessor. Line numbers refer to the OpenCode repository at v2.2.7.
+// through this accessor. Line numbers refer to the OpenCode repository at v2.4.0.
 
 /** The parts of a client {@link pluginRpc} uses: the TUI's, or the SDK host's in tests. */
 export interface RpcHost {
@@ -18,7 +18,8 @@ export type SuperSessionsClient = RpcClient<typeof SuperSessions>;
 const LOAD_WAIT = 5000;
 const LOAD_POLL = 25;
 
-// Locations whose plugins have loaded, per client, by directory (`''` for the default one).
+// Locations whose plugins have loaded, per client, by directory (`''` for the default one). Keyed
+// by client, so two Desktop windows, each with its own clients, never share entries.
 const loaded = new WeakMap<RpcHost, Map<string, Promise<void>>>();
 
 /**
@@ -80,6 +81,16 @@ async function waitForPlugins(
     }
     await new Promise((resolve) => setTimeout(resolve, LOAD_POLL));
   }
+}
+
+/**
+ * Whether a call failed because the Location runs no handler for this plugin's RPC: the host
+ * answers `rpc.unavailable` for an id nothing registered (packages/core/src/rpc.ts:112).
+ * {@link pluginRpc} waits for the Location's plugins first, so after it this means the
+ * server plugin is not installed there, as on a remote server the desktop app connects to.
+ */
+export function serverPluginMissing(error: unknown): boolean {
+  return rpcError(error).type === 'rpc.unavailable';
 }
 
 /**

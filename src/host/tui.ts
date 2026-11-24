@@ -4,13 +4,13 @@ import type { Plugin } from '@opencode/plugin/tui';
 // names are plain strings in the plugin types, so a renamed slot only shows as a missing overlay,
 // banner or sidebar section; test/contract/tui.test.ts drives the real TUI through the first two.
 // No OpenTUI import: `./tui` loads this from Node. Line numbers refer to the OpenCode repository
-// at v2.2.7.
+// at v2.4.0.
 
 /** Slots the plugin appends to. */
 export const SLOTS = {
-  /** After the route inside the main column, where the browser overlay draws (packages/tui/src/app.tsx:1465). */
+  /** After the route inside the main column, where the browser overlay draws (packages/tui/src/app.tsx:1482). */
   app: 'app',
-  /** Above the composer of a session, with `{ sessionID }` as input (packages/tui/src/routes/session/index.tsx:1599). */
+  /** Above the composer of a session, with `{ sessionID }` as input (packages/tui/src/routes/session/index.tsx:1609). */
   composerTop: 'session.composer.top',
   /** The session sidebar, where the built-in sections append too (packages/tui/src/feature-plugins/sidebar/todo.tsx:54). */
   sidebar: 'sidebar.content'

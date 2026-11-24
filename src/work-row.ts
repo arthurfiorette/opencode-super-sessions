@@ -24,12 +24,12 @@ import {
   type PullCheck,
   type PullDetails,
   type Ref,
-  type RefReview,
   type RefState,
   refKey,
   refNumber
 } from './refs/ref.js';
 import type { ShownLink } from './refs/summary.js';
+import { checksPage, hasWorkStatus, openReview } from './refs/work.js';
 
 // Cells taken by a ref glyph and its trailing space (see `ICONS`).
 const ICON = 2;
@@ -57,31 +57,8 @@ export interface WorkRowInput {
 // Failed checks listed under a pull request before the rest fold into `+N more`.
 const FAILED_SHOWN = 5;
 
-/** The review of an open or draft pull request, or undefined for any other ref. */
-function openReview(state: RefState | undefined): RefReview | undefined {
-  return state?.status === 'open' || state?.status === 'draft' ? state.review : undefined;
-}
-
-/**
- * Whether the lines under an open pull request (see {@link workStatus}) have something to show:
- * a review verdict, a CI result, merge conflicts or unresolved threads for the icon line, which
- * failing checks always come with.
- */
-export function hasWorkStatus(state: RefState | undefined): boolean {
-  const review = openReview(state);
-  if (review === undefined) return false;
-  return (
-    review.decision !== undefined ||
-    review.checks !== undefined ||
-    review.conflicts === true ||
-    (review.unresolved ?? 0) > 0
-  );
-}
-
-/** The page of a pull request that lists all its checks: `/checks` on GitHub, pipelines on GitLab. */
-export function checksPage(ref: Ref, state: RefState | undefined): string {
-  return `${refUrl(ref, state)}/${ref.provider === 'gitlab' ? 'pipelines' : 'checks'}`;
-}
+// The Desktop GUI's Work list shares these; they live in `src/refs/work.ts`.
+export { checksPage, hasWorkStatus };
 
 /**
  * Details of the open pull requests among `refs()` that have checks to list by name (see

@@ -1,0 +1,87 @@
+/* Colors come from the app's CSS variables, so the GUI follows the user's theme. Ref states take
+   GitHub's colors or the `colors` option inline instead (`refColor` in ref-view.tsx), as the TUI
+   does. */
+
+.ss-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--v2-text-text-base);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ss-ref-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--ss-state-color, inherit);
+}
+
+.ss-ref-icon {
+  flex-shrink: 0;
+}
+
+.ss-ref-number {
+  font-variant-numeric: tabular-nums;
+}
+
+.ss-ref-stack,
+.ss-badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ss-ref-stack,
+.ss-state-unknown,
+.ss-tone-muted {
+  color: var(--v2-text-text-muted);
+}
+
+.ss-ref-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-ref:hover .ss-ref-title {
+  text-decoration: underline;
+}
+
+.ss-note {
+  margin: 0;
+  color: var(--v2-text-text-muted);
+}
+
+.ss-work-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ss-tone-success {
+  color: var(--v2-state-fg-success);
+}
+
+.ss-tone-error {
+  color: var(--v2-state-fg-danger);
+}
+
+.ss-tone-warning {
+  color: var(--v2-state-fg-warning);
+}
+
+.ss-tone-info {
+  color: var(--v2-state-fg-info);
+}

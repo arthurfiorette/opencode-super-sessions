@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { SessionInfo, SessionMessageAssistant, SessionMessageInfo } from '@opencode/client';
+import type { SessionInfo, SessionMessageInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin/tui';
 import type { ResolvedTheme } from '@opencode/theme/tui';
 import type { RGBA } from '@opentui/core';
@@ -8,10 +8,16 @@ import { createComponent, createMemo, For, type JSX, Show, untrack } from 'solid
 import type { Options } from '../config.js';
 import { type createMarquee, marqueeText } from '../marquee.js';
 import { type PullDetails, type Ref, refKey } from '../refs/ref.js';
-import { pullRequests, type ShownLink, trackedRefs, workLinks } from '../refs/summary.js';
+import { type WorkLine, workLines } from '../refs/work.js';
 import type { SessionRefView } from '../rpc.js';
-import { createFailedChecks, hasWorkStatus, linkRow, workRow, workStatus } from '../work-row.js';
+import { createFailedChecks, linkRow, workRow, workStatus } from '../work-row.js';
+import { contextUsage } from './preview-model.js';
 import { fitText } from './row.js';
+
+export { titlecase } from './preview-model.js';
+// The Desktop GUI's Work list draws the same lines; they live in `src/refs/work.ts`. Its preview
+// computes the context usage with the same `contextUsage`, from the node-free `./preview-model.ts`.
+export { type WorkLine, workLines };
 
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -319,103 +325,6 @@ export function PreviewHeader(props: HeaderProps): JSX.Element {
 }
 
 /**
- * One line of the preview's Work section: a ref row, the status lines under an open pull request
- * (see `workStatus`), or the label over mentioned refs.
- */
-export type WorkLine =
-  | { kind: 'label'; text: string }
-  | { kind: 'ref'; ref: Ref }
-  | { kind: 'status'; ref: Ref }
-  | { kind: 'link'; link: ShownLink };
-
-/**
- * Tracked refs: pull requests in the rows' order (see `pullRequests`), so an open one is always
- * above the merged and closed ones, each followed by its status line when it has one and the
- * issues it closes right under it, in the same columns; then the other tracked issues, then work
- * links, newest first, then mentioned refs under a label. Each ref and link appears once, so its
- * key names its row.
- */
-export function workLines(view: SessionRefView): WorkLine[] {
-  const tracked = trackedRefs(view);
-  const trackedKeys = new Set(tracked.map(refKey));
-  const nestedKeys = new Set<string>();
-  // The PR's snapshot still lists an issue the user unlinked; its stored link is what is gone.
-  const linkedKeys = new Set(view.links.map((link) => refKey(link.ref)));
-  const lines: WorkLine[] = [];
-  for (const pr of pullRequests(view)) {
-    const key = refKey(pr);
-    lines.push({ kind: 'ref', ref: pr });
-    if (hasWorkStatus(view.states[key])) lines.push({ kind: 'status', ref: pr });
-    const closes = new Map<string, Ref>();
-    for (const ref of view.states[key]?.closes ?? []) {
-      if (linkedKeys.has(refKey(ref))) closes.set(refKey(ref), ref);
-    }
-    for (const link of view.links) {
-      if (link.source === 'closes' && link.via === key) closes.set(refKey(link.ref), link.ref);
-    }
-    for (const [issueKey, ref] of closes) {
-      if (nestedKeys.has(issueKey)) continue;
-      nestedKeys.add(issueKey);
-      lines.push({ kind: 'ref', ref });
-    }
-  }
-  for (const ref of tracked) {
-    if (ref.kind === 'issue' && !nestedKeys.has(refKey(ref))) lines.push({ kind: 'ref', ref });
-  }
-  for (const link of workLinks(view)) lines.push({ kind: 'link', link });
-  const mentioned = view.links.filter(
-    (link) =>
-      link.source === 'mention' &&
-      !trackedKeys.has(refKey(link.ref)) &&
-      !nestedKeys.has(refKey(link.ref))
-  );
-  if (mentioned.length > 0) {
-    lines.push({ kind: 'label', text: 'mentioned' });
-    for (const link of mentioned) lines.push({ kind: 'ref', ref: link.ref });
-  }
-  return lines;
-}
-
-/**
- * Tokens in the context window now, from the latest assistant step with usage after the last
- * completed compaction and before the revert boundary, with the share of the model's limit
- * (`contextUsage` in packages/tui/src/util/session.ts and `lastAssistantWithUsage` in
- * packages/client/src/solid/usage.ts, MIT). Only the loaded pages are searched.
- */
-function contextUsage(
-  messages: readonly SessionMessageInfo[],
-  models: readonly { providerID: string; id: string; limit: { context: number } }[] | undefined,
-  boundary: string | undefined
-): { tokens: number; percent: number | undefined } | undefined {
-  const boundaryIndex = boundary ? messages.findIndex((message) => message.id === boundary) : -1;
-  if (boundary && boundaryIndex === -1) return undefined;
-  const end = boundaryIndex === -1 ? messages.length : boundaryIndex;
-  const compaction = messages.findLastIndex(
-    (message, index) =>
-      message.type === 'compaction' && message.status === 'completed' && index < end
-  );
-  const last = messages.findLast(
-    (message, index): message is SessionMessageAssistant =>
-      message.type === 'assistant' &&
-      message.tokens !== undefined &&
-      index > compaction &&
-      index < end
-  );
-  const usage = last?.tokens;
-  if (!last || !usage) return undefined;
-  const tokens =
-    usage.input + usage.output + usage.reasoning + usage.cache.read + usage.cache.write;
-  if (tokens <= 0) return undefined;
-  const model = models?.find(
-    (item) => item.providerID === last.model.providerID && item.id === last.model.id
-  );
-  return {
-    tokens,
-    percent: model?.limit.context ? Math.round((tokens / model.limit.context) * 100) : undefined
-  };
-}
-
-/**
  * Project name, plus the session directory relative to the project root when it is elsewhere
  * (a subdirectory or a worktree), or its full path when it sits outside the project. Sessions
  * of the global project have no project name, only their directory.
@@ -435,9 +344,4 @@ function placeOf(
     return { project: name, directory: context.ui.format.path(directory) };
   }
   return { project: name, directory: relative };
-}
-
-/** Capitalizes each word, as the host does for agent names (packages/tui/src/util/locale.ts, MIT). */
-export function titlecase(text: string): string {
-  return text.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }

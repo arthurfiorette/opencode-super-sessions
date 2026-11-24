@@ -12,5 +12,6 @@
     "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "test"]
+  "exclude": ["src/gui"],
+  "include": ["src", "test", "vite.config.ts"]
 }

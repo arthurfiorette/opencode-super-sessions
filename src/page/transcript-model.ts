@@ -6,10 +6,20 @@ import type {
   SessionMessageAssistantTool,
   SessionMessageInfo
 } from '@opencode/client';
+import { canonicalTool, toolMetadata } from './preview-model.js';
 import { cells } from './row.js';
 
 // The transcript's data side: which rows to draw and their text, with no rendering. Most of it
-// is ported from the host's session view (packages/tui/src/routes/session, MIT).
+// is ported from the host's session view (packages/tui/src/routes/session, MIT). The tool helpers
+// the Desktop preview needs too live in the node-free `./preview-model.ts`.
+export {
+  canonicalTool,
+  inputSummary,
+  type PatchFile,
+  patchFiles,
+  toolInput,
+  toolMetadata
+} from './preview-model.js';
 
 type Message<Type extends SessionMessageInfo['type']> = Extract<SessionMessageInfo, { type: Type }>;
 
@@ -370,23 +380,6 @@ export function formatDuration(input: number): string {
   return `${Math.floor(input / 86_400_000)}d ${Math.floor((input % 86_400_000) / 3_600_000)}h`;
 }
 
-/** Host tool name for legacy aliases (util/tool-display.ts `canonicalToolName`, MIT). */
-export function canonicalTool(name: string): string {
-  if (name === 'bash') return 'shell';
-  if (name === 'task') return 'subagent';
-  if (name === 'apply_patch') return 'patch';
-  return name;
-}
-
-/** `[key=value, ...]` for the primitive inputs of a tool (util/tool-display.ts, MIT). */
-export function inputSummary(input: Record<string, unknown>): string {
-  const entries = Object.entries(input).filter(([, value]) =>
-    ['string', 'number', 'boolean'].includes(typeof value)
-  );
-  if (entries.length === 0) return '';
-  return `[${entries.map(([key, value]) => `${key}=${String(value)}`).join(', ')}]`;
-}
-
 /** The exploration label: `Explored: 2 reads, 1 search` (group-view.tsx, MIT). */
 export function explorationLabel(
   tools: readonly SessionMessageAssistantTool[],
@@ -417,18 +410,6 @@ export function toolOutput(part: SessionMessageAssistantTool): string | undefine
   return (state.content ?? [])
     .map((content) => (content.type === 'text' ? content.text : (content.name ?? content.uri)))
     .join('\n');
-}
-
-/** Tool metadata, empty while the call still streams (util/tool-display.ts, MIT). */
-export function toolMetadata(part: SessionMessageAssistantTool): Record<string, unknown> {
-  const state = part.state;
-  if (state.status === 'streaming') return {};
-  return state.metadata ?? {};
-}
-
-/** Tool input as a record; a streaming call has only raw text so far. */
-export function toolInput(part: SessionMessageAssistantTool): Record<string, unknown> {
-  return typeof part.state.input === 'string' ? {} : part.state.input;
 }
 
 /** Text without the ANSI escape sequences a shell may print. */
@@ -529,38 +510,6 @@ function collapseTail(output: string, maxLines: number, maxChars: number) {
   const available = maxChars - Array.from(label).length - 1;
   if (available <= 0) return label;
   return `${label}\n${preview.slice(-available).join('')}`;
-}
-
-/** A file an edit or patch changed, from its metadata (index.tsx `parseApplyPatchFiles`, MIT). */
-export interface PatchFile {
-  type: string;
-  path: string;
-  patch: string;
-  deletions: number;
-}
-
-/** Changed files listed in an edit or patch call's metadata. */
-export function patchFiles(value: unknown): PatchFile[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item: unknown) => {
-    if (typeof item !== 'object' || item === null) return [];
-    const file = item as Record<string, unknown>;
-    const status = file.status;
-    const type =
-      typeof file.type === 'string'
-        ? file.type
-        : status === 'added'
-          ? 'add'
-          : status === 'deleted'
-            ? 'delete'
-            : status === 'modified'
-              ? 'update'
-              : undefined;
-    const path = typeof file.file === 'string' ? file.file : file.relativePath;
-    if (!type || typeof path !== 'string' || typeof file.patch !== 'string') return [];
-    const deletions = typeof file.deletions === 'number' ? file.deletions : 0;
-    return [{ type, path, patch: file.patch, deletions }];
-  });
 }
 
 // Tree-sitter languages the host highlights, by extension (a subset of util/filetype.ts, MIT).

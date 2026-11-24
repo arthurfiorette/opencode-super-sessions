@@ -4,7 +4,7 @@ import { SHELL_TOOL } from './tool-hook.js';
 // Where the server finds text and commands in host events and stored messages. The fields are
 // typed, so a rename fails the typecheck; what the types cannot say is which event carries what,
 // and that live events and stored messages key the same text the same way. test/contract checks
-// both against a real host. Line numbers refer to the OpenCode repository at v2.2.7.
+// both against a real host. Line numbers refer to the OpenCode repository at v2.4.0.
 
 type Event<Type extends OpenCodeEvent['type']> = Extract<OpenCodeEvent, { type: Type }>;
 
@@ -38,7 +38,7 @@ export function isUserPrompt(event: Event<'session.inbox.enqueued'>): boolean {
 }
 
 /**
- * Finished assistant text in `session.text.ended` (packages/schema/src/session-event.ts:420).
+ * Finished assistant text in `session.text.ended` (packages/schema/src/session-event.ts:431).
  * `ordinal` counts only the text parts of the assistant message, which is how
  * {@link storedTexts} counts them too.
  */
@@ -102,7 +102,7 @@ export type HistoryEntry =
  * What the history scan reads from `message.list` pages: user prompts and assistant text under
  * the keys {@link storedTexts} gives them, and finished shell commands. Agent shell calls are
  * `shell` tool parts whose completed state holds `{ command }` as input and the output as text
- * content (`toolResult` in packages/core/src/tool/plugin/shell.ts:84); a command moved to the
+ * content (`toolResult` in packages/core/src/tool/plugin/shell.ts:121); a command moved to the
  * background records `metadata.status: 'running'` there and has no final output. User `!`
  * commands are `shell` messages (`SessionMessageShell` in packages/schema/src/session-message.ts).
  */

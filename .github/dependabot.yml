@@ -6,8 +6,11 @@ updates:
       interval: weekly
     groups:
       opencode:
+        # effect must match the exact version @opencode/plugin depends on: the Desktop app hands
+        # the GUI bundle that effect, and the GUI tests hand it this one in its place.
         patterns:
           - '@opencode/*'
+          - 'effect'
     ignore:
       # OpenTUI must match the exact version @opencode/theme depends on, or the theme's types and
       # native scene stop lining up. Bump it by hand with the @opencode/* group, to the version

@@ -1,0 +1,496 @@
+/* The session browser dialog, laid out like the TUI's browser (src/page/view.ts): a left column
+   with the header, search and list, the preview beside it down to the footer, and the key hints
+   under both. Colors map the TUI theme roles to the app's variables: primary and accent to
+   `--v2-background-bg-accent` and `--v2-text-text-accent`, warning (running) to
+   `--v2-state-fg-warning`, info (unread) to `--v2-state-fg-info`, muted to
+   `--v2-text-text-muted`. Only the list and the preview's parts scroll. */
+
+/* The app's x-large dialog stops at 880 by 680px, a small box in a large window, while the
+   terminal browser takes about 95% of the screen. The frame that holds the browser grows to most
+   of the window instead. It matches the app's dialog markup (DIALOG_FRAME in src/host/gui.ts);
+   when that changes, the browser opens at the plain x-large size. */
+[data-component="dialog-v2"][data-size="x-large"]:has(.ss-browser) [data-slot="dialog-container"] {
+  --dialog-height: calc(100vh - 6vh);
+  width: calc(100vw - 6vw);
+}
+
+/* The browser draws its own header, so the app's title row leaves the layout. The title stays in
+   the accessibility tree, where it names the dialog. */
+[data-component="dialog-v2"]:has(.ss-browser) [data-slot="dialog-header"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The app's scrolling wrapper around a dialog's content: the browser fills it instead, so the
+   list and the preview scroll on their own and the dialog never scrolls as a whole. */
+[data-scrollable]:has(> .ss-browser) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ss-browser {
+  --ss-mono: var(--v2-font-family-code, var(--font-family-mono, monospace));
+  --ss-marker: 14px;
+  --ss-gap: 6px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding-top: 16px;
+  outline: none;
+  container-type: inline-size;
+}
+
+.ss-browser-main {
+  display: flex;
+  flex: 1;
+  gap: 16px;
+  min-height: 0;
+}
+
+.ss-browser-left {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ss-browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* The TUI's title: bold, fading from the theme's warning color to orange. */
+.ss-title {
+  flex-shrink: 0;
+  background-image: linear-gradient(90deg, var(--v2-state-fg-warning), var(--ss-title-end));
+  background-clip: text;
+  color: transparent;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ss-tabs {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.ss-tab {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--v2-text-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ss-tab:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+}
+
+/* The current view reads bold in the base color, the others muted, as in the TUI. */
+.ss-tab[aria-selected="true"] {
+  color: var(--v2-text-text-base);
+  font-weight: 600;
+}
+
+/* A view with sessions in it counts in the base color, an empty one stays muted. */
+.ss-tab-count {
+  color: var(--v2-text-text-base);
+  font-family: var(--ss-mono);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.ss-tab-count.ss-tab-empty {
+  color: var(--v2-text-text-muted);
+}
+
+.ss-esc {
+  flex-shrink: 0;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--v2-text-text-muted);
+  font-family: var(--ss-mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ss-esc:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+  color: var(--v2-text-text-base);
+}
+
+/* `esc` sits at the top right of the preview while it shows, else at the end of the header. */
+.ss-esc-bar {
+  margin-left: auto;
+}
+
+.ss-esc-preview {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ss-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The preview needs room beside the list; a small window keeps the list alone. */
+.ss-preview {
+  display: none;
+  flex: 0 0 var(--ss-preview-share, 40%);
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 12px 8px;
+  border-radius: 8px;
+  background: var(--v2-background-bg-layer-01);
+}
+
+@container (min-width: 720px) {
+  .ss-browser[data-preview="on"] .ss-preview {
+    display: flex;
+  }
+
+  .ss-browser[data-preview="on"] .ss-esc-bar {
+    display: none;
+  }
+}
+
+.ss-preview-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.ss-preview-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ss-preview-title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--v2-text-text-base);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ss-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* The TUI's section headings: bold in the base color over muted lines. */
+.ss-section-title {
+  margin: 0;
+  color: var(--v2-text-text-base);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ss-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+}
+
+.ss-context-item {
+  font-variant-numeric: tabular-nums;
+}
+
+.ss-context-status[data-status="running"] {
+  color: var(--v2-state-fg-warning);
+}
+
+.ss-context-status[data-status="failed"] {
+  color: var(--v2-state-fg-danger);
+}
+
+/* A long Work list scrolls on its own, so the messages keep most of the column. */
+.ss-section-work {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.ss-section-chat {
+  flex: 1;
+  min-height: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--v2-border-border-muted);
+}
+
+/* `column-reverse` starts the scroll at the newest message and keeps it there as content fills
+   in; the single child keeps the messages in their own order. */
+.ss-chat {
+  display: flex;
+  flex: 1;
+  flex-direction: column-reverse;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ss-chat-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+/* A prompt as the TUI draws it: a bar at the left in the accent color. */
+.ss-chat-user {
+  padding: 4px 8px;
+  border-left: 2px solid var(--v2-text-text-accent);
+  color: var(--v2-text-text-base);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ss-chat-text {
+  min-width: 0;
+  color: var(--v2-text-text-base);
+  overflow-wrap: anywhere;
+}
+
+.ss-chat-tool {
+  overflow: hidden;
+  color: var(--v2-text-text-muted);
+  font-family: var(--ss-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-chat-running {
+  color: var(--v2-state-fg-warning);
+}
+
+.ss-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+}
+
+/* The TUI's group headers: bold, in the accent color; Running in the running color and the
+   search's message hits muted below the stronger matches. */
+.ss-group-title {
+  margin: 4px 8px 2px;
+  color: var(--v2-text-text-accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ss-group-title.ss-group-running {
+  color: var(--v2-state-fg-warning);
+}
+
+.ss-group-title.ss-group-messages {
+  color: var(--v2-text-text-muted);
+}
+
+.ss-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: default;
+  user-select: none;
+}
+
+.ss-row:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+}
+
+.ss-row-head,
+.ss-row-line {
+  display: flex;
+  align-items: center;
+  gap: var(--ss-gap);
+  min-width: 0;
+  line-height: 20px;
+}
+
+/* A fixed narrow column keeps the titles still whether the mark is a dash, a dot or a spinner. */
+.ss-row-marker {
+  display: inline-flex;
+  flex: 0 0 var(--ss-marker);
+  justify-content: center;
+  font-family: var(--ss-mono);
+  font-size: 12px;
+}
+
+.ss-marker-waiting {
+  color: var(--v2-state-fg-warning);
+  font-weight: 700;
+}
+
+.ss-row-title,
+.ss-row-pull {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-row-pull {
+  display: flex;
+}
+
+/* Ages and counts right-aligned and muted, in the mono font so the column lines up. */
+.ss-row-age,
+.ss-row-extra {
+  flex-shrink: 0;
+  color: var(--v2-text-text-muted);
+  font-family: var(--ss-mono);
+  font-size: 12px;
+  text-align: right;
+}
+
+/* The TUI's selection: the theme's primary background with its contrast text over the whole
+   row, state colors included, and the title bold. */
+.ss-row-selected,
+.ss-row-selected:hover {
+  background: var(--v2-background-bg-accent);
+  color: var(--v2-text-text-contrast);
+}
+
+.ss-row-selected
+  :is(
+    .ss-row-title,
+    .ss-row-age,
+    .ss-row-extra,
+    .ss-ref,
+    .ss-ref-mark,
+    .ss-ref-title,
+    .ss-ref-stack,
+    .ss-badge,
+    .ss-running,
+    .ss-marker-waiting,
+    .ss-tone-muted,
+    .ss-tone-info
+  ) {
+  color: inherit;
+}
+
+.ss-row-selected .ss-row-title {
+  font-weight: 700;
+}
+
+/* Detail lines start two characters right of the title, as in the TUI, so titles form their own
+   column. */
+.ss-row-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: calc(var(--ss-marker) + var(--ss-gap) + 2ch);
+}
+
+/* The hover buttons never make the title line taller than its text. */
+.ss-row-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-block: -4px;
+  visibility: hidden;
+}
+
+.ss-row:hover .ss-row-actions,
+.ss-row:focus-within .ss-row-actions {
+  visibility: visible;
+}
+
+.ss-running {
+  display: inline-flex;
+  color: var(--v2-state-fg-warning);
+}
+
+.ss-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+}
+
+/* The TUI's footer: the row's keys at the bottom left, the scope at the bottom right. */
+.ss-hints {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0 4px;
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+}
+
+.ss-hints-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.ss-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ss-scope {
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ss-scope:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+}
+
+.ss-scope-home {
+  color: var(--v2-text-text-muted);
+}

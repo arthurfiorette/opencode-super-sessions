@@ -377,7 +377,7 @@ export function createBrowserModel(
     ...(
       [
         'session.created',
-        // A fork publishes only this, not `session.created` (packages/core/src/session.ts:375).
+        // A fork publishes only this, not `session.created` (packages/core/src/session.ts:379 in OpenCode v2.4.0).
         'session.forked',
         'session.archived',
         'session.unarchived',

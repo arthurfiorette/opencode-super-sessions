@@ -46,6 +46,10 @@ try {
     );
   }
   assert.ok(
+    packed.files.some((file) => file.path === 'dist/gui-experimental.cjs'),
+    'Missing the Desktop GUI bundle'
+  );
+  assert.ok(
     packed.files.every((file) =>
       /^(dist\/|(?:index|tui|rpc)\.js$|package\.json$|README\.md$|LICENSE$)/.test(file.path)
     )
@@ -78,6 +82,8 @@ try {
   await writeFile(
     path.join(directory, 'smoke.mjs'),
     `import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { isBuiltin } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import server from 'opencode-super-sessions';
 import tui from 'opencode-super-sessions/tui';
@@ -92,6 +98,43 @@ const entries = Host.resolve({ directory: fileURLToPath(new URL('./node_modules/
 assert.ok(entries.server);
 assert.ok(entries.tui);
 assert.ok(entries.rpc);
+assert.ok(entries.gui);
+
+// The Desktop GUI bundle as the app's main process evaluates it (evaluatePluginBundle in
+// @opencode/plugin/gui/host at v2.3.2): shared modules are real, with the main SDK for
+// @opencode/plugin/gui, and window-only modules are inert placeholders. A window gives Node.js
+// built-ins and electron placeholders too, so the bundle must not require them at all.
+const code = readFileSync(new URL(entries.gui), 'utf8');
+const required = [...code.matchAll(/\\brequire\\((["'])([^"']+)\\1\\)/g)].map((match) => match[2]);
+assert.deepEqual(
+  required.filter((name) => isBuiltin(name) || name === 'electron'),
+  [],
+  'The GUI bundle requires a Node.js built-in or electron'
+);
+// The SDK's module list is not an export; gui() reads the same file at build time.
+const { pluginSharedModules } = await import(
+  new URL('./modules.js', import.meta.resolve('@opencode/plugin/gui/main')).href
+);
+const shared = new Set(pluginSharedModules);
+const modules = new Map();
+for (const name of new Set(required)) {
+  if (!shared.has(name)) continue;
+  modules.set(name, await import(name === '@opencode/plugin/gui' ? '@opencode/plugin/gui/main' : name));
+}
+const inert = new Proxy(function inert() {}, {
+  get: (_, key) => (key === 'then' ? undefined : inert),
+  apply: () => inert,
+  construct: () => inert
+});
+const module = { exports: {} };
+new Function('require', 'module', 'exports', code)(
+  (name) => modules.get(name) ?? inert,
+  module,
+  module.exports
+);
+const gui = 'default' in module.exports ? module.exports.default : module.exports;
+assert.equal(typeof gui.setup, 'function');
+assert.equal(typeof gui.i18n.en, 'object');
 `
   );
 

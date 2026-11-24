@@ -5,7 +5,7 @@ import { RGBA, type SyntaxStyle } from '@opentui/core';
 // Theme surfaces and styles the browser borrows so it looks like the host's own dialogs and
 // session view. The tokens are typed; these say which surface the host draws what on. Imported
 // only by lazily loaded views, so `./tui` still loads without OpenTUI. Line numbers refer to the
-// OpenCode repository at v2.2.7.
+// OpenCode repository at v2.4.0.
 
 /** The dimmed backdrop behind host dialogs (packages/tui/src/ui/dialog.tsx:70). */
 export const DIALOG_BACKDROP = RGBA.fromInts(0, 0, 0, 150);
@@ -28,7 +28,7 @@ export function sessionBackground(theme: ResolvedTheme): RGBA {
 
 /**
  * Markdown styles as the host builds them for its transcript, owned by the renderer's native scene
- * (packages/tui/src/context/theme.tsx:319). The caller destroys them once a frame no longer uses
+ * (packages/tui/src/context/theme.tsx:322). The caller destroys them once a frame no longer uses
  * them.
  */
 export function markdownStyles(context: Plugin.Context, theme: ResolvedTheme): SyntaxStyle {

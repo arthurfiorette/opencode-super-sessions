@@ -38,9 +38,10 @@ import {
 } from '../host/session-api.js';
 import { DIALOG_BACKDROP, dialogTheme, sessionBackground } from '../host/theme.js';
 import { copyLink } from '../link.js';
-import { type ProviderId, type PullDetails, type Ref, refKey, refNumber } from '../refs/ref.js';
+import { FORGE_NAMES, linkFailure } from '../link-failure.js';
+import { type ProviderId, type PullDetails, refKey, refKind, refNumber } from '../refs/ref.js';
 import { rowRefs, workLinks } from '../refs/summary.js';
-import { LINK_PROVIDER_NAMES, recognizeLink } from '../refs/work-link.js';
+import { LINK_PROVIDER_NAMES, linkLabel } from '../refs/work-link.js';
 import { excludeFromAutoArchive } from '../settings/maintenance.js';
 import { serverSettingsFor, tuiSettingsFor } from '../settings/store.js';
 import { ICONS, titleGradient } from './icons.js';
@@ -119,9 +120,9 @@ const HINT_GAP = 2;
 const DONE_KEY = 'ctrl+q';
 // Letters type into the search and ctrl+f is the host's pin. ctrl+b is only the search input's
 // cursor-left here (OpenTUI's input bindings), which `left` also does; the host's ctrl+b,
-// `session.background` (packages/tui/src/config/keybind.ts:129), sits in the session view's
-// base-mode layer (packages/tui/src/routes/session/index.tsx:1459), which the browser's mode
-// turns off.
+// `session.background` (packages/tui/src/config/keybind.ts:129 in OpenCode v2.4.0), sits in the
+// session view's base-mode layer (packages/tui/src/routes/session/index.tsx:1467), which the
+// browser's mode turns off.
 const FORK_KEY = 'ctrl+b';
 // ctrl+r is rename, ctrl+u, ctrl+w, ctrl+e (while not grouping by group) and ctrl+k edit the search,
 // ctrl+h is backspace in
@@ -134,7 +135,6 @@ const GROUP_KEY = 'ctrl+e';
 const RELOAD_TOAST_DELAY = 300;
 // Two left clicks on one row within this many milliseconds open it.
 const DOUBLE_CLICK = 400;
-const FORGE_NAMES: Record<ProviderId, string> = { github: 'GitHub', gitlab: 'GitLab' };
 
 /** Which optional pieces the header row shows. */
 interface HeaderFit {
@@ -504,7 +504,8 @@ export default function SessionBrowser(props: PageProps) {
       return;
     }
     // The host leaves a session that is deleted under it, for the home page or the next tab
-    // (packages/tui/src/app.tsx:1366, context/session-tabs.tsx:342); the browser stays open.
+    // (packages/tui/src/app.tsx:1383, context/session-tabs.tsx:351 in OpenCode v2.4.0); the
+    // browser stays open.
     const route = context.ui.router.current();
     if (route.type === 'session' && context.data.session.root(route.sessionID) === session.id) {
       leaving.add(route.sessionID);
@@ -2116,25 +2117,12 @@ function matchLabel(reason: SearchReason | undefined, refs: Parameters<typeof fi
   return ref === undefined ? 'ref number' : `${kind} ${refNumber(ref)}`;
 }
 
-/** How a ref's kind reads in a label. GitLab calls its pull requests merge requests. */
-function refKind(ref: Ref): string {
-  if (ref.kind === 'issue') return 'issue';
-  return ref.provider === 'gitlab' ? 'MR' : 'PR';
-}
-
 /** A Work row the keys can select: a ref or a work link, with what `enter`, `c` and `d` need. */
 interface WorkItem {
   key: string;
   url: string;
   /** How toasts name it, such as `PR #12` or `Linear COR-1466`. */
   label: string;
-}
-
-/** How a work link reads in a toast: its provider and id, such as `Linear COR-1466`. */
-function linkLabel(url: string): string {
-  const info = recognizeLink(url);
-  if (info === undefined) return url;
-  return `${LINK_PROVIDER_NAMES[info.provider]} ${info.name ?? info.title ?? ''}`.trim();
 }
 
 /** Whether a renderable is still in the tree under `root`. */
@@ -2147,18 +2135,19 @@ function attached(root: Renderable, node: Renderable): boolean {
 
 /** Turns an RPC `link` failure into a short message. */
 function linkError(error: unknown): string {
-  const { type, data } = rpcError(error);
-  if (type === 'invalid_reference') return 'Not a URL or a pull request or issue reference.';
-  if (type === 'not_found') return 'Pull request or issue not found.';
-  if (type === 'unavailable') {
-    const record = typeof data === 'object' && data !== null ? data : {};
-    const provider = 'provider' in record ? record.provider : undefined;
-    const forge =
-      provider === 'gitlab' || provider === 'github' ? FORGE_NAMES[provider] : 'The forge';
-    if ('reason' in record && record.reason === 'disabled') {
-      return `${forge} is not enabled. Turn it on in the settings to link it.`;
-    }
-    return `${forge} is unavailable. Run /super-sessions status for details.`;
+  const failure = linkFailure(error);
+  switch (failure.reason) {
+    case 'invalid':
+      return 'Not a URL or a pull request or issue reference.';
+    case 'not-found':
+      return 'Pull request or issue not found.';
+    case 'disabled':
+      return `${failure.forge ?? 'The forge'} is not enabled. Turn it on in the settings to link it.`;
+    case 'unavailable':
+      return `${failure.forge ?? 'The forge'} is unavailable. Run /super-sessions status for details.`;
+    case 'missing':
+      return 'Could not link. Enable the opencode-super-sessions server plugin.';
+    default:
+      return 'Could not link.';
   }
-  return 'Could not link. Enable the opencode-super-sessions server plugin.';
 }

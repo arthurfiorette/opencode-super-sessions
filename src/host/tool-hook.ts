@@ -2,9 +2,10 @@ import type { Plugin } from '@opencode/plugin';
 
 // The agent's shell tool as the `execute.after` hook reports it. Its input and output are
 // `unknown` in the plugin types, so a change there would pass the typecheck and only stop ref
-// detection. test/contract runs a real agent shell call through this reader.
+// detection. test/contract runs a real agent shell call through this reader. Line numbers refer
+// to the OpenCode repository at v2.4.0.
 
-/** Name of the host's shell tool (packages/core/src/tool/plugin/shell.ts:21 in OpenCode v2.2.7). */
+/** Name of the host's shell tool (packages/core/src/tool/plugin/shell.ts:28). */
 export const SHELL_TOOL = 'shell';
 
 // `hook` is generic over every tool hook; `execute.after` is the payload with a status.
@@ -15,9 +16,11 @@ type AfterEvent = Extract<
 
 /**
  * The command and output of a finished agent shell call, or undefined for other tools, failed
- * calls and background commands. The input is `{ command }` and the output
- * `{ output, status?, exit? }` (`Input` and `Output` in packages/core/src/tool/plugin/shell.ts).
- * Background commands report `status: 'running'` with partial output, whose URLs are not final.
+ * calls and background commands. The input is `{ command }` (`Input` and `CodeModeInput` in
+ * packages/core/src/tool/plugin/shell.ts:63) and the output `{ output, exitCode, shellID? }`
+ * (`toolResult`, shell.ts:121). A command still running in the background reports
+ * `metadata.status: 'running'` (shell.ts:132) and a notice as its output, whose URLs are not
+ * final. The same reader serves Code Mode calls, which fire the hook under the tool's own name.
  */
 export function shellCall(
   event: AfterEvent
@@ -25,9 +28,8 @@ export function shellCall(
   if (event.tool !== SHELL_TOOL || event.status !== 'completed') return undefined;
   const command = isRecord(event.input) ? event.input.command : undefined;
   const result = event.result.output;
-  if (typeof command !== 'string' || !isRecord(result) || result.status === 'running') {
-    return undefined;
-  }
+  if (typeof command !== 'string' || !isRecord(result)) return undefined;
+  if (event.result.metadata?.status === 'running') return undefined;
   const output = typeof result.output === 'string' ? result.output : '';
   return { sessionID: event.sessionID, command, output };
 }

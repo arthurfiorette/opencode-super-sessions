@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { z } from 'zod';
-import { groupsSchema, providerIdSchema, type RefStatus } from './refs/ref.js';
+import { colorsSchema } from './refs/look.js';
+import { groupsSchema, providerIdSchema } from './refs/ref.js';
 
 // Mirrors opencode-zero-trust: executables run without a shell, so arguments in the value would be
 // treated as part of the program name and are rejected up front.
@@ -19,19 +20,6 @@ const hostname = z
   });
 
 const days = z.number().int().min(0).max(365);
-
-const hex = z.string().regex(/^#[0-9a-f]{6}$/i, { message: 'Use a #rrggbb color.' });
-const color = z.union([hex, z.strictObject({ dark: hex, light: hex })]);
-
-// GitHub Primer foreground colors for each state, so the list reads like GitHub in either mode.
-const githubColors: Record<RefStatus, { dark: string; light: string }> = {
-  open: { dark: '#3fb950', light: '#1a7f37' },
-  draft: { dark: '#9198a1', light: '#59636e' },
-  merged: { dark: '#ab7df8', light: '#8250df' },
-  closed: { dark: '#f85149', light: '#d1242f' },
-  completed: { dark: '#ab7df8', light: '#8250df' },
-  not_planned: { dark: '#9198a1', light: '#59636e' }
-};
 
 export const optionsSchema = z
   .strictObject({
@@ -99,16 +87,8 @@ export const optionsSchema = z
         unchanged: z.boolean().default(false)
       })
       .default({ deletedSessions: false, merged: false, unchanged: false }),
-    colors: z
-      .strictObject({
-        open: color.optional(),
-        draft: color.optional(),
-        merged: color.optional(),
-        closed: color.optional(),
-        completed: color.optional(),
-        not_planned: color.optional()
-      })
-      .default({})
+    // In src/refs/look.ts, which the Desktop GUI reads without this module's `node:path`.
+    colors: colorsSchema.default({})
   })
   .default({
     ghPath: 'gh',
@@ -135,11 +115,4 @@ export type Options = z.output<typeof optionsSchema>;
 /** Parses plugin options. Throws a zod error naming the bad field. */
 export function parseOptions(input: unknown): Options {
   return optionsSchema.parse(input ?? undefined);
-}
-
-/** Resolves the hex color for a ref state in the current theme mode, honoring user overrides. */
-export function stateColor(options: Options, status: RefStatus, mode: 'dark' | 'light'): string {
-  const override = options.colors[status];
-  if (typeof override === 'string') return override;
-  return (override ?? githubColors[status])[mode];
 }

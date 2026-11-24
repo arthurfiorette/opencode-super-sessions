@@ -1,0 +1,40 @@
+// English copy of the session header, the Work panel and the composer pill, merged into the GUI's
+// messages in ../en.ts.
+export const statusEn = {
+  'command.work': 'Super Sessions: Show work',
+  'header.more': 'More pull requests, issues and mentions',
+  'work.title': 'Work',
+  'work.mentioned': 'Mentioned',
+  'work.more': '+{{count}} more',
+  'work.open': 'Open in the browser',
+  'work.copy': 'Copy link',
+  'work.copied': 'Copied link',
+  'work.copyFailed': 'Could not copy the link.',
+  'work.unlink': 'Unlink',
+  'work.link': 'Link',
+  'work.refresh': 'Refresh from GitHub and GitLab',
+  'unlink.title': 'Unlink {{label}}?',
+  'unlink.description':
+    'It leaves this session and is not tracked again automatically. Linking it again brings it back.',
+  'unlink.confirm': 'Unlink',
+  'unlink.failed': 'Could not unlink {{label}}.',
+  'link.title': 'Link pull request, issue or URL',
+  'link.placeholder': 'URL, owner/repo#N or #N',
+  'link.submit': 'Link',
+  'link.done': 'Linked {{label}}',
+  'link.invalid': 'Not a URL or a pull request or issue reference.',
+  'link.notFound': 'Pull request or issue not found.',
+  'link.forge': 'The forge',
+  'link.disabled':
+    '{{forge}} is not enabled. Add it to the plugin\'s "providers" option, or turn it on with /super-sessions settings in the terminal.',
+  'link.unavailable': '{{forge}} is unavailable. Check that its CLI is installed and signed in.',
+  'link.missing':
+    'Could not link. The opencode-super-sessions server plugin is not installed on this server.',
+  'link.failed': 'Could not link.',
+  'refresh.failed': 'Could not refresh from {{forges}}.',
+  'refresh.missing':
+    'Could not refresh. The opencode-super-sessions server plugin is not installed on this server.',
+  'refresh.error': 'Could not refresh.',
+  'pill.open': 'Open pull request',
+  'pill.more': '{{count}} more checks'
+} as const;

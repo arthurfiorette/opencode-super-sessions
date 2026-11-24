@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
-import type { OpenCodeEvent, SessionInfo, SessionMessageInfo } from '@opencode/client';
+import type { OpenCodeEvent, PluginInfo, SessionInfo, SessionMessageInfo } from '@opencode/client';
 import { Plugin } from '@opencode/plugin';
+import { Rpc } from '@opencode/plugin/rpc';
 import { z } from 'zod';
 import {
   assistantText,
@@ -13,6 +14,8 @@ import {
   storedTexts,
   userPrompt
 } from '../../src/host/events.js';
+import { shipsGui } from '../../src/host/gui.js';
+import { pluginRpc, serverPluginMissing } from '../../src/host/rpc.js';
 import {
   activityTime,
   forkSession,
@@ -28,6 +31,7 @@ import {
 import { reloadTools, shellCall } from '../../src/host/tool-hook.js';
 import { projectWorktrees, removeWorktree } from '../../src/host/worktree.js';
 import { markScanned } from '../../src/refs/store.js';
+import { SuperSessions } from '../../src/rpc.js';
 import { createWriteQueue } from '../../src/server/queue.js';
 import {
   ANSWER,
@@ -78,7 +82,10 @@ const recorder = Plugin.define({
       });
     });
     await context.tool.hook('execute.after', (event) => {
-      hooks.push(structuredClone(event));
+      // `info` is the live tool definition, schemas and functions included, which cannot be
+      // cloned. A hook that throws fails the tool call it reports.
+      const { info: _info, ...payload } = event;
+      hooks.push(structuredClone(payload));
     });
     // What src/server/notices.ts does, for prompts of the notice test only.
     await context.session.hook('prompt', async (event) => {
@@ -317,6 +324,49 @@ test('server plugin session.update replaces metadata and session.get returns it 
   assert.equal(info.location.directory, location.directory);
   // The sidebar refetches refs on this event.
   await event('session.metadata.updated', (item) => item.data.sessionID === session.id);
+});
+
+// The desktop app loads the GUI of every plugin the server lists with `features.gui`, from the
+// code `plugin.gui` serves, and hands it the server plugin's options as `ctx.options`.
+test('the host lists the plugin with its Desktop GUI and serves the built bundle', async () => {
+  const location = { directory: directory('gui') };
+  const listed = await until(
+    () => host.plugin.list({ location }),
+    (result) => result.data.length > 0
+  );
+  const plugin = listed.data.find((info: PluginInfo) => info.id === SuperSessions.id);
+  assert.ok(plugin && shipsGui(plugin));
+  const bundle = await host.plugin.gui({ id: SuperSessions.id, location });
+  assert.equal(
+    bundle.data.code,
+    readFileSync(new URL('../../dist/gui-experimental.cjs', import.meta.url), 'utf8')
+  );
+  assert.equal(bundle.data.options.ghPath, 'gh-contract-missing');
+});
+
+// The GUI reads this failure as a server without the server plugin and shows sessions without
+// refs instead of an error.
+test('an RPC no plugin registered fails the way serverPluginMissing reads it', async () => {
+  const location = { directory: directory('gui-missing') };
+  await until(
+    () => host.plugin.list({ location }),
+    (result) => result.data.length > 0
+  );
+  const missing = Rpc.define({
+    id: 'contract-missing',
+    methods: { ping: { input: z.strictObject({}), output: z.strictObject({}) } },
+    events: {}
+  });
+  const error = await host
+    .rpc(missing)
+    .ping({}, { location })
+    .then(
+      () => undefined,
+      (cause: unknown) => cause
+    );
+  assert.ok(serverPluginMissing(error));
+  // A registered plugin's RPC on the same Location answers, so the failure is about the id.
+  assert.ok(await pluginRpc(host).status({}, { location }));
 });
 
 // The list's order, day groups and ages, and the cleanup inactivity rule, read `activityTime`.
