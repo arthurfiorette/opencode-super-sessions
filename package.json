@@ -69,7 +69,7 @@
     "@opentui/solid": "0.9.4",
     "@types/node": "^24.19.2",
     "effect": "4.1.0",
-    "solid-js": "1.9.19",
+    "solid-js": "1.9.20",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
