@@ -8,7 +8,7 @@ import { createBranchCache } from '../../src/server/branches.js';
 import { createForgeHosts } from '../../src/server/hosts.js';
 import { createWriteQueue, type SessionAccess } from '../../src/server/queue.js';
 import type { Runtime } from '../../src/server/runtime.js';
-import { collectViews } from '../../src/server/views.js';
+import { buildViews, collectViews } from '../../src/server/views.js';
 
 // Which branch pull request belongs to a session decides what its rows, sidebar, Done and
 // auto-archive see, while worktree cleanup must keep seeing every pull request of the checkout.
@@ -33,9 +33,11 @@ function setup(opened: number, refs: { links?: RefLink[]; pushed?: string[] }) {
   let metadata: Record<string, unknown> = {
     'super-sessions': { v: 1, links: refs.links ?? [], dismissed: [], pushed: refs.pushed }
   };
+  let writes = 0;
   const session = {
     get: async () => ({ metadata, location: { directory: '/work' }, time: { created: CREATED } }),
     update: async (input: { metadata?: Record<string, unknown> }) => {
+      writes++;
       metadata = input.metadata ?? {};
     }
   } as unknown as SessionAccess;
@@ -69,8 +71,28 @@ function setup(opened: number, refs: { links?: RefLink[]; pushed?: string[] }) {
     hosts: createForgeHosts({ gitlab: { hosts: [] } }),
     refreshing: new Set<string>()
   } as unknown as Runtime;
-  return { runtime, session, metadata: () => metadata };
+  return { runtime, session, metadata: () => metadata, writes: () => writes };
 }
+
+// Every metadata write moves the session's `time.updated`, and the browser reads `refs` for every
+// listed session on each open: a write there reordered and re-dated sessions nobody touched.
+test('refs shows the issues a merged pull request closes without writing, and refresh stores them', async () => {
+  const { runtime, session, metadata, writes } = setup(CREATED + MINUTE, {});
+  const read = () => buildViews(runtime, session, ['ses_1'], { wait: false });
+  await read();
+  // The first read finds nothing cached and starts the background refresh that fills the caches.
+  for (let turn = 0; runtime.refreshing.size > 0 && turn < 1000; turn++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(runtime.refreshing.size, 0);
+  const view = (await read()).ses_1;
+  assert.deepEqual(named(view?.links ?? []), ['issue 3 closes']);
+  assert.equal(writes(), 0);
+  assert.deepEqual(readSessionRefs(metadata()).links, []);
+
+  await buildViews(runtime, session, ['ses_1'], { wait: true });
+  assert.deepEqual(named(readSessionRefs(metadata()).links), ['issue 3 closes']);
+});
 
 /** Links as `kind number source`. */
 const named = (links: RefLink[]) =>

@@ -50,7 +50,7 @@ async function onShell(
     )
   ]);
   if (isCloseCommand(runtime.definitions, command)) {
-    refreshInBackground(runtime, session, [sessionID], true);
+    refreshInBackground(runtime, session, [sessionID], { force: true });
   }
 }
 

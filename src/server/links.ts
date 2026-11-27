@@ -177,6 +177,16 @@ function closesLinks(runtime: Runtime, refs: SessionRefs, branchRefs: Ref[]): Re
 }
 
 /**
+ * The session's refs with the issues its tracked PRs close merged in, as {@link syncCloses}
+ * would store them, without a write. Read paths show these, so a row lists them before the next
+ * recording refresh stores them.
+ */
+export function withCloses(runtime: Runtime, refs: SessionRefs, branchRefs: Ref[]): SessionRefs {
+  const links = closesLinks(runtime, refs, branchRefs);
+  return links.length === 0 ? refs : mergeLinks(refs, links).next;
+}
+
+/**
  * Records the issues tracked PRs close. Checks against the refs already read first, so the common
  * case of nothing new costs no queued read and no write.
  */

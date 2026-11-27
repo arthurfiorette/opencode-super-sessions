@@ -14,13 +14,18 @@ import { rankSessions, type SearchSession, searchLinks } from '../refs/search.js
 import type { RepoInfo } from '../repo.js';
 import type { SearchHit, SearchScope, SessionRefView } from '../rpc.js';
 import { type BranchTarget, sessionBranchPulls } from './branches.js';
-import { ensureRefs, resolveRepo, syncCloses } from './links.js';
+import { ensureRefs, resolveRepo, syncCloses, withCloses } from './links.js';
 import type { SessionAccess } from './queue.js';
 import { type Runtime, warn } from './runtime.js';
 
 /** How {@link buildViews} treats the forge. */
 export interface ViewMode {
-  /** Wait for missing or expired branch lookups and snapshots instead of refreshing them later. */
+  /**
+   * Wait for missing or expired branch lookups and snapshots instead of refreshing them later,
+   * and store the `closes` links of the refreshed pull requests. That is a link change, which
+   * writes metadata and moves the session's `time.updated`, so only the `refresh` RPC, the sweep
+   * and the tools wait; `refs` is a read, which shows the same links without storing them.
+   */
   wait: boolean;
   /** Refetch everything, even fresh entries. Only meaningful with `wait`. */
   force?: boolean;
@@ -109,8 +114,8 @@ export interface SessionViews {
 
 /**
  * Builds the TUI's view of each existing session. Unknown ids are left out. Without `wait`
- * nothing here calls the forge: cached data is returned and stale sessions refresh in the
- * background, so the page reads them on its next call.
+ * nothing here calls the forge or writes: cached data is returned and stale sessions refresh in
+ * the background, so the page reads them on its next call.
  */
 export async function buildViews(
   runtime: Runtime,
@@ -130,20 +135,30 @@ export async function collectViews(
   mode: ViewMode
 ): Promise<Record<string, SessionViews>> {
   const force = mode.wait && mode.force === true;
-  const loaded = await Promise.all(
-    [...new Set(sessionIDs)].map(async (id) => {
-      const info = await readSession(session, id);
-      if (info === undefined) return undefined;
-      const repo = await resolveRepo(runtime, info.location.directory, { force });
-      return {
-        id,
-        created: info.time.created,
-        refs: readSessionRefs(info.metadata),
-        repo,
-        target: branchTarget(repo)
-      };
-    })
-  );
+  const unique = [...new Set(sessionIDs)];
+  const loaded: Array<Loaded | undefined> = [];
+  // The host reads each session from its database on the daemon's event loop, so 200 reads
+  // started together ran as one long task that every client of the daemon waited behind.
+  for (let start = 0; start < unique.length; start += READ_CHUNK) {
+    if (start > 0) await new Promise((resolve) => setImmediate(resolve));
+    const chunk = unique.slice(start, start + READ_CHUNK);
+    loaded.push(
+      ...(await Promise.all(
+        chunk.map(async (id): Promise<Loaded | undefined> => {
+          const info = await readSession(session, id);
+          if (info === undefined) return undefined;
+          const repo = await resolveRepo(runtime, info.location.directory, { force });
+          return {
+            id,
+            created: info.time.created,
+            refs: readSessionRefs(info.metadata),
+            repo,
+            target: branchTarget(repo)
+          };
+        })
+      ))
+    );
+  }
   const sessions = loaded.filter((entry) => entry !== undefined);
 
   const stale = new Set<string>();
@@ -176,12 +191,14 @@ export async function collectViews(
   for (const entry of withBranches) {
     targets.set(entry.id, entry.target);
     // Only the session's own branch pull requests record `closes` links.
-    const refs = await syncCloses(runtime, session, entry.id, entry.refs, entry.branches.own).catch(
-      (error: unknown) => {
-        warn(`Recording closed issues for ${entry.id} failed`, error);
-        return entry.refs;
-      }
-    );
+    const refs = mode.wait
+      ? await syncCloses(runtime, session, entry.id, entry.refs, entry.branches.own).catch(
+          (error: unknown) => {
+            warn(`Recording closed issues for ${entry.id} failed`, error);
+            return entry.refs;
+          }
+        )
+      : withCloses(runtime, entry.refs, entry.branches.own);
     if (refs !== entry.refs) added.push(...refs.links.map((link) => link.ref));
     const view: SessionRefView = {
       links: visibleLinks(refs, entry.branches.foreign),
@@ -218,8 +235,76 @@ export async function collectViews(
     }
   }
 
-  if (stale.size > 0) refreshInBackground(runtime, session, [...stale]);
+  if (stale.size > 0) {
+    warmInBackground(
+      runtime,
+      sessions.filter((entry) => stale.has(entry.id))
+    );
+  }
   return views;
+}
+
+// Sessions read at once before `collectViews` yields to the event loop.
+const READ_CHUNK = 25;
+
+/** A session as `collectViews` read it, before any branch lookup. */
+interface Loaded {
+  id: string;
+  created: number;
+  refs: SessionRefs;
+  repo: RepoInfo;
+  target: BranchTarget | undefined;
+}
+
+/**
+ * Refreshes the branch lookups and snapshots of sessions `refs` found stale, without blocking
+ * the caller, so its next read has them. It works from the sessions the read already loaded: it
+ * reads no session again and writes nothing, only the forge caches change. Sessions already
+ * refreshing are skipped, so a page that polls `refs` faster than GitHub answers does not stack
+ * requests.
+ */
+function warmInBackground(runtime: Runtime, entries: Loaded[]): void {
+  const fresh = entries.filter((entry) => !runtime.refreshing.has(entry.id));
+  if (fresh.length === 0) return;
+  for (const entry of fresh) runtime.refreshing.add(entry.id);
+  warm(runtime, fresh)
+    .catch((error: unknown) => warn('Refreshing session refs failed', error))
+    .finally(() => {
+      for (const entry of fresh) runtime.refreshing.delete(entry.id);
+    });
+}
+
+/** Fetches what the sessions' views read: branch lookups, then every ref they would show. */
+async function warm(runtime: Runtime, entries: Loaded[]): Promise<void> {
+  const branched = await Promise.all(
+    entries.map(async (entry) => {
+      const provider = entry.repo.repo && runtime.providers.get(entry.repo.repo.provider);
+      const found =
+        entry.target === undefined || !provider
+          ? undefined
+          : await runtime.branches.ensure(provider, entry.target, {});
+      return { entry, branches: branchRefsOf(entry.refs, entry.created, entry.target, found) };
+    })
+  );
+  await ensureRefs(
+    runtime,
+    uniqueRefs(
+      branched.flatMap(({ entry, branches }) => [
+        ...entry.refs.links.map((link) => link.ref),
+        ...branches.checkout
+      ])
+    )
+  );
+  // The issues the refreshed pull requests close, which the next read shows; cached ones cost
+  // no forge call.
+  await ensureRefs(
+    runtime,
+    uniqueRefs(
+      branched.flatMap(({ entry, branches }) =>
+        withCloses(runtime, entry.refs, branches.own).links.map((link) => link.ref)
+      )
+    )
+  );
 }
 
 /** Drops repeated refs, keeping the first of each key. */
@@ -266,19 +351,20 @@ function statesOf(runtime: Runtime, keys: string[]): Record<string, RefState> {
 }
 
 /**
- * Refreshes sessions without blocking the caller. Sessions already refreshing are skipped, so a
- * page that polls `refs` faster than GitHub answers does not stack requests.
+ * Refreshes sessions without blocking the caller, as after a merge or close the agent ran, and
+ * records the `closes` links found. `force` refetches fresh entries too. Sessions already
+ * refreshing are skipped.
  */
 export function refreshInBackground(
   runtime: Runtime,
   session: SessionAccess,
   sessionIDs: string[],
-  force = false
+  options: { force?: boolean } = {}
 ): void {
   const ids = sessionIDs.filter((id) => !runtime.refreshing.has(id));
   if (ids.length === 0) return;
   for (const id of ids) runtime.refreshing.add(id);
-  buildViews(runtime, session, ids, { wait: true, force })
+  buildViews(runtime, session, ids, { wait: true, force: options.force === true })
     .catch((error: unknown) => warn('Refreshing session refs failed', error))
     .finally(() => {
       for (const id of ids) runtime.refreshing.delete(id);
