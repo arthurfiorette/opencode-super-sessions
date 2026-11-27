@@ -60,6 +60,8 @@ async function registerInert(context: Plugin.Context): Promise<void> {
     status: async () => ({ providers: {} }),
     refs: async () => ({}),
     refresh: async () => ({}),
+    // No refs means no Done candidates, so nothing asks.
+    'done.facts': async () => ({}),
     search: async () => [],
     link: async (_input, invocation) =>
       invocation.error('unavailable', 'The plugin options are invalid.', { reason: 'failed' }),

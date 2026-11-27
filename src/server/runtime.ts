@@ -4,6 +4,11 @@ import { isDeepStrictEqual } from 'node:util';
 import { createSnapshotCache, type SnapshotCache } from '../cache.js';
 import type { Options } from '../config.js';
 import { createPendingForms, isFormEvent, type PendingForms } from '../host/forms.js';
+import {
+  createPendingPermissions,
+  isPermissionEvent,
+  type PendingPermissions
+} from '../host/permissions.js';
 import { github } from '../providers/github/definition.js';
 import { createGitHubProvider } from '../providers/github/provider.js';
 import { createGitLabDefinition } from '../providers/gitlab/definition.js';
@@ -50,6 +55,14 @@ export interface Runtime {
   readonly events: EventHub;
   /** Questions waiting on the user, which keep a session's worktree like a pending permission. */
   readonly forms: PendingForms;
+  /** Permission requests waiting on the user, in every Location; see `src/host/permissions.ts`. */
+  readonly permissions: PendingPermissions;
+  /**
+   * When the user last wrote in a session, by session id, with the activity time it was read
+   * at. Done reads it for every candidate the browser lists, and `session.context` reads the
+   * whole history since the last compaction, so it is read again only after the session ran.
+   */
+  readonly lastPrompts: Map<string, { activity: number; at: number | null | undefined }>;
   /** Sessions with a background refresh running, so repeated `refs` calls do not stack them. */
   readonly refreshing: Set<string>;
   /** The message search index, opened on first use. Disabled when `search.body` is off. */
@@ -252,11 +265,20 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
       }
     }),
     forms: createPendingForms(),
+    permissions: createPendingPermissions(),
+    lastPrompts: new Map(),
     events: createEventHub({
       async handle(event, context) {
         if (isFormEvent(event)) {
           runtime.forms.apply(event);
           return;
+        }
+        if (isPermissionEvent(event)) {
+          runtime.permissions.apply(event);
+          return;
+        }
+        if (event.type !== 'session.deleted' && !isHandledEvent(event)) {
+          runtime.permissions.ended(event.data.sessionID);
         }
         // Deletions reach both: the message index forgets them and cleanup records the worktree.
         if (event.type === 'session.deleted' || !isHandledEvent(event)) {

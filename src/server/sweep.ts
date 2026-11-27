@@ -745,7 +745,8 @@ async function hasPending(
   context: Plugin.Context,
   sessionID: string
 ): Promise<boolean> {
-  if (runtime.forms.has(sessionID)) return true;
+  if (runtime.forms.has(sessionID) || runtime.permissions.has(sessionID)) return true;
+  // The sweep's Location lists only its own requests; the tracker covers the others.
   try {
     return (await context.permission.list({ sessionID })).length > 0;
   } catch {

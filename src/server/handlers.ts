@@ -5,6 +5,7 @@ import { refKey } from '../refs/ref.js';
 import { dismissLink, mergeLinks, mergeWorkLinks, setDone } from '../refs/store.js';
 import { recognizeLink } from '../refs/work-link.js';
 import type { SuperSessions } from '../rpc.js';
+import { doneFacts } from './done-facts.js';
 import { scanHistory } from './history.js';
 import { linksOf, parseReference, resolveCandidates, resolveRepo } from './links.js';
 import { pullDetailsHandler } from './pull-details.js';
@@ -35,6 +36,8 @@ export function rpcHandlers(
 
     refresh: ({ sessionIDs, force }) =>
       buildViews(runtime, context.session, sessionIDs, { wait: true, force: force === true }),
+
+    'done.facts': ({ sessionIDs }) => doneFacts(runtime, context.session, sessionIDs),
 
     search: (input) => searchSessions(runtime, context.session, input),
 

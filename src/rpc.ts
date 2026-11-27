@@ -38,6 +38,17 @@ export const sessionRefViewSchema = z.strictObject({
   failed: z.array(providerIdSchema).optional()
 });
 
+/** What the Done rule needs beyond a session's refs (see `done.facts`). */
+export const doneFactSchema = z.strictObject({
+  /** A permission request or a question waits on the session. */
+  pending: z.boolean(),
+  /**
+   * When the user last wrote; absent when they never did, null when the history since the last
+   * compaction cannot tell or the read failed, which keeps the session out of Done.
+   */
+  lastUserMessageAt: z.number().nullable().optional()
+});
+
 export const searchScopeSchema = z.union([
   z.strictObject({ type: z.literal('all') }),
   z.strictObject({ type: z.literal('directory'), directory: z.string() }),
@@ -125,6 +136,7 @@ export type WorktreeDecision = z.output<typeof worktreeDecisionSchema>;
 
 export type Availability = z.output<typeof availabilitySchema>;
 export type SessionRefView = z.output<typeof sessionRefViewSchema>;
+export type DoneFact = z.output<typeof doneFactSchema>;
 export type SearchScope = z.output<typeof searchScopeSchema>;
 export type SearchMatch = z.output<typeof searchMatchSchema>;
 export type SearchHit = z.output<typeof searchHitSchema>;
@@ -156,6 +168,14 @@ export const SuperSessions = Rpc.define({
     refresh: {
       input: z.strictObject({ sessionIDs, force: z.boolean().optional() }),
       output: z.record(z.string(), sessionRefViewSchema)
+    },
+    /**
+     * Pending permissions and questions and the last user message of each session, for the Done
+     * rule. Answers from the server's own trackers, so asking never boots another Location.
+     */
+    'done.facts': {
+      input: z.strictObject({ sessionIDs }),
+      output: z.record(z.string(), doneFactSchema)
     },
     search: {
       input: z.strictObject({

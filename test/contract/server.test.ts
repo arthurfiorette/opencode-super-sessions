@@ -15,6 +15,7 @@ import {
   userPrompt
 } from '../../src/host/events.js';
 import { shipsGui } from '../../src/host/gui.js';
+import { createPendingPermissions, isPermissionEvent } from '../../src/host/permissions.js';
 import { pluginRpc, serverPluginMissing } from '../../src/host/rpc.js';
 import {
   activityTime,
@@ -249,7 +250,7 @@ test('message.list returns the transcript shapes the preview draws, in pages tha
   const shell = history.find((entry) => entry.type === 'shell');
   assert.match(shell?.type === 'shell' ? shell.output : '', new RegExp(SHELL_OUTPUT));
 
-  // The Done rule reads the last user message through the type filter.
+  // `sessionPrompts` pages the user's messages through the type filter.
   const users = await host.message.list({ sessionID, order: 'desc', limit: 1, type: 'user' });
   assert.deepEqual(
     users.data.map((message: SessionMessageInfo) => message.id),
@@ -397,6 +398,47 @@ test('a plugin metadata write leaves activityTime alone, and a prompt moves it',
   );
   assert.equal(activityTime(stamped.after), stamped.before.time.updated);
   await prompt(fresh.id, activityTime(stamped.after));
+});
+
+// Done and auto-archive leave a session that waits on the user alone. The server reads pending
+// permissions from the events, since `context.permission.list` sees only its own Location's.
+test('permission events open a request for its session, and its reply closes it', async () => {
+  const location = { directory: directory('permission') };
+  // A session rule that asks, since the default agent allows everything.
+  const session = await host.sessions.create({
+    location,
+    permissions: [{ action: 'contract-permission', resource: '*', effect: 'ask' }]
+  });
+  // Listing the Location's plugins activates it, which sets the probe up.
+  await until(
+    () => host.plugin.list({ location }),
+    (plugins) => plugins.data.length > 0
+  );
+  assert.ok(probe);
+  const pending = createPendingPermissions();
+  const asking = probe.permission.assert({
+    sessionID: session.id as never,
+    action: 'contract-permission',
+    resources: ['contract']
+  });
+  const asked = await event('permission.asked', (item) => item.data.sessionID === session.id);
+  assert.ok(isPermissionEvent(asked));
+  pending.apply(asked);
+  assert.equal(pending.has(session.id), true);
+
+  // The request lives in the probe's Location, which may not be the session's.
+  await probe.permission.reply({
+    sessionID: session.id as never,
+    requestID: asked.data.id,
+    decision: 'once'
+  });
+  await asking;
+  const replied = await event(
+    'permission.replied',
+    (item) => item.data.requestID === asked.data.id
+  );
+  pending.apply(replied);
+  assert.equal(pending.has(session.id), false);
 });
 
 test('deleting a session publishes session.deleted with its id', async () => {
