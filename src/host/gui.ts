@@ -54,31 +54,118 @@ export const HEADER_SLOT = 'session.header' satisfies keyof SlotMap;
 export const DIALOG_FRAME = '[data-component="dialog-v2"][data-size="x-large"]';
 
 /**
- * The horizontal padding of a plugin dialog's content: the `px-4` of its `[data-scrollable]`
- * wrapper (packages/app/src/runtime/plugin/ui.tsx:156 at v2.4.2). The browser's rail starts at it
- * and its preview ends at it, so both sides of the dialog match (src/gui/browser/browser.css).
+ * The surfaces of the app's main window, which the browser dialog takes: the window's shell is
+ * `--v2-background-bg-deep` (packages/app/src/shell/shell.tsx:216 at v2.4.2), and the session
+ * content sits on it in an island of `--v2-background-bg-base` with 10px corners and the raised
+ * elevation, whose first ring is the island's hairline (`SessionPanelFrame` in
+ * packages/app/src/session/session-frame.tsx:20, the side region in
+ * packages/app/src/runtime/plugin/side-region.tsx:112). The dialog's header, footer and preview
+ * sit on the shell color, and its list in the island (src/gui/browser/browser.css). CSS cannot
+ * import this constant; it records the assumption. When a variable goes, the dialog and the list
+ * draw on the dialog's own background.
  */
-export const DIALOG_PADDING = 16;
+export const WINDOW_SURFACES = {
+  shell: '--v2-background-bg-deep',
+  island: '--v2-background-bg-base',
+  islandRadius: 10,
+  islandElevation: '--v2-elevation-raised'
+} as const;
 
 /**
- * The surface the browser's project rail and preview column take, a step off the dialog's
- * background in both modes: `--v2-background-bg-layer-01`, which the composer takes in dark mode
- * (packages/app/src/composer/editor/editor.css:87-95 at v2.4.2), against the x-large dialog's
- * `--v2-background-bg-base` (packages/ui/src/overlays/dialog/dialog.css:175). Layer-01 is
- * grey-100 over the dialog's grey-50 in light mode and grey-1000 over its grey-1100 in dark mode
- * (packages/ui/src/styles/tokens/theme.css:6-8, 151-153). CSS cannot import this constant; it
- * records the assumption. When the variable goes, the columns take the dialog's background.
- */
-export const COMPOSER_SURFACE = '--v2-background-bg-layer-01';
-
-/**
- * The markup of the app's text input, which `ui.TextInput` renders and whose stylesheet fixes its
- * width at 280px inside the `components` cascade layer
- * (packages/ui/src/forms/text-input/text-input.css:5 at v2.4.2). `ui.TextInput` takes no class,
- * so the browser's CSS widens its search field through this selector. When the markup changes,
- * the field keeps the app's width.
+ * The markup of the app's text input (`TextInput` in
+ * packages/ui/src/forms/text-input/text-input.tsx:57-79 at v2.4.2), which the app's stylesheet
+ * draws in its `components` cascade layer (text-input.css:4-140): a
+ * `[data-component="text-input-v2"]` with `data-leading-icon`, around a
+ * `[data-slot="text-input-v2-value"]` holding a `text-input-v2-leading-icon` and the
+ * `text-input-v2-input`. `ui.TextInput` has no leading icon, so the browser's search field
+ * renders this markup itself with the app's magnifying glass, and takes the look of the Settings
+ * screen's filter fields such as "Search models" (`SettingsSearchField` in
+ * packages/app/src/settings/search-field.tsx:61-69, `.settings-filter-search` in
+ * packages/app/src/settings/settings.css:1400-1420): 36px, filled with layer-02 at 60%, no
+ * shadow, the icon 16px in. That stylesheet loads only with the Settings screen, so browser.css
+ * states its values. When the markup changes, the field draws as a plain input.
  */
 export const TEXT_INPUT = '[data-component="text-input-v2"]';
+
+/**
+ * The app's button markup (`Button` in packages/ui/src/actions/button/button.tsx:35-51 at
+ * v2.4.2): a `button[data-component="button-v2"]` with `data-size` and `data-variant`, drawn by
+ * button.css in the `components` layer. The browser's project picker is the Settings server
+ * switcher's trigger (packages/app/src/settings/servers/switcher.tsx:22-33): a small outline
+ * button with an icon, a name and a muted chevron, 6px gaps and insets and at most 240px wide
+ * (settings.css:670-702). `ui.Button` has no outline variant and `ui.Select` shows text only, so
+ * the picker renders this markup itself. When it changes, the picker draws as a plain button.
+ */
+export const BUTTON = '[data-component="button-v2"]';
+
+/**
+ * The app's menu markup, which packages/ui/src/navigation/menu/menu.css:6-210 at v2.4.2 draws: a
+ * `[data-component="menu-v2-content"]` surface of layer-01 with 6px corners and the floating
+ * elevation (select.css:9-19 for the select's list), `[data-component="menu-v2-item"]` rows of
+ * 28px that take `data-highlighted` and `data-checked`, `menu-v2-item-content` and
+ * `menu-v2-item-indicator` inside, `[data-slot="menu-v2-group-label"]` headings and
+ * `[data-slot="menu-v2-separator"]` lines. `ui.Menu` lists text and icons only, so the project
+ * picker's list, with avatars, folders and counts, renders this markup itself in the dialog. When
+ * it changes, the list draws unstyled.
+ */
+export const MENU = '[data-component="menu-v2-content"]';
+
+/**
+ * The look of the app's segmented control (packages/ui/src/navigation/segmented-control/
+ * segmented-control.css at v2.4.2): a 28px track of layer-01 with a 0.5px ring of the base border
+ * and 6px corners, 13px muted items at weight 440, the pressed one on the base background with a
+ * 0.5px ring of the strong border. Only the app's stories render it, so its stylesheet may not be
+ * loaded; the browser's view tabs state these values in browser.css. CSS cannot import this
+ * constant; it records the assumption.
+ */
+export const SEGMENTED_CONTROL = '[data-slot="segmented-control-v2"]';
+
+/**
+ * The key that opens the browser's project picker, matched by its physical key since `alt+p`
+ * types `π` on macOS. The app binds no command to it (its `alt` keys are `alt+arrowup` and
+ * `alt+arrowdown`, packages/app/src/shell/titlebar/tab-strip.tsx:64-66 at v2.4.2; the macOS menu
+ * has only Option+Up and Option+Down, packages/app/src/shell/commands/desktop-menu.ts:250-256),
+ * and its keymap runs no command while a dialog is open
+ * (packages/app/src/shell/commands/command.tsx:437).
+ */
+export const PICKER_KEY = { code: 'KeyP', chord: 'alt+p' } as const;
+
+/** The copy {@link relativeTime} reads, in the app's words (packages/app/src/runtime/i18n/en.ts:829-832). */
+export interface RelativeTimeCopy {
+  readonly justNow: string;
+  readonly minutes: (count: number) => string;
+  readonly hours: (count: number) => string;
+  readonly days: (count: number) => string;
+}
+
+/**
+ * A session's age as the app's session search writes it (`getRelativeTime` in
+ * packages/app/src/shell/time.ts:9-31 at v2.4.2, drawn by
+ * packages/app/src/shell/commands/dialog.tsx:292): "Just now" under a minute, then `5m ago`,
+ * `3h ago` and `2d ago`, and from a week on the date, with the year only when it is not this
+ * year's.
+ */
+export function relativeTime(
+  then: number,
+  now: number,
+  copy: RelativeTimeCopy,
+  locale: string | undefined
+): string {
+  const seconds = Math.floor((now - then) / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  if (seconds < 60) return copy.justNow;
+  if (minutes < 60) return copy.minutes(minutes);
+  if (hours < 24) return copy.hours(hours);
+  if (days < 7) return copy.days(days);
+  const date = new Date(then);
+  return new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'short',
+    year: date.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric'
+  }).format(date);
+}
 
 /** The parts of a DOM `KeyboardEvent` {@link claimCommandKeys} uses; this file also builds without DOM types. */
 interface KeyEvent {
@@ -129,18 +216,6 @@ export function claimCommandKeys<E extends KeyEvent>(
   target.addEventListener('keydown', listener, { capture: true });
   return () => target.removeEventListener('keydown', listener, { capture: true });
 }
-
-/**
- * The keys that move along the browser's project rail, and why the app does not run its own
- * command on them while the browser is open. The app binds `alt+arrowup` and `alt+arrowdown` to
- * the previous and next session tab (packages/app/src/shell/titlebar/tab-strip.tsx:64 at
- * v2.4.2), but its keymap runs no command while a dialog is open
- * (packages/app/src/shell/commands/command.tsx:437). On macOS the Go menu gives the same keys as
- * Option+Up and Option+Down (packages/app/src/shell/commands/desktop-menu.ts:250), and macOS hands
- * the menu only the keys the page leaves unhandled (packages/desktop/src/renderer/platform/menu.ts:26),
- * so the browser calls `preventDefault` on them.
- */
-export const RAIL_KEYS = { previous: 'alt+arrowup', next: 'alt+arrowdown' } as const;
 
 /** The `+` menu before the side panel's tabs, where `MenuItem` adds entries (registries.ts:105). */
 export const PANEL_MENU = 'session.panel';
@@ -457,3 +532,31 @@ export function projectLook(project: {
  * records the assumption. When the markup changes, the avatar shows its letter unstyled.
  */
 export const PROJECT_AVATAR = '[data-component="project-avatar-v2"]';
+
+/**
+ * The rows of the app's session search, which the browser's rows follow (`PaletteSessionRow` in
+ * packages/app/src/shell/commands/dialog.tsx:224-317 at v2.4.2, with
+ * packages/app/src/shell/commands/dialog.css:44-235): 32px rows with 8px and 6px insets, the
+ * project avatar, a 13px title at weight 440 taking at most 60% beside a faint description, an
+ * 11px muted age at the end where a running session shows the activity ring instead, the
+ * overlay hover color on the active row, and 12px faint group headers with 10px above. The
+ * description of a row of another machine reads `{{project}} · {{server}}`
+ * (`palette.session.location` in packages/app/src/runtime/i18n/en.ts:141, applied in
+ * packages/app/src/shell/commands/session-search.tsx:51-57). The palette's stylesheet loads with
+ * the palette, so browser.css states these values. CSS cannot import this constant; it records
+ * the assumption.
+ */
+export const PALETTE_ROW = '.command-palette-row';
+
+/**
+ * The rows of the app's sidebar, which the side tab's list follows: the "Sessions" header, a 28px
+ * line of 13px medium muted text 8px in with its actions at the end
+ * (packages/app/src/shell/titlebar/sidebar-customized.tsx:675-678 at v2.4.2), and session rows
+ * of 28px with 6px corners, 13px medium titles faint until current, the current one on the
+ * pressed overlay with `aria-current="page"`, an 11px faint label, and a 16px status slot with the
+ * 14px activity ring or the 6px unread dot, which the current row does not show
+ * (packages/app/src/shell/titlebar/project-session-row.tsx:134-187, tab-nav.css:146-160). Those
+ * rules are Tailwind classes in the app's markup, so side.css states them. CSS cannot import this
+ * constant; it records the assumption.
+ */
+export const SIDEBAR_ROW = '[data-titlebar-tab-action]';

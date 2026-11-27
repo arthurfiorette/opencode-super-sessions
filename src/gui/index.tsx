@@ -34,8 +34,8 @@ export default Plugin.define({
     const refs = createRefsStore(createForgeQueue());
     reportPresence(ctx);
     // Every server's browser model, made on first use by the dialog or the side tab and kept for
-    // the window's life, so both draw the cached lists at once. The rail's first pick, until a
-    // view picks, is the user's last, else the `scope` option.
+    // the window's life, so both draw the cached lists at once. The dialog's first project pick,
+    // until it picks, is the user's last, else the `scope` option.
     const machines = createMachines(
       ctx,
       opensOnAll(

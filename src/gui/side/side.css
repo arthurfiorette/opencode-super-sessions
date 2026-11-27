@@ -1,5 +1,5 @@
-/* The Super Sessions side tab: the routed session's work at the top, then the session list with
-   the project rail down its left edge. The rows, groups, rail and Work list take the browser's and
+/* The Super Sessions side tab: the routed session's work at the top, then the routed project's
+   session list. The rows, groups and Work list take the browser's and
    the status rules (../browser/browser.css, ../status/status.css); this file lays the tab out in
    a narrow column and sets the variables those rules read. */
 
@@ -116,11 +116,6 @@
   display: flex;
   flex: 1;
   min-height: 0;
-}
-
-/* The browser's rail, flush on the tab's left edge and full height, with square corners. */
-.ss-side .ss-rail {
-  border-radius: 0;
 }
 
 .ss-side-main {

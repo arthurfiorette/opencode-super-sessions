@@ -13,11 +13,17 @@ import {
 import { rpcOn } from '../server.js';
 import type { Machines } from './machines.js';
 import type { BrowserPrefs } from './prefs.js';
-import { ALL_KEY, type Rail, type RailMachine, type RailTile, selectionKey } from './rail.js';
+import {
+  ALL_KEY,
+  type ProjectEntry,
+  type ProjectSource,
+  type Projects,
+  pickKey
+} from './projects.js';
 import type { BrowserView } from './view.js';
 
 // The session list both browser views draw, the dialog and the side tab: its keyed groups, the
-// selection, the rail pick and the row actions, over the machines' shared models.
+// selection, the project pick and the row actions, over the machines' shared models.
 
 export type { BrowserView };
 
@@ -309,66 +315,64 @@ export function RowButtons(props: RowButtonsProps) {
 }
 
 /**
- * What the rail reads of the machines: every listed server's model, and the running and unread
- * state of a session by its own server's live data.
+ * What a session shows at its end by its own server's live data: waiting on a permission or a
+ * question, running, unread, or nothing.
  */
-export function railSources(machines: Machines) {
-  const live = (server: ServerRef, session: SessionInfo): SessionInfo =>
-    server.data.session.get(session.id) ?? session;
-  return {
-    machines: () =>
-      machines.models().map(
-        (model): RailMachine => ({
-          server: model.server,
-          every: model.everyActive,
-          want: model.wantEveryActive,
-          active: () => (model.data.status === 'ready' ? model.data.active : undefined)
-        })
-      ),
-    running: (server: ServerRef, session: SessionInfo) =>
-      isBusy(live(server, session)) || (machines.model(server.id)?.isRunning(session.id) ?? false),
-    unread: (server: ServerRef, session: SessionInfo) => {
-      const sessions = server.data.session;
-      return (
-        isUnread(live(server, session)) ||
-        (sessions.permission.list(session.id)?.length ?? 0) > 0 ||
-        (sessions.form.list(session.id)?.length ?? 0) > 0
-      );
-    }
-  };
+export function sessionStatus(machines: Machines, server: ServerRef, session: SessionInfo) {
+  const live = server.data.session.get(session.id) ?? session;
+  const sessions = server.data.session;
+  if (
+    (sessions.permission.list(session.id)?.length ?? 0) > 0 ||
+    (sessions.form.list(session.id)?.length ?? 0) > 0
+  ) {
+    return 'waiting' as const;
+  }
+  if (isBusy(live) || (machines.model(server.id)?.isRunning(session.id) ?? false)) {
+    return 'running' as const;
+  }
+  return isUnread(live) ? ('unread' as const) : undefined;
+}
+
+/** What the projects read of the machines: every listed server's model's lists. */
+export function projectSources(machines: Machines) {
+  return () =>
+    machines.models().map(
+      (model): ProjectSource => ({
+        server: model.server,
+        every: model.everyActive,
+        want: model.wantEveryActive,
+        active: () => (model.data.status === 'ready' ? model.data.active : undefined),
+        archived: () => (model.data.status === 'ready' ? model.data.archived : undefined)
+      })
+    );
 }
 
 /**
- * The rail pick of a view: the tile shown as picked, and picking one, which every view follows.
- * A pick outlasts the window's views: `all`, or `project`, which the next open reads as the
- * routed project. Only a pick writes, so the old `allProjects` is read once and dropped here.
- * `picked` runs after each new pick, for the view to reset its selection.
+ * The dialog's project pick: the key shown as picked, and picking a project or All. A pick
+ * outlasts the dialog: `all`, or `project`, which the next open reads as the routed project.
+ * Only a pick writes, so the older `rail` and `allProjects` are read once and dropped here.
+ * `picked` runs after each new pick, for the dialog to reset its selection.
  */
-export function createRailPick(
+export function createPick(
   machines: Machines,
-  rail: Rail,
+  projects: Projects,
   prefs: Persisted<BrowserPrefs, BrowserPrefs>,
   picked: () => void
 ) {
-  const pickedTile = () => selectionKey(machines.pick(), rail.routedKey());
-  const pickTile = (tile: RailTile) => {
-    if (tile.key === pickedTile()) return;
-    machines.select(tile.selection);
+  const pickedKey = () => pickKey(machines.pick(), projects.routedKey());
+  /** Picks a project, or every project for undefined. */
+  const pick = (project: ProjectEntry | undefined) => {
+    if ((project?.key ?? ALL_KEY) === pickedKey()) return;
+    machines.select(project === undefined ? { type: 'all' } : project.selection);
     picked();
     prefs.update((draft) => {
-      draft.rail = tile.key === ALL_KEY ? 'all' : 'project';
+      draft.pick = project === undefined ? 'all' : 'project';
+      delete draft.rail;
       delete draft.allProjects;
       return undefined;
     });
   };
-  /** Picks the tile `delta` places along the rail, across machines, stopping at its ends. */
-  const moveTile = (delta: number) => {
-    const tiles = rail.tiles();
-    const index = tiles.findIndex((tile) => tile.key === pickedTile());
-    const next = tiles[Math.min(tiles.length - 1, Math.max(0, (index === -1 ? 0 : index) + delta))];
-    if (next !== undefined) pickTile(next);
-  };
-  return { pickedTile, pickTile, moveTile };
+  return { pickedKey, pick };
 }
 
 /** Props of {@link ListBody}. */

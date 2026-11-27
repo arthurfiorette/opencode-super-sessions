@@ -396,8 +396,22 @@ test('without the server plugin, sessions still list, with a note', async () => 
   assert.equal(row('ses_busy').querySelector('[aria-label="Mark Done"]'), null);
 });
 
-const tile = (key) => document.querySelector(`[data-tile="${key}"]`);
-const runningBadge = (key) => tile(key)?.querySelector('.ss-rail-running')?.textContent;
+/** The picker's row of a project, by its key on its server (`project:<id>`), or All. */
+const option = (key) =>
+  [...document.querySelectorAll('[data-option]')].find(
+    (node) => node.dataset.option === key || node.dataset.option.endsWith(`\n${key}`)
+  );
+/** Opens the project picker from its trigger, if it is closed. */
+const openPicker = () => {
+  const trigger = document.querySelector('.ss-picker-trigger');
+  if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+};
+/** Picks a project, or All, through the picker. */
+const pickProject = (key) => {
+  openPicker();
+  option(key).click();
+};
+const runningBadge = (key) => option(key)?.querySelector('.ss-picker-running')?.textContent;
 
 test('a picked project shows at once from memory, then its whole list merges in', async () => {
   // An older session of the other project, past what the rail's list of every project holds.
@@ -425,10 +439,12 @@ test('a picked project shows at once from memory, then its whole list merges in'
       .filter((call) => call.name === 'session.list')
       .map((call) => [call.input.archived, call.input.project, call.input.subpath]);
 
-  // The routed session's project, with every worktree and subfolder: no subpath.
-  await until(() => tile('project:other'), 'the other project tile');
+  // The routed session's project, with every worktree and subfolder: no subpath. `alt+p` opens
+  // the picker; on macOS it types `π`, so the browser matches the key by its code.
+  press({ key: 'π', code: 'KeyP', altKey: true });
+  await until(() => option('project:other'), 'the other project');
   assert.deepEqual(listed(), ['ses_busy', 'ses_plain']);
-  assert.equal(tile('project:proj').getAttribute('aria-pressed'), 'true');
+  assert.equal(option('project:proj').getAttribute('aria-selected'), 'true');
   assert.ok(filters().some((item) => item.join() === [false, 'proj', undefined].join()));
 
   // Records every list loader drawn from the click on; the list must never fall back to it.
@@ -438,7 +454,7 @@ test('a picked project shows at once from memory, then its whole list merges in'
   });
   observer.observe(document.body, { childList: true, subtree: true });
   try {
-    tile('project:other').click();
+    pickProject('project:other');
     // On screen before the project's own list answers.
     await until(() => listed().join() === 'ses_other', 'the other project from memory');
     await until(
@@ -455,7 +471,7 @@ test('a picked project shows at once from memory, then its whole list merges in'
     observer.disconnect();
   }
 
-  tile('all').click();
+  pickProject('all');
   await until(() => listed().length >= 3, 'every project');
   assert.deepEqual(listed().sort(), ['ses_busy', 'ses_other', 'ses_plain']);
   await until(
@@ -469,37 +485,18 @@ test('a picked project shows at once from memory, then its whole list merges in'
 
   // A project visited a moment ago comes back from its cache, without a request.
   const asked = filters().length;
-  tile('project:other').click();
+  pickProject('project:other');
   await until(() => listed().join() === 'ses_other,ses_other_old', 'the cached project');
   assert.equal(filters().length, asked);
 });
 
-test('a project tile counts its running sessions, and All counts them all', async () => {
+test("the picker counts each project's running sessions", async () => {
   await openBrowser(undefined, { running: ['ses_other', 'ses_plain', 'ses_busy'] });
 
-  await until(() => runningBadge('project:other'), 'the badges');
+  openPicker();
+  await until(() => runningBadge('project:other'), 'the counts');
   assert.equal(runningBadge('project:other'), '1');
   assert.equal(runningBadge('project:proj'), '2');
-  assert.equal(runningBadge('all'), '3');
-});
-
-test('alt+down picks the next project on the rail, alt+up the one before', async () => {
-  await openBrowser();
-  await until(() => tile('project:other'), 'the rail');
-  // Newest activity first: the routed project, then the other one. One machine, no divider.
-  assert.deepEqual(
-    [...document.querySelectorAll('[data-tile]')].map((node) => node.dataset.tile),
-    ['all', 'project:proj', 'project:other']
-  );
-  assert.equal(document.querySelector('.ss-rail-machine'), null);
-
-  press({ key: 'ArrowDown', altKey: true });
-  await until(() => listed().join() === 'ses_other', 'the next project');
-  assert.equal(tile('project:other').getAttribute('aria-pressed'), 'true');
-  // The rows move with plain arrows only, so the selection starts over on the first row.
-  assert.equal(row('ses_other').getAttribute('aria-selected'), 'true');
-  press({ key: 'ArrowUp', altKey: true });
-  await until(() => listed().join() === 'ses_busy,ses_plain', 'the project before');
 });
 
 const MODEL = { providerID: 'acme', id: 'large' };
@@ -646,15 +643,17 @@ async function openOnBoth(windowsHandlers) {
 test('All lists every machine, and a remote row opens and archives on its own server', async () => {
   const { local, windows } = await openOnBoth();
 
-  // The rail heads each machine's projects with its name; the remote row names its machine and
-  // the local one does not, as the app's sidebar labels them.
-  await until(() => tile('project:winproj'), 'the Windows project');
+  // The picker heads each machine's projects with its full name; the remote row names its
+  // machine and the local one does not, as the app's sidebar labels them.
+  openPicker();
+  await until(() => option('project:winproj'), 'the Windows project');
   assert.deepEqual(
-    [...document.querySelectorAll('.ss-rail-machine, [data-tile]')].map(
-      (node) => node.dataset.machine ?? node.dataset.tile
+    [...document.querySelectorAll('.ss-picker-machine, [data-option]')].map(
+      (node) => node.dataset.machine ?? node.dataset.option.split('\n').at(-1)
     ),
     ['all', 'sidecar', 'project:proj', 'project:other', WINDOWS_ID, 'project:winproj']
   );
+  document.querySelector('.ss-picker-trigger').click();
   assert.equal(row('ses_win').querySelector('.ss-row-machine').textContent, 'Windows');
   assert.equal(row('ses_busy').querySelector('.ss-row-machine'), null);
   await until(() => row('ses_win').querySelector('.ss-ref'), 'the remote ref line');

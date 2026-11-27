@@ -2,16 +2,16 @@ import type { Context, ServerRef } from '@opencode/plugin/gui';
 import { createMemo, createRoot, createSignal, getOwner, onCleanup } from 'solid-js';
 import type { SearchScope } from '../../rpc.js';
 import { type BrowserModel, createBrowserModel, type ListTarget } from './model.js';
-import type { RailSelection } from './rail.js';
+import type { ProjectSelection } from './projects.js';
 
 // Every server the window lists, each a machine of the browser, with its browser model. The
 // Desktop sidebar lists the sessions of every server it is connected to, grouped by machine
 // (src/host/gui.ts: MACHINE_ICON), and so do the browser views: All lists every connected
-// server's sessions, and the rail groups each server's projects under its name.
+// server's sessions, and the project picker groups each server's projects under its name.
 
 /**
- * What the rail picks across machines: every machine's sessions, the routed session's project on
- * its own server, or another project or directory on one server.
+ * What the project picker picks across machines: every machine's sessions, the routed session's
+ * project on its own server, or another project or directory on one server.
  */
 export type MachinePick =
   | { readonly type: 'all' }
@@ -25,7 +25,7 @@ export interface Origin {
   readonly directory: string;
 }
 
-/** What a view lists: the rail's pick over the routed session, if any. */
+/** What a view lists: a pick over the routed session, if any. */
 export interface MachinesTarget {
   readonly origin: Origin | undefined;
   readonly pick: MachinePick;
@@ -33,7 +33,7 @@ export interface MachinesTarget {
 
 /**
  * Orders the listed servers: the app's own first, then other loopback connections, then the
- * rest as the app lists them, so the rail and All start with this machine's sessions.
+ * rest as the app lists them, so the picker and All start with this machine's sessions.
  */
 function machineOrder(servers: readonly ServerRef[]): ServerRef[] {
   const rank = (server: ServerRef) => (server.builtin ? 0 : server.local ? 1 : 2);
@@ -43,7 +43,7 @@ function machineOrder(servers: readonly ServerRef[]): ServerRef[] {
 /**
  * The window's machines. Call it once in setup, under the plugin's owner: each server's model
  * is made on first use and kept for the window's life, so a reopen draws its cached lists at
- * once. `pick` is the rail's first pick.
+ * once. `pick` is the dialog's first project pick.
  */
 export function createMachines(ctx: Pick<Context, 'servers'>, pick: MachinePick) {
   // Models are made from reactive reads, outside any owner the window keeps, so each gets a root
@@ -88,7 +88,7 @@ export function createMachines(ctx: Pick<Context, 'servers'>, pick: MachinePick)
    */
   const all = () => servers().map(modelFor);
 
-  // The rail's pick, one for every view: the dialog and the side tab always list the same one.
+  // The dialog's project pick. The side tab always lists the routed project.
   const [picked, setPicked] = createSignal<MachinePick>(pick);
   // Counts the views that went away. A view that stays syncs and searches again, since the one
   // that left may have listed or searched for something else.
@@ -121,7 +121,7 @@ export function createMachines(ctx: Pick<Context, 'servers'>, pick: MachinePick)
    */
   const targetFor = (model: BrowserModel, target: MachinesTarget): ListTarget => {
     const { pick: current, origin } = target;
-    const selection: RailSelection =
+    const selection: ProjectSelection =
       current.type === 'project'
         ? { type: 'project', project: current.project, subpath: current.subpath }
         : current.type === 'directory'
@@ -145,9 +145,9 @@ export function createMachines(ctx: Pick<Context, 'servers'>, pick: MachinePick)
     model: byId,
     listed,
     targetFor,
-    /** The rail's pick every view lists. */
+    /** The dialog's project pick. */
     pick: picked,
-    /** Picks a rail tile for every view. */
+    /** Picks a project for the dialog. */
     select: (next: MachinePick) => setPicked(next),
     /** Moves each time a view goes away; see `createBrowserView` in ./view.ts. */
     released,

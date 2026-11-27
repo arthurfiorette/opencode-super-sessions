@@ -9,10 +9,9 @@ export const browserEn = {
   'browser.search.placeholder': 'Search sessions, #numbers, PR and issue titles',
   'browser.search.pulls': 'Search pull requests by #number or title',
   'browser.search.failed': 'The search failed. The list shows title matches only.',
-  'browser.rail': 'Projects',
-  'browser.rail.all': 'All projects',
-  'browser.rail.running': '{{count}} running',
-  'browser.rail.unread': 'unread',
+  'browser.picker': 'Project',
+  'browser.picker.all': 'All projects',
+  'browser.projects.running': '{{count}} running',
   'browser.empty.active': 'No sessions',
   'browser.empty.done': 'No Done sessions',
   'browser.empty.archived': 'No archived sessions',
@@ -29,7 +28,6 @@ export const browserEn = {
     'The opencode-super-sessions server plugin is not installed on {{machines}}, so their sessions show without pull requests and issues.',
   'browser.machine.failed': 'Could not load the sessions on {{machine}}.',
   'browser.machine.offline': '{{machine}} is not connected, so its sessions are not listed.',
-  'browser.machine.offlineTitle': '{{machine}}, not connected',
   'browser.group.Today': 'Today',
   'browser.group.Running': 'Running',
   'browser.group.In messages': 'In messages',
@@ -71,5 +69,5 @@ export const browserEn = {
   'browser.hint.restore': 'restore',
   'browser.hint.done': 'done',
   'browser.hint.web': 'open PR',
-  'browser.hint.projects': 'project'
+  'browser.hint.project': 'project'
 } as const;

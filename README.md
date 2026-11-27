@@ -96,8 +96,8 @@ Sessions that match only in their message text appear a moment later, in an `In 
 The same plugin adds to OpenCode Desktop 2.4:
 
 - the session browser as a dialog. Press `cmd+shift+s` (`ctrl+shift+s` on Windows and Linux) or run "Super Sessions: Browse sessions" from the command palette. It has the same views and search as the terminal browser, and shows the selected session's context usage, work and latest messages on the right. The `preview` and `previewWidth` options apply to it too.
-- a project rail down the browser's left edge. The top tile lists every project, and each project below it, in its sidebar icon, lists that project's sessions in all its worktrees and subfolders. Tiles show how many sessions run and a dot for unread ones and for sessions waiting on a permission or a question. When two projects share a name, their tooltips add the folder each one is in. The browser opens on the open session's project, or on all projects when you last picked that tile or no session is open.
-- sessions from every machine Desktop is connected to, grouped by machine as in Desktop's sidebar. The rail lists each machine's projects under its name, and the top tile lists the sessions of all of them, with the machine's name at the end of each row from another machine. A session opens, archives and is marked Done on its own machine. Pull request and issue status, Done and message search need the opencode-super-sessions server plugin installed on that machine. Without it, the machine's sessions still list, with a note naming the machine. Use the same plugin version on every machine. A machine on an older version still sorts its sessions into Done, but asks each session's project for it, which is slower.
+- a project picker in the browser's header. Click it or press `alt+p` to list All projects, then each project with its icon, the folder it is in, how many sessions run and a dot for unread ones and for sessions waiting on a permission or a question. A project lists its sessions in all its worktrees and subfolders. The browser opens on the open session's project, or on all projects when you last picked All or no session is open.
+- sessions from every machine Desktop is connected to, grouped by machine as in Desktop's sidebar. The picker lists each machine's projects under its full name, and All lists the sessions of all of them, with the machine's name at the end of each row from another machine. A session opens, archives and is marked Done on its own machine. Pull request and issue status, Done and message search need the opencode-super-sessions server plugin installed on that machine. Without it, the machine's sessions still list, with a note naming the machine. Use the same plugin version on every machine. A machine on an older version still sorts its sessions into Done, but asks each session's project for it, which is slower.
 - the session's pull requests and issues in the session header, with their state, review and CI. `+N` opens the Super Sessions side tab at the session's work, and hides it again.
 - a Super Sessions tab in the side panel of every session, described below
 - the session's open pull request above the message box, colored by its checks and review, with a menu of its checks
@@ -108,7 +108,7 @@ The tab is pinned first in the side panel's tab strip of every session, so it st
 
 At the top it shows the open session's work: its pull requests with review, CI, stack and failed checks, the issues they close, other issues, links and mentioned refs. You can open, copy, link and unlink work there, and refresh it from GitHub or GitLab. The header folds the section to one line with the pull request count and the main pull request's state, and the fold is remembered. A session that tracks nothing shows one "Nothing linked" line with a link action.
 
-Below that is the session list from the browser: the Active, Done, Archived and Pull requests views with their counts, a search field and the project rail down the left edge. The open session's row is marked. Click a row to open its session in its tab. The side tab stays open in that session when it was open here. Hover a row to archive it or mark it Done. With the list or the search field focused, `up` and `down` select and `enter` opens. While the focus is anywhere in the tab, `alt+s` archives the selected session, `alt+q` marks it Done, and `alt+up` and `alt+down` pick the previous or next project in place of Desktop's previous and next session keys. The list keeps its selection, scroll and search while you switch sessions, so the tab can stand in for Desktop's sidebar while you work in a session.
+Below that is the open session's project from the browser: the Active, Done, Archived and Pull requests views with their counts and a search field. The open session's row is marked. Click a row to open its session in its tab. The side tab stays open in that session when it was open here. Hover a row to archive it or mark it Done. With the list or the search field focused, `up` and `down` select and `enter` opens. While the focus is anywhere in the tab, `alt+s` archives the selected session and `alt+q` marks it Done. The list keeps its selection, scroll and search while you switch sessions, so the tab can stand in for Desktop's sidebar while you work in a session.
 
 Home and new session drafts have no side panel, so the tab is only in sessions.
 
@@ -120,18 +120,18 @@ Pins, rename, delete, fork and peek are only in the terminal browser. Auto-archi
 
 Keys in the browser:
 
-| Key                   | Action                                                                   |
-| --------------------- | ------------------------------------------------------------------------ |
-| `up` / `down`         | Select a session                                                         |
-| `tab` / `shift+tab`   | Next or previous view, from the search box                               |
-| `enter`               | Open the session                                                         |
-| `cmd+enter`           | Open the session in a background tab (`ctrl+enter` on Windows and Linux) |
-| `alt+up` / `alt+down` | Previous or next project on the rail                                     |
-| `alt+s`               | Archive, or restore in the Archived view                                 |
-| `alt+q`               | Mark Done, or not Done                                                   |
-| `alt+g`               | Open the session's pull request, issue or link in the browser            |
-| `f5`                  | Reload the selected session from GitHub or GitLab                        |
-| `esc`                 | Close the browser                                                        |
+| Key                 | Action                                                                   |
+| ------------------- | ------------------------------------------------------------------------ |
+| `up` / `down`       | Select a session                                                         |
+| `tab` / `shift+tab` | Next or previous view, from the search box                               |
+| `enter`             | Open the session                                                         |
+| `cmd+enter`         | Open the session in a background tab (`ctrl+enter` on Windows and Linux) |
+| `alt+p`             | Pick a project                                                           |
+| `alt+s`             | Archive, or restore in the Archived view                                 |
+| `alt+q`             | Mark Done, or not Done                                                   |
+| `alt+g`             | Open the session's pull request, issue or link in the browser            |
+| `f5`                | Reload the selected session from GitHub or GitLab                        |
+| `esc`               | Close the browser                                                        |
 
 The `alt` keys are the keys in those places on a QWERTY keyboard, and the browser shows the letter your layout puts there. `closeTabOnArchive` and `colors` apply in Desktop too.
 

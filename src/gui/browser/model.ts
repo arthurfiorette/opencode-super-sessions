@@ -17,7 +17,7 @@ import {
 } from '../../page/state.js';
 import type { SearchScope } from '../../rpc.js';
 import { rpcAt, rpcOn, serverPluginMissing, warmRpc } from '../server.js';
-import type { RailSelection } from './rail.js';
+import type { ProjectSelection } from './projects.js';
 
 // The browser's data for one server: the TUI's page controller (`src/page/state.ts`) bound to the
 // window's `ServerRef`, as `src/page/model.ts` binds it to the TUI's client and `data`. The model
@@ -31,7 +31,8 @@ const RELOAD_DELAY = 500;
 // Reopening within this window shows the cached lists without asking the server again, as the
 // TUI's browser does (FRESH_FOR in src/page/model.ts).
 const FRESH_FOR = 30_000;
-// Every project's active sessions asked for the rail and the instant switch: the list's own page.
+// Every project's active sessions asked for the project picker and the instant switch: the list's
+// own page.
 const EVERY_LIMIT = 200;
 // The All scope's key among the cached scopes.
 const ALL_SCOPE = JSON.stringify({ type: 'all' } satisfies SearchScope);
@@ -50,10 +51,10 @@ export interface BrowserTarget {
   readonly origin: { readonly id: string; readonly directory: string } | undefined;
 }
 
-/** What a view lists: the rail's pick over the routed session it opened on. */
+/** What a view lists: the picked project over the routed session it opened on. */
 export interface ListTarget {
   readonly origin: BrowserTarget['origin'];
-  readonly selection: RailSelection;
+  readonly selection: ProjectSelection;
 }
 
 /**
@@ -85,10 +86,10 @@ export function createBrowserModel(server: ServerRef) {
     });
     return reading;
   };
-  /** The controller's name for the rail's pick, which it only tells apart as all or one. */
+  /** The controller's name for the pick, which it only tells apart as all or one. */
   const pageScope = (): PageScope => (target.selection.type === 'all' ? 'all' : 'project');
   /**
-   * The rail's pick as the server's list and search take it, read when a request starts: a new
+   * The pick as the server's list and search take it, read when a request starts: a new
    * scope resets the controller, which drops the answers of earlier ones. A project is the whole
    * project, as the sidebar's project group lists it.
    */
@@ -182,8 +183,8 @@ export function createBrowserModel(server: ServerRef) {
   const [store, setStore] = createStore<PageData>(structuredClone(controller.snapshot()));
 
   // Every project's active sessions: the All lists while they show, else one list asked for the
-  // rail, at most once per FRESH_FOR. The rail's tiles count from it, and a switch to a project
-  // shows that project's share of it at once.
+  // project picker, at most once per FRESH_FOR. The picker's projects count from it, and a switch
+  // to a project shows that project's share of it at once.
   const [everyActive, setEveryActive] = createSignal<readonly SessionInfo[]>();
   let everyAt = 0;
   let everyAsking = false;
@@ -264,7 +265,7 @@ export function createBrowserModel(server: ServerRef) {
   };
 
   /**
-   * The rail's pick resolved without a request, when it can be: the routed project needs the
+   * The pick resolved without a request, when it can be: the routed project needs the
    * routed session, which the server may not have synced yet.
    */
   const knownScope = (): SearchScope | undefined => {

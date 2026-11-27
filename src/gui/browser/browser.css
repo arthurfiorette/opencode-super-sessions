@@ -209,8 +209,8 @@
   opacity: 0.5;
 }
 
-/* The rail and the preview sit on a surface a step off the dialog's background in both modes
-   (COMPOSER_SURFACE in src/host/gui.ts), the list on the dialog's own background, set off by the
+/* The preview sits on layer-01, a step off the dialog's background in both modes, the list on
+   the dialog's own background, set off by the
    app's 1px divider color (`--v2-border-border-base`, the hairline of its search dialogs in
    packages/app/src/shell/search-list.css:335). The preview needs room beside the list; a small
    window keeps the list alone. */
@@ -584,119 +584,6 @@
   gap: 6px;
 }
 
-/* The project rail: a 48px column on a surface a step off the dialog's background in both modes
-   (COMPOSER_SURFACE in src/host/gui.ts), with 28px tiles centered in it, 10px
-   of rail on both sides, as Discord's server list. The picked tile has a pill flush on the rail's
-   left edge, outside the tile's centering, and hovering shows a shorter one; the tile itself
-   keeps its own look. The rail starts at the dialog content's left edge, 16px in as the preview
-   ends 16px before the right edge (the `px-4` of the app's dialog content, DIALOG_FRAME in
-   src/host/gui.ts). A long rail scrolls on its own. */
-.ss-rail {
-  --ss-rail-bg: var(--v2-background-bg-layer-01);
-  --ss-rail-tile: 28px;
-  display: flex;
-  flex: 0 0 48px;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
-  width: 48px;
-  min-height: 0;
-  padding: 8px 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  border-right: 1px solid var(--v2-border-border-base);
-  border-radius: 8px 0 0 8px;
-  background: var(--ss-rail-bg);
-}
-
-.ss-rail-tile {
-  position: relative;
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: var(--ss-rail-tile);
-  height: var(--ss-rail-tile);
-  padding: 0;
-  border: none;
-  border-radius: 7px;
-  background: none;
-  color: var(--v2-icon-icon-muted);
-  cursor: pointer;
-}
-
-/* The pill, on the rail's left edge: (48px - 28px) / 2 = 10px left of the tile. */
-.ss-rail-tile::before {
-  position: absolute;
-  top: 50%;
-  left: -10px;
-  width: 4px;
-  height: 0;
-  border-radius: 0 4px 4px 0;
-  background: var(--v2-text-text-base);
-  content: "";
-  transform: translateY(-50%);
-  transition: height 120ms ease;
-}
-
-.ss-rail-tile:hover::before {
-  height: 8px;
-}
-
-.ss-rail-tile[aria-pressed="true"]::before {
-  height: 20px;
-}
-
-:root[data-motion="reduce"] .ss-rail-tile::before {
-  transition: none;
-}
-
-.ss-rail-tile:hover,
-.ss-rail-tile[aria-pressed="true"] {
-  color: var(--v2-text-text-base);
-}
-
-.ss-rail-tile:focus-visible {
-  outline: 2px solid var(--v2-border-border-focus);
-  outline-offset: 2px;
-}
-
-/* A machine's divider over its tiles: a rule, then the server icon and the machine's name in
-   the faint 10px of the sidebar's section labels, cut to the rail's width. */
-.ss-rail-machine {
-  display: flex;
-  flex-shrink: 0;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  box-sizing: border-box;
-  width: 100%;
-  padding: 6px 4px 0;
-  border-top: 1px solid var(--v2-border-border-base);
-  color: var(--v2-text-text-faint);
-  font-size: 10px;
-  line-height: 12px;
-}
-
-.ss-rail-machine [data-icon],
-.ss-rail-machine svg {
-  width: 14px;
-  height: 14px;
-  color: var(--v2-icon-icon-muted);
-}
-
-.ss-rail-machine-name {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ss-rail-machine[data-connected="false"] {
-  opacity: 0.5;
-}
-
 /* A machine whose lists failed, with its Retry, above the other machines' rows. */
 .ss-machine-note {
   display: flex;
@@ -704,58 +591,102 @@
   gap: 8px;
 }
 
-/* The app's avatar at tile size; the sidebar draws it at 16px. */
-.ss-rail [data-component="project-avatar-v2"] {
-  width: var(--ss-rail-tile);
-  height: var(--ss-rail-tile);
+/* The project picker's trigger: the Settings server switcher's small outline button, whose look
+   the app's button stylesheet gives it, with the switcher's 6px insets and gaps, at most 240px
+   wide (BUTTON in src/host/gui.ts). */
+.ss-picker {
+  position: relative;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
-.ss-rail [data-slot="project-avatar-surface"] {
-  border-radius: 7px;
-  font-size: 14px;
+.ss-picker-trigger[data-component="button-v2"] {
+  max-width: 240px;
+  gap: 6px;
+  padding-inline: 6px;
 }
 
-/* The All tile's face: the workspace icon on a tile of its own, the size of an avatar. */
-.ss-rail-face {
-  display: flex;
+.ss-picker-icon {
+  display: inline-flex;
+  flex: 0 0 16px;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
-  border-radius: 7px;
-  background: var(--v2-overlay-simple-overlay-hover);
+  width: 16px;
+  height: 16px;
+  color: var(--v2-icon-icon-muted);
 }
 
-/* The badges sit just outside the tile's corners, each with a ring of the rail's color, so they
-   read as attached to the tile rather than laid over it: the running count at the bottom right,
-   the unread dot at the top right. */
-.ss-rail-running {
+.ss-picker-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-picker-chevron {
+  flex-shrink: 0;
+  color: var(--v2-icon-icon-muted);
+}
+
+/* The picker's list in the app's menu markup (MENU in src/host/gui.ts), under the trigger at its
+   end, 4px off as the app's selects open, scrolling past 60% of the window. */
+.ss-picker-menu[data-component="menu-v2-content"] {
   position: absolute;
-  right: -6px;
-  bottom: -6px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: var(--v2-state-fg-warning);
-  box-shadow: 0 0 0 2px var(--ss-rail-bg);
-  /* Fixed dark text: the warning orange is light in both modes, and the dialog's background
-     turns near-white in light mode. */
-  color: #1a1a1a;
-  font-size: 10px;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  width: max-content;
+  min-width: 260px;
+  max-width: min(420px, 90cqw);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.ss-picker-item [data-slot="menu-v2-item-content"] {
+  min-width: 0;
+}
+
+.ss-picker-item[data-component="menu-v2-item"] {
+  padding-inline-start: 8px;
+}
+
+.ss-picker-item-name {
+  flex-shrink: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The project's folder, the muted description of the app's location rows. */
+.ss-picker-place {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-picker-running {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  line-height: 14px;
-  text-align: center;
 }
 
-.ss-rail-unread {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: var(--v2-text-text-base);
-  box-shadow: 0 0 0 2px var(--ss-rail-bg);
+/* A machine's heading: the app's group label with the sidebar's server icon before the full
+   name. */
+.ss-picker-machine[data-slot="menu-v2-group-label"] {
+  gap: 6px;
+  padding-inline: 8px;
+}
+
+.ss-picker-machine span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

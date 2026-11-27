@@ -9,30 +9,31 @@ import {
   usePlugin
 } from '@opencode/plugin/gui';
 import { createEffect, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js';
-import { openSession, openWebLink, type ProjectLook, RAIL_KEYS } from '../../host/gui.js';
+import { openSession, openWebLink, PICKER_KEY, type ProjectLook } from '../../host/gui.js';
 import { type PageView, VIEWS } from '../../page/state.js';
 import { refUrl } from '../../refs/look.js';
 import { refKey } from '../../refs/ref.js';
 import { rowRefs, workLinks } from '../../refs/summary.js';
 import { type LinkScope, LinkScopeProvider } from '../links.js';
 import { Octicon, type OcticonName } from '../octicons.js';
-import { sessionProjectLook } from '../project-avatar.js';
+import { createProjectLooks } from '../project-looks.js';
 import type { RefsStore } from '../refs-store.js';
 import { serverFor } from '../server.js';
 import {
   createListState,
-  createRailPick,
+  createPick,
   createRowActions,
   ListBody,
   PluginNote,
+  projectSources,
   RowButtons,
-  railSources
+  sessionStatus
 } from './list.js';
 import type { Machines, Origin } from './machines.js';
+import { ProjectPicker } from './picker.js';
 import { type BrowserPrefs, opensOnAll } from './prefs.js';
 import { Preview } from './preview.js';
-import { createRail } from './rail.js';
-import { ProjectRail } from './rail-view.js';
+import { createProjects } from './projects.js';
 import { PullItem, SessionRow } from './row.js';
 import { createBrowserView } from './view.js';
 
@@ -48,15 +49,11 @@ interface BrowserTarget {
 // controller and grouping. Keys, checked against the app's and the text field's (see `onKeyDown`):
 // up and down move, tab and shift+tab switch views, enter opens in a focused tab and mod+enter in
 // the background, alt+s archives or restores, alt+q marks Done or not Done, alt+g opens the
-// session's pull request, issue or link, alt+up and alt+down move along the project rail and f5
-// reloads the session from its forge.
+// session's pull request, issue or link, alt+p opens the project picker and f5 reloads the
+// session from its forge.
 
 /** The dialog's chords without a letter that its hints show. */
-const KEYS = {
-  open: 'enter',
-  previousProject: RAIL_KEYS.previous,
-  nextProject: RAIL_KEYS.next
-} as const;
+const KEYS = { open: 'enter' } as const;
 
 /** The TUI's tab icons (`tabLabel` in src/page/view.ts); Active has none. */
 export const TAB_ICONS: Record<PageView, OcticonName | undefined> = {
@@ -79,7 +76,7 @@ function previewShareOf(value: unknown): number {
 }
 
 /** What an `alt` chord does. */
-type AltAction = 'archive' | 'done' | 'web';
+type AltAction = 'archive' | 'done' | 'web' | 'project';
 
 /**
  * The `alt` chords by physical key. On macOS `alt` turns a letter into another character
@@ -89,14 +86,16 @@ type AltAction = 'archive' | 'done' | 'web';
 const ALT_CODES: Record<string, AltAction> = {
   KeyS: 'archive',
   KeyQ: 'done',
-  KeyG: 'web'
+  KeyG: 'web',
+  [PICKER_KEY.code]: 'project'
 };
 
 /** The physical key of each `alt` chord: the inverse of {@link ALT_CODES}. */
 const ALT_KEYS: Record<AltAction, string> = {
   archive: 'KeyS',
   done: 'KeyQ',
-  web: 'KeyG'
+  web: 'KeyG',
+  project: PICKER_KEY.code
 };
 
 /**
@@ -178,15 +177,14 @@ interface SessionBrowserProps {
   readonly close: () => void;
 }
 
-/** The dialog's content: the project rail, tabs, search, the list and the preview. */
+/** The dialog's content: the header with the project picker, the list and the preview. */
 function SessionBrowser(props: SessionBrowserProps) {
   const ctx = usePlugin();
   const target = untrack(() => props.target);
   const home = target.origin === undefined;
   const machines = untrack(() => props.machines);
-  // The rail's pick, which every view shares: every project on Home, where no project is
-  // routed, else the user's last pick, read once per open. A pick of a project reopens on the
-  // routed session's project.
+  // The project pick: every project on Home, where no project is routed, else the user's last
+  // pick, read once per open. A pick of a project reopens on the routed session's project.
   machines.select(
     home ||
       opensOnAll(
@@ -196,7 +194,7 @@ function SessionBrowser(props: SessionBrowserProps) {
       ? { type: 'all' }
       : { type: 'routed' }
   );
-  /** Whether the rail lists every project now. */
+  /** Whether the dialog lists every project now. */
   const allProjects = () => machines.pick().type === 'all';
   const [view, setView] = createSignal<PageView>('active');
   const [query, setQuery] = createSignal('');
@@ -236,45 +234,42 @@ function SessionBrowser(props: SessionBrowserProps) {
       props.close();
     }
   });
+  // The routed session's project carries the user's local name and icon.
+  const looks = createProjectLooks(() => {
+    const project = ctx.sessions.current()?.project;
+    return project === undefined
+      ? undefined
+      : { server: target.server.id, id: project.id, name: project.name, icon: project.icon };
+  });
   /**
    * The project a row draws before its title in the all-projects list, as the sidebar's flat
-   * lists do. The routed session's project carries the user's local name and icon.
+   * lists do: one cached object per project (src/gui/project-looks.ts).
    */
-  const projectOf = (session: SessionInfo): ProjectLook | undefined => {
-    if (!allProjects()) return undefined;
-    const server = serverOf(session.id);
-    const local = server.id === target.server.id ? ctx.sessions.current()?.project : undefined;
-    return sessionProjectLook(
-      server,
-      session.projectID,
-      session.location.directory,
-      local === undefined ? undefined : { id: local.id, name: local.name, icon: local.icon }
-    );
-  };
+  const projectOf = (session: SessionInfo): ProjectLook | undefined =>
+    allProjects()
+      ? looks.of(serverOf(session.id), session.projectID, session.location.directory)
+      : undefined;
   // The TUI's `preview` and `previewWidth` options, which the GUI gets unparsed.
   const showPreview = ctx.options.preview !== false;
   const previewShare = previewShareOf(ctx.options.previewWidth);
   const titleEnd = () => TITLE_ORANGE[ctx.appearance.mode() === 'light' ? 'light' : 'dark'];
 
-  // The rail's tiles, from every machine's active sessions.
-  const rail = createRail({
-    ...railSources(machines),
+  // Every machine's projects, from their loaded lists.
+  const projects = createProjects({
+    machines: projectSources(machines),
     origin: () => target.origin,
-    local: () => {
-      const project = ctx.sessions.current()?.project;
-      return project === undefined
-        ? undefined
-        : { id: project.id, name: project.name, icon: project.icon };
-    },
-    all: allProjects
+    all: allProjects,
+    status: (server, session) => sessionStatus(machines, server, session),
+    looks
   });
-  // A pick lists the tile's sessions, keeping the view and the search, and selects the first row,
-  // at the top of the list.
-  const { pickedTile, pickTile, moveTile } = createRailPick(machines, rail, props.prefs, () => {
+  // A pick lists the project's sessions, keeping the view and the search, and selects the first
+  // row, at the top of the list.
+  const { pickedKey, pick } = createPick(machines, projects, props.prefs, () => {
     setSelected(undefined);
     setPull(undefined);
     listElement?.scrollTo?.({ top: 0 });
   });
+  const [picking, setPicking] = createSignal(false);
 
   // The selected row scrolls into view as the keys move it.
   const elements = new Map<string, HTMLElement>();
@@ -365,12 +360,11 @@ function SessionBrowser(props: SessionBrowserProps) {
    * search field and the dialog itself can clash: arrows and tab do nothing useful in a one-line
    * field, enter has no submit there, the `alt` letters only type symbols on macOS and nothing
    * elsewhere, and f5 is the browser panel's reload, a command the dialog already suspends.
-   * `alt+up` and `alt+down` move along the rail from anywhere in the dialog, plain up and down
-   * keep moving the rows; on macOS the app's Go menu binds them to the previous and next session,
-   * which taking them here keeps from running (RAIL_KEYS in src/host/gui.ts). Enter on a focused
-   * button or link stays that control's. Tab switches views only from the search field or the
-   * dialog itself; on a button or link it moves the focus as usual, so the keyboard reaches the
-   * rail, Retry and the preview's buttons. Without the server plugin on the selected row's
+   * `alt+p` opens the project picker (PICKER_KEY in src/host/gui.ts), whose menu then takes the
+   * keys until it closes. Enter on a focused button or link stays that control's. Tab switches
+   * views only from the search field or the dialog itself; on a button or link it moves the focus
+   * as usual, so the keyboard reaches the picker, Retry and the preview's buttons. Without the
+   * server plugin on the selected row's
    * server, `alt+q`, `alt+g` and f5 have nothing to act on and do nothing; their hints are
    * hidden while no listed server has it.
    */
@@ -383,9 +377,7 @@ function SessionBrowser(props: SessionBrowserProps) {
     const missing =
       selectedSession === undefined ? browser.allMissing() : browser.missing(selectedSession.id);
     let handled = true;
-    if (event.key === 'ArrowDown' && onlyAlt) moveTile(1);
-    else if (event.key === 'ArrowUp' && onlyAlt) moveTile(-1);
-    else if (event.key === 'ArrowDown' && plain) list.move(1);
+    if (event.key === 'ArrowDown' && plain) list.move(1);
     else if (event.key === 'ArrowUp' && plain) list.move(-1);
     else if (
       event.key === 'Tab' &&
@@ -404,6 +396,7 @@ function SessionBrowser(props: SessionBrowserProps) {
       const action = ALT_CODES[event.code];
       if (action === 'archive') void archive(current());
       else if (action === 'done') void toggleDone(current());
+      else if (action === 'project') setPicking(true);
       else if (!missing) openWeb();
     } else handled = false;
     if (!handled) return;
@@ -424,7 +417,6 @@ function SessionBrowser(props: SessionBrowserProps) {
       on:keydown={onKeyDown}
     >
       <div class="ss-browser-main">
-        <ProjectRail sections={rail.sections()} picked={pickedTile()} onPick={pickTile} />
         <div class="ss-browser-left">
           <div class="ss-browser-bar">
             <span class="ss-title" aria-hidden="true" style={{ '--ss-title-end': titleEnd() }}>
@@ -450,6 +442,13 @@ function SessionBrowser(props: SessionBrowserProps) {
                 )}
               </For>
             </div>
+            <ProjectPicker
+              machines={projects.machines()}
+              picked={pickedKey()}
+              onPick={pick}
+              open={picking()}
+              setOpen={setPicking}
+            />
             <span class="ss-esc-bar">
               <CloseHint close={props.close} />
             </span>
@@ -547,7 +546,7 @@ function SessionBrowser(props: SessionBrowserProps) {
           </aside>
         </Show>
       </div>
-      {/* The TUI's footer: actions on the selected row on the left, the rail's keys on the right. */}
+      {/* The TUI's footer: actions on the selected row on the left, the picker's key on the right. */}
       <div class="ss-hints">
         <div class="ss-hints-actions">
           <Hint keys={KEYS.open} label={ctx.t('browser.hint.open')} />
@@ -572,11 +571,7 @@ function SessionBrowser(props: SessionBrowserProps) {
             </Show>
           </Show>
         </div>
-        <span class="ss-hint">
-          <ctx.ui.Keybind keys={ctx.keybinds.keys(KEYS.previousProject)} />
-          <ctx.ui.Keybind keys={ctx.keybinds.keys(KEYS.nextProject)} />
-          <span>{ctx.t('browser.hint.projects')}</span>
-        </span>
+        <Hint keys={alt('project')} label={ctx.t('browser.hint.project')} />
       </div>
     </div>
   );
