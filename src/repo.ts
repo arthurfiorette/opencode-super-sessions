@@ -60,9 +60,12 @@ function chooseRemote(remotes: Map<string, RepoRef>): [string, RepoRef] | undefi
 /** One cached value of {@link memo}. */
 interface Cached<T> {
   value: Promise<T>;
+  /** When the value expires; until it resolves, the TTL counts from when its load started. */
   expiresAt: number;
-  /** Set while a load replaces this expired value in the background. */
-  refreshing?: boolean;
+  /** How long past `expiresAt` the value still answers while it reloads. */
+  ttl: number;
+  /** The load that replaces this expired value, while it runs. */
+  next?: Promise<T> | undefined;
 }
 
 /**
@@ -70,43 +73,67 @@ interface Cached<T> {
  * still returned at once while a background load replaces it, so a `refs` call for hundreds of
  * sessions never waits on git for a directory it has read before. Git spawns block the daemon's
  * event loop for a moment each, and expired caches made a warm open spend up to 0.55 s on them.
- * `force` loads again, waits for it, and replaces the cached value.
+ * Past twice its TTL a value no longer answers and callers wait for the load, so nothing reads a
+ * checkout older than that. `ttl` takes the loaded value, so a missing directory can expire sooner
+ * than a found one. `force` loads again, waits for it, and replaces the cached value.
  */
 function memo<T>(
-  ttl: number,
+  ttl: (value: T) => number,
   load: (key: string) => Promise<T>
 ): (key: string, force?: boolean) => Promise<T> {
   const cache = new Map<string, Cached<T>>();
+  /** Starts a load for `key` and caches it, with the TTL its value asks for once it resolves. */
+  const store = (key: string, value: Promise<T>, started: number) => {
+    // The TTL depends on the value, so a pending value never expires; callers share it.
+    const entry: Cached<T> = { value, expiresAt: Number.POSITIVE_INFINITY, ttl: 0 };
+    cache.set(key, entry);
+    value.then(
+      (result) => {
+        entry.ttl = ttl(result);
+        entry.expiresAt = started + entry.ttl;
+      },
+      () => {
+        // A failed load is not kept: the next call loads again.
+        if (cache.get(key) === entry) cache.delete(key);
+      }
+    );
+    return entry;
+  };
   return (key, force = false) => {
     const cached = cache.get(key);
+    const now = Date.now();
     if (!force && cached !== undefined) {
-      if (cached.expiresAt <= Date.now() && cached.refreshing !== true) {
-        cached.refreshing = true;
+      if (cached.expiresAt > now) return cached.value;
+      if (cached.next === undefined) {
+        const started = now;
         // Spawning git blocks the event loop for a few ms each; started on the next turn, the
         // spawns run after the caller answered instead of before.
-        const value = new Promise<void>((resolve) => setImmediate(resolve)).then(() => load(key));
-        value.then(
+        const next = new Promise<void>((resolve) => setImmediate(resolve)).then(() => load(key));
+        cached.next = next;
+        next.then(
           () => {
             // A forced load in the meantime holds a newer value.
-            if (cache.get(key) === cached) cache.set(key, { value, expiresAt: Date.now() + ttl });
+            if (cache.get(key) === cached) store(key, next, started);
           },
           () => {
-            cached.refreshing = false;
+            cached.next = undefined;
           }
         );
       }
-      return cached.value;
+      if (cached.expiresAt + cached.ttl > now) return cached.value;
+      // Too old to answer: wait for the load, or keep the old value if git fails.
+      return cached.next.catch(() => cached.value);
     }
-    const value = load(key);
-    cache.set(key, { value, expiresAt: Date.now() + ttl });
-    return value;
+    return store(key, load(key), now).value;
   };
 }
 
 /**
  * Creates a resolver that reads the forge repository, default branch and current branch of a
  * directory with git. Remote data is cached 15 minutes per directory and branch data 10 seconds,
- * then served stale while git reads it again; a directory that does not exist runs no git. At most {@link MAX_CONCURRENT} git processes run at once per resolver; the runtime holds one.
+ * then served stale for one more TTL while git reads it again; a directory that does not exist
+ * runs no git for 10 seconds. At most {@link MAX_CONCURRENT} git processes run at once per
+ * resolver; the runtime holds one.
  */
 export function createRepoResolver(options: {
   definitions: ForgeDefinition[];
@@ -139,43 +166,52 @@ export function createRepoResolver(options: {
   };
 
   /**
-   * Whether a directory exists, remembered as long as its remotes. Removed worktrees keep their
-   * sessions, so without this every `refs` call spawned git for each of them only to fail.
+   * Whether a directory exists. Removed worktrees keep their sessions, so without this every
+   * `refs` call would spawn git for each of them only to fail. A missing directory is remembered
+   * only as long as a branch, so a worktree created again at the same path shows within seconds.
    */
-  const exists = memo(REMOTE_TTL_MS, (directory) =>
-    stat(directory).then(
-      () => true,
-      (error: NodeJS.ErrnoException) => error.code !== 'ENOENT' && error.code !== 'ENOTDIR'
-    )
+  const exists = memo(
+    (found) => (found ? REMOTE_TTL_MS : BRANCH_TTL_MS),
+    (directory) =>
+      stat(directory).then(
+        () => true,
+        (error: NodeJS.ErrnoException) => error.code !== 'ENOENT' && error.code !== 'ENOTDIR'
+      )
   );
 
   /** Repository, remote and default branch of a directory. */
-  const remoteInfo = memo(REMOTE_TTL_MS, async (directory): Promise<RemoteInfo> => {
-    const output = await git(directory, ['remote', '-v']);
-    const remotes = output ? recognize(output) : new Map<string, RepoRef>();
-    const chosen = chooseRemote(remotes);
-    if (!chosen) return {};
-    const [remote, repo] = chosen;
-    const head = await git(directory, ['symbolic-ref', '--short', `refs/remotes/${remote}/HEAD`]);
-    const defaultBranch = head?.startsWith(`${remote}/`)
-      ? head.slice(remote.length + 1)
-      : undefined;
-    return { repo, remote, remotes, ...(defaultBranch ? { defaultBranch } : {}) };
-  });
+  const remoteInfo = memo(
+    () => REMOTE_TTL_MS,
+    async (directory): Promise<RemoteInfo> => {
+      const output = await git(directory, ['remote', '-v']);
+      const remotes = output ? recognize(output) : new Map<string, RepoRef>();
+      const chosen = chooseRemote(remotes);
+      if (!chosen) return {};
+      const [remote, repo] = chosen;
+      const head = await git(directory, ['symbolic-ref', '--short', `refs/remotes/${remote}/HEAD`]);
+      const defaultBranch = head?.startsWith(`${remote}/`)
+        ? head.slice(remote.length + 1)
+        : undefined;
+      return { repo, remote, remotes, ...(defaultBranch ? { defaultBranch } : {}) };
+    }
+  );
 
   /** Current branch of a directory and whether it has an upstream. */
-  const branchInfo = memo(BRANCH_TTL_MS, async (directory): Promise<BranchInfo> => {
-    const branch = await git(directory, ['rev-parse', '--abbrev-ref', 'HEAD']);
-    // rev-parse prints the literal `HEAD` when detached.
-    if (!branch || branch === 'HEAD') return {};
-    const upstream = await git(directory, [
-      'rev-parse',
-      '--abbrev-ref',
-      '--symbolic-full-name',
-      '@{u}'
-    ]);
-    return upstream ? { branch, upstreamRef: upstream } : { branch };
-  });
+  const branchInfo = memo(
+    () => BRANCH_TTL_MS,
+    async (directory): Promise<BranchInfo> => {
+      const branch = await git(directory, ['rev-parse', '--abbrev-ref', 'HEAD']);
+      // rev-parse prints the literal `HEAD` when detached.
+      if (!branch || branch === 'HEAD') return {};
+      const upstream = await git(directory, [
+        'rev-parse',
+        '--abbrev-ref',
+        '--symbolic-full-name',
+        '@{u}'
+      ]);
+      return upstream ? { branch, upstreamRef: upstream } : { branch };
+    }
+  );
 
   return {
     /** Resolves a directory; a non-git directory resolves to an empty object. */

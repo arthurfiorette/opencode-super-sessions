@@ -10,6 +10,13 @@ import type { OpenCodeEvent } from '@opencode/client';
 /** The permission events: a request, then its reply (packages/schema/src/permission.ts:45). */
 export const PERMISSION_EVENT_TYPES = ['permission.asked', 'permission.replied'] as const;
 
+/**
+ * The start of a session's run, which the tracker needs to tell a run's requests from requests
+ * made outside any run (packages/schema/src/session-event.ts:245 at v2.4.2). The events carry no
+ * run id, so the tracker numbers the runs it sees start.
+ */
+export const RUN_START_TYPE = 'session.execution.started' as const;
+
 export type PermissionEvent = Extract<
   OpenCodeEvent,
   { type: (typeof PERMISSION_EVENT_TYPES)[number] }
@@ -25,31 +32,55 @@ export function isPermissionEvent(event: { type: string }): event is PermissionE
 /** Open permission requests by session, kept up to date from the permission events. */
 export interface PendingPermissions {
   apply(event: PermissionEvent): void;
+  /** Records that a run of the session started, on {@link RUN_START_TYPE}. */
+  started(sessionID: string): void;
   /**
-   * Forgets the session's requests when its run ends. A request belongs to a tool call of the
-   * run, and an interrupted call drops it without a reply event (`Permission.assert` deletes it
-   * in its finalizer, packages/core/src/permission.ts:311 at v2.4.2).
+   * Forgets the requests asked during the session's run when that run ends. A tool call's request
+   * belongs to its run, and an interrupted call drops it without a reply event (`Permission.assert`
+   * deletes it in its finalizer, packages/core/src/permission.ts:311 at v2.4.2). A request asked
+   * outside a run, through the public `session.permission.create` route
+   * (packages/server/src/handlers/permission.ts:45), waits for its reply.
    */
   ended(sessionID: string): void;
+  /** Drops everything known about a deleted session. */
+  forget(sessionID: string): void;
   /** Whether a permission request waits on the session. */
   has(sessionID: string): boolean;
 }
 
 /** Creates an empty {@link PendingPermissions}. */
 export function createPendingPermissions(): PendingPermissions {
-  // Request id to session id. A reply names the request, so it closes exactly that one; a
-  // Location that shuts down replies `reject` to each of its own.
-  const open = new Map<string, string>();
+  // Request id to its session and the run it was asked in, undefined outside a run. A reply names
+  // the request, so it closes exactly that one; a Location that shuts down replies `reject` to
+  // each of its own.
+  const open = new Map<string, { session: string; run: number | undefined }>();
+  // The running run of each session, numbered in the order runs started.
+  const runs = new Map<string, number>();
+  let counter = 0;
   return {
     apply(event) {
-      if (event.type === 'permission.asked') open.set(event.data.id, event.data.sessionID);
-      else open.delete(event.data.requestID);
+      if (event.type === 'permission.asked') {
+        const session = event.data.sessionID;
+        open.set(event.data.id, { session, run: runs.get(session) });
+      } else open.delete(event.data.requestID);
+    },
+    started(sessionID) {
+      runs.set(sessionID, ++counter);
     },
     ended(sessionID) {
-      for (const [id, owner] of open) if (owner === sessionID) open.delete(id);
+      const run = runs.get(sessionID);
+      runs.delete(sessionID);
+      if (run === undefined) return;
+      for (const [id, entry] of open) {
+        if (entry.session === sessionID && entry.run === run) open.delete(id);
+      }
+    },
+    forget(sessionID) {
+      runs.delete(sessionID);
+      for (const [id, entry] of open) if (entry.session === sessionID) open.delete(id);
     },
     has(sessionID) {
-      for (const owner of open.values()) if (owner === sessionID) return true;
+      for (const entry of open.values()) if (entry.session === sessionID) return true;
       return false;
     }
   };

@@ -482,7 +482,7 @@ export function PluginNote(props: { browser: BrowserView; machines: Machines }) 
   const text = () => {
     const missing = props.browser.missingOn();
     if (props.machines.servers().length < 2) return ctx.t('browser.pluginMissing');
-    return ctx.t('browser.pluginMissingOn', {
+    return ctx.plural('browser.pluginMissingOn', missing.length, {
       machines: missing.map((server) => server.name).join(', ')
     });
   };

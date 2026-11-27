@@ -23,8 +23,10 @@ export const browserEn = {
   'browser.noServer': 'No server is connected yet.',
   'browser.pluginMissing':
     'The opencode-super-sessions server plugin is not installed on this server, so sessions show without pull requests and issues.',
-  'browser.pluginMissingOn':
+  'browser.pluginMissingOn.one':
     'The opencode-super-sessions server plugin is not installed on {{machines}}, so its sessions show without pull requests and issues.',
+  'browser.pluginMissingOn.other':
+    'The opencode-super-sessions server plugin is not installed on {{machines}}, so their sessions show without pull requests and issues.',
   'browser.machine.failed': 'Could not load the sessions on {{machine}}.',
   'browser.machine.offline': '{{machine}} is not connected, so its sessions are not listed.',
   'browser.machine.offlineTitle': '{{machine}}, not connected',

@@ -5,31 +5,83 @@
 // them. They run one at a time per server here instead, which leaves the other slots to
 // everything else. Servers do not share slots, so each has its own line.
 
+/**
+ * How long one call may hold its server's line. The server's `gh` and `glab` calls time out at
+ * 20 s, so a call past this is hung, and the calls behind it must not wait for it.
+ */
+const CALL_TIMEOUT = 30_000;
+
 /** Runs forge-bound calls one at a time per server, in call order. */
 export interface ForgeQueue {
   /**
    * Runs `task` once the calls before it on `server` (a `ServerRef.id`) finished. A `signal` that
-   * aborts while the task waits drops it with the signal's reason; the task gets the signal to
-   * pass on to its request.
+   * aborts while the task waits takes it out of the line at once and rejects with the signal's
+   * reason. The task gets a signal that also aborts after {@link CALL_TIMEOUT}, to pass on to its
+   * request; once that signal aborts, the next call starts whether or not the task settled.
    */
-  run<T>(server: string, task: () => Promise<T>, signal?: AbortSignal): Promise<T>;
+  run<T>(
+    server: string,
+    task: (signal: AbortSignal) => Promise<T>,
+    signal?: AbortSignal
+  ): Promise<T>;
+}
+
+/** One server's line: whether a call holds it, and the calls waiting, oldest first. */
+interface Line {
+  busy: boolean;
+  waiting: Array<() => void>;
 }
 
 /** Creates an empty {@link ForgeQueue}. Call it once per window. */
 export function createForgeQueue(): ForgeQueue {
-  const tails = new Map<string, Promise<unknown>>();
+  const lines = new Map<string, Line>();
+
+  /** Starts the oldest waiting call of `line` when nothing holds it. */
+  const advance = (line: Line) => {
+    if (line.busy) return;
+    const next = line.waiting.shift();
+    if (next === undefined) return;
+    line.busy = true;
+    next();
+  };
+
   return {
     run(server, task, signal) {
-      const result = (tails.get(server) ?? Promise.resolve()).then(() => {
-        signal?.throwIfAborted();
-        return task();
+      let line = lines.get(server);
+      if (line === undefined) {
+        line = { busy: false, waiting: [] };
+        lines.set(server, line);
+      }
+      const own = line;
+      return new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        const leave = () => {
+          const index = own.waiting.indexOf(start);
+          if (index === -1) return;
+          own.waiting.splice(index, 1);
+          reject(signal?.reason);
+        };
+        const start = () => {
+          signal?.removeEventListener('abort', leave);
+          const timeout = AbortSignal.timeout(CALL_TIMEOUT);
+          const limit = signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
+          const released = new Promise<never>((_, rejectReleased) => {
+            limit.addEventListener('abort', () => rejectReleased(limit.reason), { once: true });
+          });
+          Promise.race([task(limit), released])
+            .then(resolve, reject)
+            .finally(() => {
+              own.busy = false;
+              advance(own);
+            });
+        };
+        signal?.addEventListener('abort', leave, { once: true });
+        own.waiting.push(start);
+        advance(own);
       });
-      // The next call waits for this one whatever its outcome.
-      tails.set(
-        server,
-        result.catch(() => {})
-      );
-      return result;
     }
   };
 }

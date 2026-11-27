@@ -1,7 +1,11 @@
 import type { OpenCodeEvent } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin';
 import { FORM_EVENT_TYPES, type FormEvent } from '../host/forms.js';
-import { PERMISSION_EVENT_TYPES, type PermissionEvent } from '../host/permissions.js';
+import {
+  PERMISSION_EVENT_TYPES,
+  type PermissionEvent,
+  RUN_START_TYPE
+} from '../host/permissions.js';
 
 /**
  * Event types the server reacts to: user prompts and finished assistant text, plus deletions so
@@ -31,14 +35,27 @@ export const LIFECYCLE_TYPES = [
 
 export type LifecycleEvent = Extract<OpenCodeEvent, { type: (typeof LIFECYCLE_TYPES)[number] }>;
 
+export type RunStartEvent = Extract<OpenCodeEvent, { type: typeof RUN_START_TYPE }>;
+
 /**
- * Every event the process-wide subscriber receives. Form and permission events track what waits
- * on the user.
+ * Every event the process-wide subscriber receives. Form and permission events, and run starts,
+ * track what waits on the user.
  */
-export type SubscribedEvent = HandledEvent | LifecycleEvent | FormEvent | PermissionEvent;
+export type SubscribedEvent =
+  | HandledEvent
+  | LifecycleEvent
+  | FormEvent
+  | PermissionEvent
+  | RunStartEvent;
 
 const SUBSCRIBED_TYPES = [
-  ...new Set([...EVENT_TYPES, ...LIFECYCLE_TYPES, ...FORM_EVENT_TYPES, ...PERMISSION_EVENT_TYPES])
+  ...new Set([
+    ...EVENT_TYPES,
+    ...LIFECYCLE_TYPES,
+    ...FORM_EVENT_TYPES,
+    ...PERMISSION_EVENT_TYPES,
+    RUN_START_TYPE
+  ])
 ];
 const handledTypes: ReadonlySet<string> = new Set(EVENT_TYPES);
 

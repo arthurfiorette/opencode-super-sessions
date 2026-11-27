@@ -349,6 +349,25 @@ export async function readWorktreeGit(
 }
 
 /**
+ * Every git fact the decision reads, in one pass: {@link readWorktreeGit}, and HEAD against the
+ * merged pull requests' `heads` when there are any (undefined when no tracked pull request
+ * merged) and a plain merge does not already explain the branch. The sweep and the recheck right
+ * before a removal both read through it, so a removal never pairs a fresh HEAD with a pull head
+ * compared against an older one, such as `included` from before the agent committed again.
+ */
+export async function readGitFacts(
+  directory: string,
+  base: string | undefined,
+  heads: string[] | undefined,
+  runner: Runner = run
+): Promise<WorktreeGit & { head?: PullHead }> {
+  const git = await readWorktreeGit(directory, base, runner);
+  if (heads === undefined || git.contained === true) return git;
+  const head = await readPullHead(directory, heads, runner);
+  return head === undefined ? git : { ...git, head };
+}
+
+/**
  * The ref of the default branch to compare a worktree with: the remote's default branch when the
  * clone recorded it, else the branch checked out in the main checkout. Undefined when neither
  * resolves, which leaves `ahead` and `merged` unknown.

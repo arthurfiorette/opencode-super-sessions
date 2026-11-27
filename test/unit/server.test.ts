@@ -271,3 +271,66 @@ test('one subscriber handles each event once across Locations, including after a
     ['e2', 'b']
   ]);
 });
+
+// Done, auto-archive and cleanup read what waits on the user from the runtime's tracker, fed by
+// the one subscriber. A request it drops too early lets a waiting session be archived, or its
+// worktree removed.
+test('the runtime tracks a permission asked outside a run until its reply, and a run ending clears only its own', async (t) => {
+  const { getRuntime } = await import('../../src/server/runtime.js');
+  const { hasPending } = await import('../../src/server/done-facts.js');
+  const bus = fakeBus();
+  const runtime = getRuntime(parseOptions({ search: { body: false } }), async () => {});
+  t.after(() => runtime.dispose());
+  const context = {
+    event: { subscribe: ({ signal }: { signal: AbortSignal }) => bus.subscribe(signal) },
+    location: { directory: '/work/a' },
+    // The Location's own list knows none of these requests.
+    permission: { list: async () => [] }
+  } as unknown as Plugin.Context;
+  runtime.events.attach(context);
+  let id = 0;
+  /** Publishes an event as the host's stream delivers it. */
+  const publish = (type: string, data: Record<string, unknown>) =>
+    bus.publish({ id: `evt_${++id}`, type, data } as unknown as HandledEvent);
+  /** Polls until `check` holds, for at most 200 turns of the event loop. */
+  const until = async (check: () => boolean) => {
+    for (let attempt = 0; attempt < 200 && !check(); attempt++) await tick();
+    assert.ok(check());
+  };
+  const pending = (sessionID: string) => hasPending(runtime, context, sessionID);
+
+  // A request made through the public route, with no run going.
+  publish('permission.asked', { id: 'per_outside', sessionID: 'ses_idle' });
+  await until(() => runtime.permissions.has('ses_idle'));
+  assert.equal(await pending('ses_idle'), true);
+
+  // A run of the same session starts and is interrupted, and another session's run asks and is
+  // interrupted: only the request asked during that run goes.
+  publish('session.execution.started', { sessionID: 'ses_idle' });
+  publish('session.execution.interrupted', { sessionID: 'ses_idle', reason: 'user' });
+  publish('session.execution.started', { sessionID: 'ses_run' });
+  publish('permission.asked', { id: 'per_run', sessionID: 'ses_run' });
+  await until(() => runtime.permissions.has('ses_run'));
+  publish('session.execution.interrupted', { sessionID: 'ses_run', reason: 'user' });
+  await until(() => !runtime.permissions.has('ses_run'));
+  assert.equal(await pending('ses_run'), false);
+  assert.equal(await pending('ses_idle'), true);
+
+  // Its reply closes it.
+  publish('permission.replied', {
+    sessionID: 'ses_idle',
+    requestID: 'per_outside',
+    reply: 'once'
+  });
+  await until(() => !runtime.permissions.has('ses_idle'));
+  assert.equal(await pending('ses_idle'), false);
+
+  // A request the tracker missed still counts where the Location lists it: its own sessions.
+  const listing = {
+    ...context,
+    permission: { list: async () => [{ id: 'per_missed' }] }
+  } as unknown as Plugin.Context;
+  const at = (directory: string) => ({ location: { directory } }) as never;
+  assert.equal(await hasPending(runtime, listing, 'ses_missed', at('/work/a')), true);
+  assert.equal(await hasPending(runtime, listing, 'ses_elsewhere', at('/work/b')), false);
+});

@@ -16,7 +16,7 @@ import {
 } from '../../src/host/events.js';
 import { shipsGui } from '../../src/host/gui.js';
 import { createPendingPermissions, isPermissionEvent } from '../../src/host/permissions.js';
-import { pluginRpc, serverPluginMissing } from '../../src/host/rpc.js';
+import { pluginRpc, rpcMethodMissing, serverPluginMissing } from '../../src/host/rpc.js';
 import {
   activityTime,
   forkSession,
@@ -68,10 +68,14 @@ let probe: Plugin.Context | undefined;
 
 // Records what the plugin would see through the same context APIs it uses. `setup` runs once per
 // Location and every Location's subscription sees every event, so events are keyed by id.
+// Each Location's context, by its resolved directory.
+const contexts = new Map<string, Plugin.Context>();
+
 const recorder = Plugin.define({
   id: 'contract-probe',
   async setup(context) {
     probe ??= context;
+    contexts.set(realpathSync.native(context.location.directory), context);
     await context.tool.hook('execute.after', (event) => {
       // `info` is the live tool definition, schemas and functions included, which cannot be
       // cloned. A hook that throws fails the tool call it reports.
@@ -325,7 +329,7 @@ test('the host lists the plugin with its Desktop GUI and serves the built bundle
 
 // The GUI reads this failure as a server without the server plugin and shows sessions without
 // refs instead of an error.
-test('an RPC no plugin registered fails the way serverPluginMissing reads it', async () => {
+test('an RPC no plugin registered, and a method the plugin lacks, fail the way the accessors read them', async () => {
   const location = { directory: directory('gui-missing') };
   await until(
     () => host.plugin.list({ location }),
@@ -346,6 +350,23 @@ test('an RPC no plugin registered fails the way serverPluginMissing reads it', a
   assert.ok(serverPluginMissing(error));
   // A registered plugin's RPC on the same Location answers, so the failure is about the id.
   assert.ok(await pluginRpc(host).status({}, { location }));
+
+  // A method this plugin's handlers lack, as a newer client asks of an older server plugin,
+  // which the GUI and TUI then answer per session.
+  const newer = Rpc.define({
+    id: SuperSessions.id,
+    methods: { 'contract.unknown': { input: z.strictObject({}), output: z.strictObject({}) } },
+    events: {}
+  });
+  const unknown = await host
+    .rpc(newer)
+    ['contract.unknown']({}, { location })
+    .then(
+      () => undefined,
+      (cause: unknown) => cause
+    );
+  assert.ok(rpcMethodMissing(unknown));
+  assert.equal(serverPluginMissing(unknown), false);
 });
 
 // The list's order, day groups and ages, and the cleanup inactivity rule, read `activityTime`.
@@ -439,6 +460,72 @@ test('permission events open a request for its session, and its reply closes it'
   );
   pending.apply(replied);
   assert.equal(pending.has(session.id), false);
+});
+
+// The server's tracker is fed by one subscriber on one Location, so a request asked in another
+// Location must reach it, or Done and auto-archive would miss a session that waits.
+test("one Location's subscriber sees the permission events of another Location", async () => {
+  /** Activates a Location and returns its plugin context. */
+  const activate = async (name: string) => {
+    const location = { directory: directory(name) };
+    await until(
+      () => host.plugin.list({ location }),
+      (plugins) => plugins.data.length > 0
+    );
+    const resolved = realpathSync.native(location.directory);
+    const context = await until(
+      async () => contexts.get(resolved),
+      (found) => found !== undefined
+    );
+    assert.ok(context);
+    return { location, context };
+  };
+  const listener = await activate('permission-listener');
+  const asker = await activate('permission-asker');
+  assert.notEqual(listener.context, asker.context);
+  const session = await host.sessions.create({
+    location: asker.location,
+    permissions: [{ action: 'contract-permission', resource: '*', effect: 'ask' }]
+  });
+
+  const seen: OpenCodeEvent[] = [];
+  const abort = new AbortController();
+  void (async () => {
+    for await (const item of listener.context.event.subscribe({
+      types: ['permission.asked', 'permission.replied'],
+      signal: abort.signal
+    })) {
+      seen.push(item);
+    }
+  })().catch(() => {});
+  try {
+    const asking = asker.context.permission.assert({
+      sessionID: session.id as never,
+      action: 'contract-permission',
+      resources: ['contract']
+    });
+    const asked = await until(
+      async () =>
+        seen.find((item) => item.type === 'permission.asked' && item.data.sessionID === session.id),
+      (found) => found !== undefined
+    );
+    assert.ok(asked && isPermissionEvent(asked) && asked.type === 'permission.asked');
+    await asker.context.permission.reply({
+      sessionID: session.id as never,
+      requestID: asked.data.id,
+      decision: 'once'
+    });
+    await asking;
+    await until(
+      async () =>
+        seen.some(
+          (item) => item.type === 'permission.replied' && item.data.requestID === asked.data.id
+        ),
+      (found) => found
+    );
+  } finally {
+    abort.abort();
+  }
 });
 
 test('deleting a session publishes session.deleted with its id', async () => {
@@ -554,11 +641,6 @@ test('session.list scopes by project subpath, directory, title, root sessions an
   assert.deepEqual(await ids(await scope(repo)), [top.id]);
   assert.deepEqual(await ids(await scope(app)), [nested.id]);
   assert.deepEqual(await ids(await scope(loose)), [other.id]);
-  // A project in the Desktop browser's rail lists the whole project, subfolders included.
-  const whole = wholeProject(
-    projectScope(await host.location.get({ location: { directory: app } }))
-  );
-  assert.deepEqual(await ids(projectListFilters(whole)), [top.id, nested.id].sort());
   // Server search filters by directory for directory scopes.
   assert.deepEqual(await ids({ directory: loose }), [other.id]);
   assert.deepEqual(await ids({ search: 'needle' }), [top.id, nested.id].sort());

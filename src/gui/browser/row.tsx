@@ -169,7 +169,7 @@ export function SessionRow(props: SessionRowProps) {
       role="option"
       tabIndex={-1}
       aria-selected={props.selected}
-      aria-current={props.current === true ? 'page' : undefined}
+      aria-current={props.current === true ? 'true' : undefined}
       data-session={props.session.id}
       onClick={(event) => {
         if (!onControl(event)) props.onSelect();
@@ -187,6 +187,9 @@ export function SessionRow(props: SessionRowProps) {
           )}
         </Show>
         <span class="ss-row-title">{props.session.title || ctx.t('browser.untitled')}</span>
+        <Show when={props.current === true}>
+          <span class="ss-visually-hidden">{ctx.t('side.current')}</span>
+        </Show>
         <span class="ss-row-actions">{props.actions}</span>
         <Show when={props.machine}>
           {(machine) => (

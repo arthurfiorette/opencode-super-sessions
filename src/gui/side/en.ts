@@ -8,6 +8,5 @@ export const sideEn = {
   'side.work.pulls.other': '{{count}} PRs',
   'side.work.none': 'Nothing linked.',
   'side.work.link': 'Link…',
-  'side.sessions': 'Sessions',
   'side.current': 'Open here'
 } as const;

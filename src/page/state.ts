@@ -1,4 +1,5 @@
 import type { SessionInfo } from '@opencode/client';
+import { rpcMethodMissing } from '../host/rpc.js';
 import { activityTime } from '../host/session-info.js';
 import { type ProviderId, type Ref, type RefState, refKey } from '../refs/ref.js';
 import { rankSessions, searchLinks } from '../refs/search.js';
@@ -430,6 +431,75 @@ export interface PageDeps {
    * last user message. One call per batch, so deciding Done never asks the host per session.
    */
   doneFacts(sessionIDs: string[]): Promise<Record<string, DoneExtra>>;
+}
+
+/**
+ * The Done facts read per session from the client, for a server whose plugin predates
+ * `done.facts`. Each read goes through the session's Location and boots it when the host evicted
+ * it, so only servers without the RPC pay for it.
+ */
+export interface LegacyDoneReads {
+  pending(sessionID: string): Promise<boolean>;
+  /** The newest user message's time, or undefined when the user never wrote. */
+  lastUserMessageAt(sessionID: string): Promise<number | undefined>;
+}
+
+/** A per-session list the client syncs on request, such as the host's permissions and forms. */
+export interface SyncedList {
+  /** Undefined until the session's list was synced once. */
+  list(sessionID: string): readonly unknown[] | undefined;
+  sync(sessionID: string): Promise<unknown>;
+}
+
+/**
+ * Whether a permission request or a question waits on the session, by the client's synced lists.
+ * A list syncs only while undefined: once synced, the host's events keep it current.
+ */
+export async function syncedPending(
+  lists: { readonly permission: SyncedList; readonly form: SyncedList },
+  sessionID: string
+): Promise<boolean> {
+  for (const list of [lists.permission, lists.form]) {
+    if (list.list(sessionID) === undefined) await list.sync(sessionID).catch(() => {});
+  }
+  return (
+    (lists.permission.list(sessionID)?.length ?? 0) > 0 ||
+    (lists.form.list(sessionID)?.length ?? 0) > 0
+  );
+}
+
+/**
+ * {@link PageDeps.doneFacts} for one server: its `done.facts` RPC, or the per-session reads once
+ * the server answered `rpc.method_not_found`, which an older plugin version does. Each call of
+ * this function remembers that for its own server, so a server without the RPC is not asked
+ * again on every reclassify. A failed read is unknown, which keeps the session out of Done.
+ */
+export function doneFactsWithFallback(
+  call: (sessionIDs: string[]) => Promise<Record<string, DoneExtra>>,
+  legacy: LegacyDoneReads
+): PageDeps['doneFacts'] {
+  let missing = false;
+  return async (sessionIDs) => {
+    if (!missing) {
+      try {
+        return await call(sessionIDs);
+      } catch (error) {
+        if (!rpcMethodMissing(error)) throw error;
+        missing = true;
+      }
+    }
+    const found = await Promise.all(
+      sessionIDs.map(async (id) => {
+        const [pending, at] = await Promise.all([
+          legacy.pending(id).catch(() => true),
+          legacy.lastUserMessageAt(id).catch(() => null)
+        ]);
+        const fact: DoneExtra = at === undefined ? { pending } : { pending, lastUserMessageAt: at };
+        return [id, fact] as const;
+      })
+    );
+    return Object.fromEntries(found);
+  };
 }
 
 /** How {@link createPageController} publishes a load. */

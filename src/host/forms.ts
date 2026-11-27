@@ -23,6 +23,8 @@ export interface PendingForms {
   apply(event: FormEvent): void;
   /** Whether a question waits on the session. */
   has(sessionID: string): boolean;
+  /** Drops the forms of a deleted session, so the map never keeps sessions that are gone. */
+  forget(sessionID: string): void;
 }
 
 /** Creates an empty {@link PendingForms}. */
@@ -37,6 +39,9 @@ export function createPendingForms(): PendingForms {
     has(sessionID) {
       for (const owner of open.values()) if (owner === sessionID) return true;
       return false;
+    },
+    forget(sessionID) {
+      for (const [id, owner] of open) if (owner === sessionID) open.delete(id);
     }
   };
 }

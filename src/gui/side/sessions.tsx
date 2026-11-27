@@ -6,7 +6,7 @@ import {
   usePlugin
 } from '@opencode/plugin/gui';
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
-import { openSessionKeepingTab, type ProjectLook } from '../../host/gui.js';
+import { claimCommandKeys, openSessionKeepingTab, type ProjectLook } from '../../host/gui.js';
 import { type PageView, VIEWS } from '../../page/state.js';
 import { TAB_ICONS } from '../browser/dialog.js';
 import {
@@ -87,7 +87,7 @@ export function SideSessions(props: SideSessionsProps) {
     all: allProjects
   });
   let listElement: HTMLDivElement | undefined;
-  const { pickedTile, pickTile } = createRailPick(machines, rail, props.prefs, () => {
+  const { pickedTile, pickTile, moveTile } = createRailPick(machines, rail, props.prefs, () => {
     list.setSelected(undefined);
     list.setPull(undefined);
     listElement?.scrollTo?.({ top: 0 });
@@ -151,19 +151,44 @@ export function SideSessions(props: SideSessionsProps) {
     });
   };
 
-  /** The list's keys, only while it has the focus: the app keeps every other key. */
+  /**
+   * The tab's keys, only while the focus is inside it: the app keeps every key elsewhere. Up,
+   * down and enter move and open from the list and from the search field, as in the dialog;
+   * enter on a focused button or link stays that control's. `alt+s` archives and `alt+q` marks
+   * Done, keys the app binds to nothing (they type symbols on macOS, which the field then does
+   * not get).
+   */
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.isComposing || event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) {
-      return;
-    }
-    if (event.target instanceof Element && event.target.closest('button, a')) return;
-    if (event.key === 'ArrowDown') list.move(1);
+    if (event.isComposing || event.metaKey || event.ctrlKey || event.shiftKey) return;
+    const onControl = event.target instanceof Element && event.target.closest('button, a');
+    if (event.altKey) {
+      if (event.code === 'KeyS') void row.archive(list.current());
+      else if (event.code === 'KeyQ') void row.toggleDone(list.current());
+      else return;
+    } else if (onControl) return;
+    else if (event.key === 'ArrowDown') list.move(1);
     else if (event.key === 'ArrowUp') list.move(-1);
     else if (event.key === 'Enter') open(list.current());
     else return;
     event.preventDefault();
     event.stopPropagation();
   };
+  // `alt+up` and `alt+down` move the project pick while the focus is in the tab. The app binds
+  // them to the previous and next session tab and reads keys before the page does, so the tab
+  // claims them first, and only while it holds the focus (RAIL_KEYS in src/host/gui.ts).
+  let root: HTMLDivElement | undefined;
+  /** Whether a key event is `alt` plus `key` alone, typed while the focus is in the tab. */
+  const railKey = (key: string) => (event: KeyboardEvent) =>
+    event.key === key &&
+    event.altKey &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    root !== undefined &&
+    event.target instanceof Node &&
+    root.contains(event.target);
+  onCleanup(claimCommandKeys(window, railKey('ArrowUp'), () => moveTile(-1)));
+  onCleanup(claimCommandKeys(window, railKey('ArrowDown'), () => moveTile(1)));
   const switchView = (to: PageView) => {
     setView(to);
     list.setSelected(undefined);
@@ -171,7 +196,7 @@ export function SideSessions(props: SideSessionsProps) {
   };
 
   return (
-    <div class="ss-side-sessions">
+    <div ref={root} class="ss-side-sessions" on:keydown={onKeyDown}>
       <ProjectRail sections={rail.sections()} picked={pickedTile()} onPick={pickTile} />
       <div class="ss-side-main">
         <div class="ss-seg" role="tablist" aria-label={ctx.t('browser.views')}>
@@ -222,7 +247,6 @@ export function SideSessions(props: SideSessionsProps) {
           tabIndex={0}
           aria-label={ctx.t(`browser.view.${view()}`)}
           aria-busy={browser.loading()}
-          on:keydown={onKeyDown}
         >
           <ListBody
             browser={browser}

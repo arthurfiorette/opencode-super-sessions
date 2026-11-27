@@ -29,6 +29,11 @@ export interface ViewMode {
   wait: boolean;
   /** Refetch everything, even fresh entries. Only meaningful with `wait`. */
   force?: boolean;
+  /**
+   * Read the git checkouts again without forcing the forge, as the sweep does: its cleanup
+   * decisions need the current branch, while the forge caches stay within their TTLs.
+   */
+  freshGit?: boolean;
 }
 
 type SessionInfo = Awaited<ReturnType<Plugin.Context['session']['get']>>;
@@ -147,7 +152,9 @@ export async function collectViews(
         chunk.map(async (id): Promise<Loaded | undefined> => {
           const info = await readSession(session, id);
           if (info === undefined) return undefined;
-          const repo = await resolveRepo(runtime, info.location.directory, { force });
+          const repo = await resolveRepo(runtime, info.location.directory, {
+            force: force || mode.freshGit === true
+          });
           return {
             id,
             created: info.time.created,

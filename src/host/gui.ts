@@ -61,16 +61,13 @@ export const DIALOG_FRAME = '[data-component="dialog-v2"][data-size="x-large"]';
 export const DIALOG_PADDING = 16;
 
 /**
- * The surface the browser's project rail and preview column take: the one the composer takes
- * in dark mode, `--v2-background-bg-layer-01` (packages/app/src/composer/editor/editor.css:87-95
- * at v2.4.2), a step off the x-large dialog's `--v2-background-bg-base`
- * (packages/ui/src/overlays/dialog/dialog.css:175). In light mode the composer stays on
- * `--v2-background-bg-base` (editor.tsx:260). Layer-01 is grey-100 over the dialog's grey-50 in
- * light mode and grey-1000 over its grey-1100 in dark mode
- * (packages/ui/src/styles/tokens/theme.css:6-8, 151-153), so the columns are set off in both.
- * It is the preview's surface from before the browser followed the sidebar's look. CSS cannot
- * import this constant; it records the assumption. When the variable goes, the columns take the
- * dialog's background.
+ * The surface the browser's project rail and preview column take, a step off the dialog's
+ * background in both modes: `--v2-background-bg-layer-01`, which the composer takes in dark mode
+ * (packages/app/src/composer/editor/editor.css:87-95 at v2.4.2), against the x-large dialog's
+ * `--v2-background-bg-base` (packages/ui/src/overlays/dialog/dialog.css:175). Layer-01 is
+ * grey-100 over the dialog's grey-50 in light mode and grey-1000 over its grey-1100 in dark mode
+ * (packages/ui/src/styles/tokens/theme.css:6-8, 151-153). CSS cannot import this constant; it
+ * records the assumption. When the variable goes, the columns take the dialog's background.
  */
 export const COMPOSER_SURFACE = '--v2-background-bg-layer-01';
 

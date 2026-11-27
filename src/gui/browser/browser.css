@@ -209,7 +209,7 @@
   opacity: 0.5;
 }
 
-/* The rail and the preview sit on the darker surface of the app's composer
+/* The rail and the preview sit on a surface a step off the dialog's background in both modes
    (COMPOSER_SURFACE in src/host/gui.ts), the list on the dialog's own background, set off by the
    app's 1px divider color (`--v2-border-border-base`, the hairline of its search dialogs in
    packages/app/src/shell/search-list.css:335). The preview needs room beside the list; a small
@@ -584,7 +584,8 @@
   gap: 6px;
 }
 
-/* The project rail: a 48px column on the composer's surface with 28px tiles centered in it, 10px
+/* The project rail: a 48px column on a surface a step off the dialog's background in both modes
+   (COMPOSER_SURFACE in src/host/gui.ts), with 28px tiles centered in it, 10px
    of rail on both sides, as Discord's server list. The picked tile has a pill flush on the rail's
    left edge, outside the tile's centering, and hovering shows a shorter one; the tile itself
    keeps its own look. The rail starts at the dialog content's left edge, 16px in as the preview
@@ -738,7 +739,9 @@
   border-radius: 7px;
   background: var(--v2-state-fg-warning);
   box-shadow: 0 0 0 2px var(--ss-rail-bg);
-  color: var(--v2-background-bg-base);
+  /* Fixed dark text: the warning orange is light in both modes, and the dialog's background
+     turns near-white in light mode. */
+  color: #1a1a1a;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;

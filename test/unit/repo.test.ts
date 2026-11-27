@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -97,7 +97,7 @@ test('resolve picks the forge remote and reads default branch, branch and upstre
 
 // `refs` answers hundreds of sessions at once and must not wait on git for directories it read
 // before, nor spawn git for worktrees that were removed. The fake runner is the process boundary.
-test('an expired checkout is served at once while git reads it again, and a missing directory runs no git', async (t) => {
+test('an expired checkout is served while git reads it again, but not past twice its TTL, and a missing directory runs no git until it appears', async (t) => {
   t.mock.timers.enable({ apis: ['Date'] });
   const directory = await mkdtemp(join(tmpdir(), 'super-sessions-repo-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -113,7 +113,8 @@ test('an expired checkout is served at once while git reads it again, and a miss
   const resolver = createRepoResolver({ definitions, git: runner });
   assert.equal((await resolver.resolve(directory)).branch, 'one');
 
-  t.mock.timers.tick(60_000);
+  // Past the branch TTL of 10 s, within twice it.
+  t.mock.timers.tick(15_000);
   branch = 'two';
   let release = () => {};
   hold = new Promise((resolve) => {
@@ -125,11 +126,21 @@ test('an expired checkout is served at once while git reads it again, and a miss
   hold = undefined;
   await until(async () => (await resolver.resolve(directory)).branch === 'two');
 
+  // Past twice the TTL the old branch no longer answers: the first call waits for git.
+  t.mock.timers.tick(25_000);
+  branch = 'three';
+  assert.equal((await resolver.resolve(directory)).branch, 'three');
+
   const before = calls.length;
   const missing = join(directory, 'removed-worktree');
   assert.deepEqual(await resolver.resolve(missing), {});
   assert.deepEqual(await resolver.resolve(missing, { force: true }), {});
   assert.equal(calls.length, before);
+
+  // A worktree created again at the path shows once the short TTL of a missing directory ends.
+  await mkdir(missing);
+  t.mock.timers.tick(15_000);
+  await until(async () => (await resolver.resolve(missing)).branch === 'three');
 });
 
 /** Polls `check` until it holds, failing after 200 turns of the event loop. */

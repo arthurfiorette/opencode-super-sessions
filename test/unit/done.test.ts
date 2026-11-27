@@ -31,28 +31,52 @@ function context(...entries: Array<[SessionMessageInfo['type'], number]>): Sessi
   );
 }
 
-test('a compaction without a user message after it leaves Done unknown, unless the user marked it', () => {
-  const cases: Array<[string, SessionMessageInfo[], boolean | undefined, boolean]> = [
-    ['merged after the last prompt', context(['user', 10], ['assistant', 11]), undefined, true],
-    ['prompted after the merge', context(['user', 30]), undefined, false],
-    ['compacted, no prompt since', context(['compaction', 5], ['assistant', 6]), undefined, false],
+test('after a compaction without a user message, Done follows the latest run start or stays unknown', () => {
+  // Name, context, latest run start, the user's mark, expected; the PR merged at 20.
+  const cases: Array<
+    [string, SessionMessageInfo[], number | undefined, boolean | undefined, boolean]
+  > = [
+    ['merged after the last prompt', context(['user', 10], ['assistant', 11]), 10, undefined, true],
+    ['prompted after the merge', context(['user', 30]), 30, undefined, false],
     [
-      'compacted, prompted before the merge',
-      context(['compaction', 5], ['user', 10]),
+      'compacted, merged after the latest run started',
+      context(['compaction', 5], ['assistant', 6]),
+      15,
       undefined,
       true
     ],
-    ['no messages at all', context(), undefined, true],
-    ['compacted, marked Done', context(['compaction', 5]), true, true],
-    ['compacted, marked not Done', context(['compaction', 5]), false, false]
+    [
+      'compacted, the latest run started after the merge',
+      context(['compaction', 25], ['assistant', 26]),
+      25,
+      undefined,
+      false
+    ],
+    [
+      'compacted, no run start',
+      context(['compaction', 5], ['assistant', 6]),
+      undefined,
+      undefined,
+      false
+    ],
+    [
+      'compacted, prompted before the merge',
+      context(['compaction', 5], ['user', 10]),
+      25,
+      undefined,
+      true
+    ],
+    ['no messages at all', context(), undefined, undefined, true],
+    ['compacted, marked Done', context(['compaction', 5]), undefined, true, true],
+    ['compacted, marked not Done', context(['compaction', 5]), 15, false, false]
   ];
-  for (const [name, messages, mark, expected] of cases) {
+  for (const [name, messages, runStart, mark, expected] of cases) {
     const done = isDone({
       running: false,
       pending: false,
       archived: false,
       view: view(20, mark),
-      lastUserMessageAt: lastUserMessageAt(messages)
+      lastUserMessageAt: lastUserMessageAt(messages, runStart)
     });
     assert.equal(done, expected, name);
   }

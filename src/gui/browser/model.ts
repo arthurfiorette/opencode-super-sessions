@@ -8,7 +8,13 @@ import {
   sessionScope,
   wholeProject
 } from '../../host/session-info.js';
-import { createPageController, type PageData, type PageScope } from '../../page/state.js';
+import {
+  createPageController,
+  doneFactsWithFallback,
+  type PageData,
+  type PageScope,
+  syncedPending
+} from '../../page/state.js';
 import type { SearchScope } from '../../rpc.js';
 import { rpcAt, rpcOn, serverPluginMissing, warmRpc } from '../server.js';
 import type { RailSelection } from './rail.js';
@@ -149,10 +155,25 @@ export function createBrowserModel(server: ServerRef) {
           })
         ),
       running,
-      // One call for every candidate. Syncing permissions and questions per session went through
-      // each session's Location, which booted the evicted ones (0.4 s to 1.4 s each).
-      doneFacts: (sessionIDs) =>
-        rpc(async () => rpcOn(server)['done.facts']({ sessionIDs }, await rpcOptions()))
+      // One call for every candidate: syncing permissions and questions per session goes
+      // through each session's Location and boots the evicted ones (0.4 s to 1.4 s each). A
+      // server on an older plugin without the RPC gets the per-session reads.
+      doneFacts: doneFactsWithFallback(
+        (sessionIDs) =>
+          rpc(async () => rpcOn(server)['done.facts']({ sessionIDs }, await rpcOptions())),
+        {
+          pending: (sessionID) => syncedPending(data().session, sessionID),
+          async lastUserMessageAt(sessionID) {
+            const page = await client().message.list({
+              sessionID,
+              order: 'desc',
+              limit: 1,
+              type: 'user'
+            });
+            return page.data[0]?.time.created;
+          }
+        }
+      )
     },
     (next) => setStore(reconcile(next, { key: 'id' })),
     // Titles first: the rows show as soon as the lists answer, and their ref lines fill in after.

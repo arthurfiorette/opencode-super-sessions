@@ -94,14 +94,14 @@ export function createRefsStore(queue: ForgeQueue): RefsStore {
       const call = async (method: 'refs' | 'refresh') => {
         try {
           const options = await rpcAt(target.server, target.directory);
-          const ask = () =>
+          const ask = (signal: AbortSignal = abort.signal) =>
             rpcOn(target.server)[method](
               { sessionIDs: [target.sessionID] },
-              { ...options, signal: abort.signal }
+              { ...options, signal }
             );
           const answer = await (method === 'refresh'
             ? queue.run(target.server.id, ask, abort.signal)
-            : ask());
+            : ask(abort.signal));
           return answer[target.sessionID];
         } catch (error) {
           if (!closed && serverPluginMissing(error)) {

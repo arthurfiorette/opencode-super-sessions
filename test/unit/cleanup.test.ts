@@ -14,6 +14,7 @@ import {
   decideWorktree,
   mergedPull,
   parseStatus,
+  readGitFacts,
   readPullHead,
   readWorktreeGit,
   type WorktreeFacts,
@@ -444,6 +445,33 @@ test('a squash-merged branch counts as merged only while HEAD has nothing beyond
   assert.equal(await readPullHead(directory, [head]), 'extra');
   assert.equal(await readPullHead(directory, [absent]), 'missing');
   assert.equal(await readPullHead(directory, []), 'missing');
+});
+
+// The sweep and the recheck before a removal both read git through `readGitFacts`. A pull head
+// kept from the sweep let a commit the agent made since on the detached HEAD read as part of the
+// merged pull request, and the worktree went with the commit.
+test('git facts read again after a commit on the detached HEAD keep a squash-merged worktree', async (t) => {
+  const { directory, git, commit } = await tempRepo(t);
+  commit('init');
+  // A squash merge: the pull request's head is on the detached HEAD, not on main.
+  git('checkout', '-q', '--detach');
+  const head = commit('the pull request');
+  const settings = { ...OFF, cleanupMerged: true };
+  /** The worktree's facts as the sweep and the recheck read them, with one merged pull request. */
+  const facts = async () => ({
+    ...worktree({ directory }),
+    ...(await readGitFacts(directory, 'refs/heads/main', [head]))
+  });
+
+  // The sweep: HEAD is the merged head.
+  assert.equal(decideWorktree(await facts(), settings, NOW).rule, 'merged');
+  // The agent commits on the detached HEAD before the removal.
+  commit('after the merge');
+  assert.deepEqual(decideWorktree(await facts(), settings, NOW), {
+    directory,
+    action: 'keep',
+    reason: 'has commits no branch or tag contains'
+  });
 });
 
 test('any local change read from git status keeps a worktree, since git refuses to remove it', () => {

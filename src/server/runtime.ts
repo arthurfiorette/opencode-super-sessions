@@ -7,7 +7,8 @@ import { createPendingForms, isFormEvent, type PendingForms } from '../host/form
 import {
   createPendingPermissions,
   isPermissionEvent,
-  type PendingPermissions
+  type PendingPermissions,
+  RUN_START_TYPE
 } from '../host/permissions.js';
 import { github } from '../providers/github/definition.js';
 import { createGitHubProvider } from '../providers/github/provider.js';
@@ -60,7 +61,8 @@ export interface Runtime {
   /**
    * When the user last wrote in a session, by session id, with the activity time it was read
    * at. Done reads it for every candidate the browser lists, and `session.context` reads the
-   * whole history since the last compaction, so it is read again only after the session ran.
+   * whole history since the last compaction, so it is read again only after the session ran or
+   * got a prompt. Deleted sessions leave it.
    */
   readonly lastPrompts: Map<string, { activity: number; at: number | null | undefined }>;
   /** Sessions with a background refresh running, so repeated `refs` calls do not stack them. */
@@ -277,7 +279,19 @@ function createRuntime(base: Options, handle: EventHandler): Runtime {
           runtime.permissions.apply(event);
           return;
         }
-        if (event.type !== 'session.deleted' && !isHandledEvent(event)) {
+        if (event.type === RUN_START_TYPE) {
+          runtime.permissions.started(event.data.sessionID);
+          return;
+        }
+        if (event.type === 'session.deleted') {
+          runtime.permissions.forget(event.data.sessionID);
+          runtime.forms.forget(event.data.sessionID);
+          runtime.lastPrompts.delete(event.data.sessionID);
+        } else if (event.type === 'session.inbox.enqueued') {
+          // A prompt sent with `resume: false` starts no run, so the activity time the cached
+          // last prompt is keyed by does not move.
+          runtime.lastPrompts.delete(event.data.sessionID);
+        } else if (!isHandledEvent(event)) {
           runtime.permissions.ended(event.data.sessionID);
         }
         // Deletions reach both: the message index forgets them and cleanup records the worktree.

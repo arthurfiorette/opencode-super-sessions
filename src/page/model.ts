@@ -10,6 +10,7 @@ import type { SearchScope } from '../rpc.js';
 import { tuiSettingsFor } from '../settings/store.js';
 import {
   createPageController,
+  doneFactsWithFallback,
   filterPulls,
   type Group,
   groupPulls,
@@ -20,7 +21,8 @@ import {
   type PageScope,
   type PageView,
   pullRows,
-  rowsOf
+  rowsOf,
+  syncedPending
 } from './state.js';
 
 // A reload waits for a burst of session events to settle.
@@ -160,9 +162,24 @@ export function createBrowserModel(
           ...(signal === undefined ? {} : { signal })
         }),
       running,
-      // The server tracks permissions and questions in every Location; syncing them here went
-      // through each session's Location and booted the evicted ones.
-      doneFacts: (sessionIDs) => rpc()['done.facts']({ sessionIDs }, rpcOptions())
+      // The server tracks permissions and questions in every Location, while syncing them here
+      // goes through each session's Location and boots the evicted ones. A server plugin
+      // without the RPC, as an older version, gets the per-session reads.
+      doneFacts: doneFactsWithFallback(
+        (sessionIDs) => rpc()['done.facts']({ sessionIDs }, rpcOptions()),
+        {
+          pending: (sessionID) => syncedPending(context.data.session, sessionID),
+          async lastUserMessageAt(sessionID) {
+            const page = await client.message.list({
+              sessionID,
+              order: 'desc',
+              limit: 1,
+              type: 'user'
+            });
+            return page.data[0]?.time.created;
+          }
+        }
+      )
     },
     (next) => setData(reconcile(next, { key: 'id' }))
   );

@@ -103,6 +103,16 @@ export function serverPluginMissing(error: unknown): boolean {
 }
 
 /**
+ * Whether a call failed because the server plugin there has no such method: the host answers
+ * `rpc.method_not_found` for a method the registered definition lacks
+ * (packages/core/src/rpc.ts:114 at v2.4.2), as an older plugin version on another machine does
+ * for a method added since.
+ */
+export function rpcMethodMissing(error: unknown): boolean {
+  return rpcError(error).type === 'rpc.method_not_found';
+}
+
+/**
  * The `type` and `data` of an error a handler returned with `invocation.error`, which the client
  * rejects with as an `RpcError` (packages/protocol/src/errors.ts:21). Both are undefined for any
  * other failure, such as a daemon without the server plugin.

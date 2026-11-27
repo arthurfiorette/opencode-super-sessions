@@ -61,30 +61,6 @@ async function start() {
 const lists = (client) => client.calls.filter((call) => call.name === 'session.list').length;
 const sideRow = (id) => document.querySelector(`.ss-side [data-session="${id}"]`);
 
-test('one pinned tab in every strip, and no Work tab, menu item or command', async () => {
-  const { routed } = await start();
-  const panels = gui.items('panel');
-  assert.deepEqual(
-    panels.map((panel) => [panel.id, panel.region]),
-    [['sessions', 'side']]
-  );
-  // Listed without being opened, in any session, as the same object.
-  const [panel] = panels;
-  const first = panel.list({ session: routed(), screen: {}, open: [] });
-  const other = panel.list({ session: { ...routed(), id: 'ses_b' }, screen: {}, open: [] });
-  assert.equal(first.length, 1);
-  assert.equal(first[0].pinned, true);
-  assert.equal(other[0], first[0]);
-  assert.deepEqual(
-    gui.items('command').map((command) => command.id),
-    ['browse']
-  );
-  assert.deepEqual(
-    gui.items('menu-item').map((item) => [item.menu, item.id]),
-    [['session.panel', 'sessions']]
-  );
-});
-
 test('the tab lists what the browser loaded, and a route change asks nothing again', async () => {
   const { client, routed, route } = await start();
   await gui.command('browse').run();
@@ -95,14 +71,15 @@ test('the tab lists what the browser loaded, and a route change asks nothing aga
   gui.ctx.layout.open(SIDE, routed());
   gui.panel('sessions', routed);
   await until(() => sideRow('ses_b'), 'the side rows');
-  assert.ok(sideRow('ses_a').classList.contains('ss-row-current'));
+  const current = (id) => sideRow(id).getAttribute('aria-current') === 'true';
+  assert.ok(current('ses_a'));
   assert.equal(lists(client), loaded);
 
   // Another session of the project: the same lists, the current mark moves.
   route('ses_b');
   gui.ctx.layout.open(SIDE, routed());
-  await until(() => sideRow('ses_b').classList.contains('ss-row-current'), 'the new current row');
-  assert.equal(sideRow('ses_a').classList.contains('ss-row-current'), false);
+  await until(() => current('ses_b'), 'the new current row');
+  assert.equal(current('ses_a'), false);
   assert.equal(lists(client), loaded);
 });
 

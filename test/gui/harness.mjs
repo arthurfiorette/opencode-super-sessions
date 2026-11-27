@@ -281,12 +281,13 @@ export function createContext(plugin, options = {}) {
   const toggles = [];
   const hides = [];
   const linked = [];
-  // Panel keys on screen, by session id: what `open` and `toggle` change and `state` reads.
-  const shown = new Set();
+  // Panel keys selected in their pane, by session id, and whether that pane is on screen: what
+  // `open`, `toggle` and `hide` change and `state` reads.
+  const shown = new Map();
   const [layoutVersion, setLayoutVersion] = solid.createSignal(0);
-  const show = (key, id, on) => {
-    if (on) shown.add(`${id}\n${key}`);
-    else shown.delete(`${id}\n${key}`);
+  const show = (key, id, state) => {
+    if (state === undefined) shown.delete(`${id}\n${key}`);
+    else shown.set(`${id}\n${key}`, state);
     setLayoutVersion((value) => value + 1);
   };
   const messages = plugin.i18n?.en ?? {};
@@ -373,20 +374,26 @@ export function createContext(plugin, options = {}) {
       ready: () => true,
       open(key, target, openOptions) {
         layout.push({ key, session: target.id, ...openOptions });
-        show(key, target.id, true);
+        show(key, target.id, 'visible');
       },
       toggle(key, target) {
         toggles.push({ key, session: target.id });
-        show(key, target.id, !shown.has(`${target.id}\n${key}`));
+        show(
+          key,
+          target.id,
+          shown.get(`${target.id}\n${key}`) === 'visible' ? undefined : 'visible'
+        );
       },
-      // Takes the key off screen; the app's leaves its tab in the strip.
+      // Closes the region while the key shows; the tab stays selected in its hidden pane, which
+      // the app reads as `active` (selectPanelState in
+      // packages/app/src/runtime/plugin/host-layout-machine.ts:17 at v2.4.2).
       hide(key, target) {
         hides.push({ key, session: target.id });
-        show(key, target.id, false);
+        if (shown.get(`${target.id}\n${key}`) === 'visible') show(key, target.id, 'active');
       },
       state(key, target) {
         layoutVersion();
-        return shown.has(`${target.id}\n${key}`) ? 'visible' : 'closed';
+        return shown.get(`${target.id}\n${key}`) ?? 'closed';
       }
     },
     keybinds: {

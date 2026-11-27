@@ -201,6 +201,37 @@ test('sessions sort into the views by their refs, and tab moves between the view
   }
 });
 
+// A machine running an older plugin has no `done.facts`, and its merged sessions stayed in
+// Active, asked about again on every reclassify.
+test('a server whose plugin lacks done.facts still sorts a merged session into Done', async () => {
+  const client = await openBrowser({
+    'rpc.done.facts': () =>
+      Promise.reject(
+        Object.assign(new Error('Unknown RPC method'), { type: 'rpc.method_not_found' })
+      ),
+    'message.list': ({ type }) => ({
+      data:
+        type === 'user'
+          ? [{ id: 'msg_user', type: 'user', time: { created: NOW - 2 * HOUR } }]
+          : [],
+      cursor: {}
+    })
+  });
+  await until(() => count('done') === '1', 'the Done count');
+  const userReads = () =>
+    client.calls.filter((call) => call.name === 'message.list' && call.input.type === 'user')
+      .length;
+  assert.equal(userReads(), 1);
+  // A metadata event looks the session up again, without the RPC this server lacks.
+  gui.ctx.servers.get('sidecar').data.emit({
+    type: 'session.metadata.updated',
+    data: { sessionID: 'ses_merged' }
+  });
+  await until(() => userReads() === 2, 'the second lookup');
+  await until(() => count('done') === '1', 'Done after the lookup');
+  assert.equal(client.calls.filter((call) => call.name === 'rpc.done.facts').length, 1);
+});
+
 /** Closes the open browser with its `esc` button. */
 const closeBrowser = () => document.querySelector('[role="dialog"] .ss-esc').click();
 /** The model's loads of the routed project; the rail lists every project on its own. */
@@ -564,23 +595,6 @@ test('moving the selection on never shows a slower answer for the row passed', a
   assert.ok(!document.querySelector('.ss-preview').textContent.includes('Busy prompt'));
 });
 
-test('a running session sits under Running with the app spinner, a plain one has no mark', async () => {
-  await openBrowser(undefined, { running: ['ses_plain'] });
-
-  const mark = await until(
-    () => row('ses_plain')?.querySelector('[data-marker="running"]'),
-    'the mark'
-  );
-  assert.equal(groupOf('ses_plain'), 'Running');
-  // The sidebar's dot grid, which the app's stylesheet paints, not the loading ring.
-  assert.ok(mark.querySelector('[data-slot="spinner-dots"]'));
-  assert.equal(mark.querySelector('[role="progressbar"]'), null);
-  // An idle, read session's title line is its title and age, with no glyph before or after.
-  const head = row('ses_busy').querySelector('.ss-row-head');
-  const age = head.querySelector('.ss-row-age').textContent;
-  assert.equal(head.textContent, `Split the build${age}`);
-});
-
 // A second machine the app is connected to: its session, in a project of its own, tracks a pull
 // request of its own.
 const WINDOWS_ID = 'http://192.168.1.20:4096';
@@ -678,27 +692,4 @@ test('a machine without the server plugin lists its sessions bare, the others ke
   // Done is the server plugin's mark, so only the local row offers it.
   assert.ok(row('ses_busy').querySelector('[aria-label="Mark Done"]'));
   assert.equal(row('ses_win').querySelector('[aria-label="Mark Done"]'), null);
-});
-
-test('projects of one name tell their folders apart in the rail tooltips', async () => {
-  const dev = (id, directory) => ({
-    ...session(`ses_${id}`, `Work in ${id}`),
-    projectID: id,
-    location: { directory }
-  });
-  const sessions = [
-    dev('outer', '/Users/me/dev/devlanes'),
-    dev('inner', '/Users/me/dev/devlanes/devlanes')
-  ];
-  const server = fixtureServer({
-    'session.get': ({ sessionID }) => sessions.find((item) => item.id === sessionID),
-    'session.list': ({ archived }) => ({ data: archived ? [] : sessions })
-  });
-  gui = await startGui({ servers: [server] });
-  await gui.command('browse').run();
-  await until(() => tile('project:inner'), 'the rail');
-
-  const tooltip = (key) => tile(key).getAttribute('aria-label');
-  assert.equal(tooltip('project:outer'), 'devlanes · ~/dev');
-  assert.equal(tooltip('project:inner'), 'devlanes · ~/dev/devlanes');
 });

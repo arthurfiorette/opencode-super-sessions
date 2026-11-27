@@ -37,7 +37,7 @@ export function rpcHandlers(
     refresh: ({ sessionIDs, force }) =>
       buildViews(runtime, context.session, sessionIDs, { wait: true, force: force === true }),
 
-    'done.facts': ({ sessionIDs }) => doneFacts(runtime, context.session, sessionIDs),
+    'done.facts': ({ sessionIDs }) => doneFacts(runtime, context, sessionIDs),
 
     search: (input) => searchSessions(runtime, context.session, input),
 

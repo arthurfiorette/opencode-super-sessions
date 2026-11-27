@@ -2,7 +2,7 @@ import type { SessionInfo } from '@opencode/client';
 import type { Plugin } from '@opencode/plugin';
 import type { RpcHandlers, RpcRegistration } from '@opencode/plugin/promise/rpc';
 import { lastUserMessageAt } from '../host/events.js';
-import { isBusy } from '../host/session-api.js';
+import { isBusy, latestRunStart } from '../host/session-api.js';
 import { projectWorktrees, removeWorktree } from '../host/worktree.js';
 import { doneAt, isDone } from '../refs/summary.js';
 import type { SessionRefView, SuperSessions, WorktreeDecision } from '../rpc.js';
@@ -14,11 +14,11 @@ import {
   defaultBranchRef,
   mergedHeads,
   mergedPull,
-  readPullHead,
-  readWorktreeGit,
+  readGitFacts,
   type WorktreeFacts,
   type WorktreeSession
 } from './cleanup.js';
+import { hasPending } from './done-facts.js';
 import type { LifecycleEvent } from './events.js';
 import { resolveRepo } from './links.js';
 import type { Runtime } from './runtime.js';
@@ -272,7 +272,7 @@ function createSweeper(runtime: Runtime): Sweeper {
       if (worktree.root) continue;
       for (const id of owners.get(worktree.directory) ?? []) doneFor.add(id);
     }
-    const done = await doneFacts(context, [...doneFor], running);
+    const done = await doneFacts(context, [...doneFor], running, byID);
 
     const due: Array<{ sessionID: string; title: string }> = [];
     if (want.archiving) {
@@ -317,7 +317,6 @@ function createSweeper(runtime: Runtime): Sweeper {
 
       for (const worktree of worktrees) {
         const ids = owners.get(worktree.directory) ?? [];
-        const git = worktree.root ? {} : await readWorktreeGit(worktree.directory, worktree.base);
         // The checkout's view: a pull request on this branch decides for the worktree whichever
         // of its sessions opened it.
         const views = ids.flatMap((id) => {
@@ -325,11 +324,10 @@ function createSweeper(runtime: Runtime): Sweeper {
           return view === undefined ? [] : [view];
         });
         const merged = mergedPull(views);
-        // Only worth the git calls when a plain merge does not already explain the branch.
-        const head =
-          merged && !worktree.root && git.contained !== true
-            ? await readPullHead(worktree.directory, mergedHeads(views))
-            : undefined;
+        const heads = merged ? mergedHeads(views) : undefined;
+        const git: Awaited<ReturnType<typeof readGitFacts>> = worktree.root
+          ? {}
+          : await readGitFacts(worktree.directory, worktree.base, heads);
         // Read for every session here, not only the Done candidates `doneFacts` checked: the
         // inactive rule removes worktrees of sessions that are not Done.
         const waiting = worktree.root
@@ -364,11 +362,12 @@ function createSweeper(runtime: Runtime): Sweeper {
           merged,
           contained: git.contained,
           referenced: git.referenced,
-          head
+          head: git.head
         };
         facts.set(worktree.directory, {
           projectID: worktree.projectID,
           ...(worktree.base === undefined ? {} : { base: worktree.base }),
+          ...(heads === undefined ? {} : { heads }),
           facts: fact
         });
         decisions.push(decideWorktree(fact, settings, now));
@@ -378,7 +377,12 @@ function createSweeper(runtime: Runtime): Sweeper {
   };
 
   /** Ref views, Done and pending state of top-level sessions, in batches. */
-  const doneFacts = async (context: Plugin.Context, ids: string[], running: Set<string>) => {
+  const doneFacts = async (
+    context: Plugin.Context,
+    ids: string[],
+    running: Set<string>,
+    byID: ReadonlyMap<string, SessionInfo>
+  ) => {
     const result = new Map<
       string,
       {
@@ -391,7 +395,11 @@ function createSweeper(runtime: Runtime): Sweeper {
     >();
     for (let start = 0; start < ids.length; start += VIEW_BATCH) {
       const batch = ids.slice(start, start + VIEW_BATCH);
-      const views = await collectViews(runtime, context.session, batch, { wait: true });
+      // Cleanup decides on these views, so the branch comes from git now, not a cached read.
+      const views = await collectViews(runtime, context.session, batch, {
+        wait: true,
+        freshGit: true
+      });
       for (const [id, { view, checkout }] of Object.entries(views)) {
         const base = { running: running.has(id), archived: false, view };
         // Cheap check first; only possible Done sessions pay for the pending and message reads.
@@ -401,7 +409,8 @@ function createSweeper(runtime: Runtime): Sweeper {
         }
         const pending = await hasPending(runtime, context, id);
         // The user's mark decides on its own, so it needs no message read.
-        const last = view.done === undefined ? await lastMessage(context, id) : undefined;
+        const last =
+          view.done === undefined ? await lastMessage(context, id, byID.get(id)) : undefined;
         const done = isDone({ ...base, pending, lastUserMessageAt: last });
         const at = doneAt(view);
         result.set(id, {
@@ -447,14 +456,15 @@ function createSweeper(runtime: Runtime): Sweeper {
         };
       })
     );
-    const git = await readWorktreeGit(entry.facts.directory, entry.base);
+    const git = await readGitFacts(entry.facts.directory, entry.base, entry.heads);
     return {
       ...entry.facts,
       sessions,
       changed: git.changed,
       ahead: git.ahead,
       contained: git.contained,
-      referenced: git.referenced
+      referenced: git.referenced,
+      head: git.head
     };
   };
 
@@ -695,6 +705,8 @@ interface Gathered {
   projectID: string;
   /** The default branch ref, for reading `ahead` and `contained` again. */
   base?: string;
+  /** Head commits of the merged pull requests, for reading `head` again; unset without one. */
+  heads?: string[];
   facts: WorktreeFacts;
 }
 
@@ -737,33 +749,18 @@ async function listWorktrees(
 }
 
 /**
- * Whether a permission request or a question waits on the session, like the TUI's recheck before
- * it archives. A failed permission read counts as waiting.
- */
-async function hasPending(
-  runtime: Runtime,
-  context: Plugin.Context,
-  sessionID: string
-): Promise<boolean> {
-  if (runtime.forms.has(sessionID) || runtime.permissions.has(sessionID)) return true;
-  // The sweep's Location lists only its own requests; the tracker covers the others.
-  try {
-    return (await context.permission.list({ sessionID })).length > 0;
-  } catch {
-    return true;
-  }
-}
-
-/**
- * Time of the user's last message; see {@link lastUserMessageAt}. Null when unknown, including
- * a failed read, which keeps the session from counting as Done.
+ * Time of the user's last message; see {@link lastUserMessageAt}, bounded by the start of the
+ * session's latest run after a compaction. Null when unknown, including a failed read, which
+ * keeps the session from counting as Done.
  */
 async function lastMessage(
   context: Plugin.Context,
-  sessionID: string
+  sessionID: string,
+  info: SessionInfo | undefined
 ): Promise<number | undefined | null> {
   try {
-    return lastUserMessageAt(await context.session.context({ sessionID }));
+    const messages = await context.session.context({ sessionID });
+    return lastUserMessageAt(messages, info === undefined ? undefined : latestRunStart(info));
   } catch {
     return null;
   }
