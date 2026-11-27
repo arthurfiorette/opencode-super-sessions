@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import type { Runner } from '../../src/process.js';
 import { definitions } from '../../src/providers/registry.js';
 import { createRepoResolver, type RepoInfo } from '../../src/repo.js';
 
@@ -93,6 +94,52 @@ test('resolve picks the forge remote and reads default branch, branch and upstre
     assert.deepEqual(await resolver.resolve(directory), expected, name);
   }
 });
+
+// `refs` answers hundreds of sessions at once and must not wait on git for directories it read
+// before, nor spawn git for worktrees that were removed. The fake runner is the process boundary.
+test('an expired checkout is served at once while git reads it again, and a missing directory runs no git', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'] });
+  const directory = await mkdtemp(join(tmpdir(), 'super-sessions-repo-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  let branch = 'one';
+  let hold: Promise<void> | undefined;
+  const calls: string[][] = [];
+  const runner: Runner = async (_command, args) => {
+    calls.push(args);
+    await hold;
+    const output = args.includes('HEAD') && !args.includes('@{u}') ? branch : '';
+    return { code: output === '' ? 1 : 0, stdout: output, stderr: '' };
+  };
+  const resolver = createRepoResolver({ definitions, git: runner });
+  assert.equal((await resolver.resolve(directory)).branch, 'one');
+
+  t.mock.timers.tick(60_000);
+  branch = 'two';
+  let release = () => {};
+  hold = new Promise((resolve) => {
+    release = resolve;
+  });
+  // Git is held, so this answers only if the expired value is served without waiting.
+  assert.equal((await resolver.resolve(directory)).branch, 'one');
+  release();
+  hold = undefined;
+  await until(async () => (await resolver.resolve(directory)).branch === 'two');
+
+  const before = calls.length;
+  const missing = join(directory, 'removed-worktree');
+  assert.deepEqual(await resolver.resolve(missing), {});
+  assert.deepEqual(await resolver.resolve(missing, { force: true }), {});
+  assert.equal(calls.length, before);
+});
+
+/** Polls `check` until it holds, failing after 200 turns of the event loop. */
+async function until(check: () => Promise<boolean>) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (await check()) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.fail('condition not reached');
+}
 
 test('a forced resolve reads a branch switch the cache still hides', async (t) => {
   const directory = await repository((dir) => git(dir, 'checkout', '-q', '-b', 'one'));

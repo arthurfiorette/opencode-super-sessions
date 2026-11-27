@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { gitIn } from './host/git.js';
 import { createLimiter, type Runner, run } from './process.js';
@@ -56,18 +57,46 @@ function chooseRemote(remotes: Map<string, RepoRef>): [string, RepoRef] | undefi
   return [...remotes].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))[0];
 }
 
+/** One cached value of {@link memo}. */
+interface Cached<T> {
+  value: Promise<T>;
+  expiresAt: number;
+  /** Set while a load replaces this expired value in the background. */
+  refreshing?: boolean;
+}
+
 /**
- * Caches one async value per key until it expires; concurrent callers share the pending value.
- * `force` loads again and replaces the cached value.
+ * Caches one async value per key; concurrent callers share the pending value. An expired value is
+ * still returned at once while a background load replaces it, so a `refs` call for hundreds of
+ * sessions never waits on git for a directory it has read before. Git spawns block the daemon's
+ * event loop for a moment each, and expired caches made a warm open spend up to 0.55 s on them.
+ * `force` loads again, waits for it, and replaces the cached value.
  */
 function memo<T>(
   ttl: number,
   load: (key: string) => Promise<T>
 ): (key: string, force?: boolean) => Promise<T> {
-  const cache = new Map<string, { value: Promise<T>; expiresAt: number }>();
+  const cache = new Map<string, Cached<T>>();
   return (key, force = false) => {
     const cached = cache.get(key);
-    if (!force && cached && cached.expiresAt > Date.now()) return cached.value;
+    if (!force && cached !== undefined) {
+      if (cached.expiresAt <= Date.now() && cached.refreshing !== true) {
+        cached.refreshing = true;
+        // Spawning git blocks the event loop for a few ms each; started on the next turn, the
+        // spawns run after the caller answered instead of before.
+        const value = new Promise<void>((resolve) => setImmediate(resolve)).then(() => load(key));
+        value.then(
+          () => {
+            // A forced load in the meantime holds a newer value.
+            if (cache.get(key) === cached) cache.set(key, { value, expiresAt: Date.now() + ttl });
+          },
+          () => {
+            cached.refreshing = false;
+          }
+        );
+      }
+      return cached.value;
+    }
     const value = load(key);
     cache.set(key, { value, expiresAt: Date.now() + ttl });
     return value;
@@ -76,8 +105,8 @@ function memo<T>(
 
 /**
  * Creates a resolver that reads the forge repository, default branch and current branch of a
- * directory with git. Remote data is cached 15 minutes per directory and branch data 10 seconds.
- * At most {@link MAX_CONCURRENT} git processes run at once per resolver; the runtime holds one.
+ * directory with git. Remote data is cached 15 minutes per directory and branch data 10 seconds,
+ * then served stale while git reads it again; a directory that does not exist runs no git. At most {@link MAX_CONCURRENT} git processes run at once per resolver; the runtime holds one.
  */
 export function createRepoResolver(options: {
   definitions: ForgeDefinition[];
@@ -108,6 +137,17 @@ export function createRepoResolver(options: {
     }
     return remotes;
   };
+
+  /**
+   * Whether a directory exists, remembered as long as its remotes. Removed worktrees keep their
+   * sessions, so without this every `refs` call spawned git for each of them only to fail.
+   */
+  const exists = memo(REMOTE_TTL_MS, (directory) =>
+    stat(directory).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => error.code !== 'ENOENT' && error.code !== 'ENOTDIR'
+    )
+  );
 
   /** Repository, remote and default branch of a directory. */
   const remoteInfo = memo(REMOTE_TTL_MS, async (directory): Promise<RemoteInfo> => {
@@ -142,6 +182,8 @@ export function createRepoResolver(options: {
     async resolve(directory, options = {}) {
       const key = path.resolve(directory);
       const force = options.force === true;
+      // A forced resolve looks at the directory again too, as after a worktree was recreated.
+      if (!(await exists(key, force))) return {};
       const [{ remotes, ...remote }, { upstreamRef, ...branch }] = await Promise.all([
         remoteInfo(key, force),
         branchInfo(key, force)
