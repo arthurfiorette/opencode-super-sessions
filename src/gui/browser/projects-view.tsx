@@ -1,31 +1,49 @@
 import type { SessionInfo } from '@opencode/client';
-import { usePlugin } from '@opencode/plugin/gui';
+import { type ServerRef, usePlugin } from '@opencode/plugin/gui';
 import { For, Show } from 'solid-js';
 import { activitySpinner, MACHINE_ICON } from '../../host/gui.js';
 import { activityTime } from '../../host/session-info.js';
 import { ProjectAvatar } from '../project-avatar.js';
-import type { ProjectEntry, ProjectMachine, SessionStatus } from './projects.js';
+import type { ProjectEntry, SessionStatus } from './projects.js';
 import { useAge } from './row.js';
 
-// The browser's Projects view: every machine's projects under the machine's name, as the Desktop
-// sidebar groups them by server, each with its running and waiting sessions under it as the
-// session rows list their pull requests, and the selected project's preview.
+// The browser's Projects view: every machine's projects in one list, a project of another machine
+// marked with its name, each with its running and waiting sessions under it as the session rows
+// list their pull requests, and the selected project's preview.
 
-/** Whether a project matches the search: its name or its path holds the query. */
+/**
+ * Whether a project matches the search: its name, its path or the machine name it shows holds
+ * the query.
+ */
 export function projectMatches(project: ProjectEntry, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (needle.length === 0) return true;
   return (
     project.look.name.toLowerCase().includes(needle) ||
-    project.look.root.toLowerCase().includes(needle)
+    project.look.root.toLowerCase().includes(needle) ||
+    (project.machine?.toLowerCase().includes(needle) ?? false)
+  );
+}
+
+/**
+ * A project's machine after its folder: the sidebar's server icon and the machine's name, muted
+ * like the machine a session row names. Only a project of another machine carries one.
+ */
+export function MachineMark(props: { readonly name: string }) {
+  const ctx = usePlugin();
+  return (
+    <span class="ss-machine-mark" data-machine-mark={props.name}>
+      <ctx.ui.Icon name={MACHINE_ICON} size="small" />
+      <span class="ss-machine-mark-name">{props.name}</span>
+    </span>
   );
 }
 
 /** Props of {@link ProjectList}. */
 export interface ProjectListProps {
-  readonly machines: readonly ProjectMachine[];
-  /** Whether the app lists more than one machine, which heads each machine's projects. */
-  readonly headed: boolean;
+  readonly projects: readonly ProjectEntry[];
+  /** Machines the app lists that are not connected, noted above the projects. */
+  readonly offline: readonly ServerRef[];
   readonly selected: string | undefined;
   readonly now: number;
   readonly onSelect: (project: ProjectEntry) => void;
@@ -35,40 +53,34 @@ export interface ProjectListProps {
   readonly ref: (key: string) => (element: HTMLElement) => void;
 }
 
-/** The projects, under each machine's name when the app lists more than one. */
+/** The projects of every machine in one list, after a note per machine that is not connected. */
 export function ProjectList(props: ProjectListProps) {
   const ctx = usePlugin();
   return (
-    <For each={props.machines}>
-      {(machine) => (
-        <div class="ss-group" data-machine-projects={machine.server.id}>
-          <Show when={props.headed}>
-            <h3 class="ss-group-title ss-machine-title" data-machine={machine.server.id}>
-              <ctx.ui.Icon name={MACHINE_ICON} size="small" />
-              <span>{machine.server.name}</span>
-            </h3>
-          </Show>
-          <Show when={!machine.server.connected}>
-            <p class="ss-note">
-              {ctx.t('browser.machine.offline', { machine: machine.server.name })}
-            </p>
-          </Show>
-          <For each={machine.projects}>
-            {(project) => (
-              <ProjectRow
-                project={project}
-                selected={props.selected === project.key}
-                now={props.now}
-                onSelect={() => props.onSelect(project)}
-                onOpen={() => props.onOpen(project)}
-                onSession={(session) => props.onSession(project, session)}
-                ref={props.ref(project.key)}
-              />
-            )}
-          </For>
-        </div>
-      )}
-    </For>
+    <>
+      <For each={props.offline}>
+        {(server) => (
+          <p class="ss-note" data-machine-note={server.id}>
+            {ctx.t('browser.machine.offline', { machine: server.name })}
+          </p>
+        )}
+      </For>
+      <div class="ss-group">
+        <For each={props.projects}>
+          {(project) => (
+            <ProjectRow
+              project={project}
+              selected={props.selected === project.key}
+              now={props.now}
+              onSelect={() => props.onSelect(project)}
+              onOpen={() => props.onOpen(project)}
+              onSession={(session) => props.onSession(project, session)}
+              ref={props.ref(project.key)}
+            />
+          )}
+        </For>
+      </div>
+    </>
   );
 }
 
@@ -119,6 +131,7 @@ function ProjectRow(props: ProjectRowProps) {
         <span class="ss-row-text">
           <span class="ss-row-title">{props.project.look.name}</span>
           <span class="ss-row-description">{props.project.place}</span>
+          <Show when={props.project.machine}>{(name) => <MachineMark name={name()} />}</Show>
         </span>
         <span class="ss-row-meta" data-count="active">
           {ctx.plural('browser.projects.active', props.project.active)}

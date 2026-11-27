@@ -1,16 +1,16 @@
 import type { SessionInfo } from '@opencode/client';
 import type { ServerRef } from '@opencode/plugin/gui';
 import { createEffect, createMemo, untrack } from 'solid-js';
-import { homePath, type ProjectLook } from '../../host/gui.js';
+import { homePath, machineTag, type ProjectLook } from '../../host/gui.js';
 import { activityTime } from '../../host/session-info.js';
 import type { SearchScope } from '../../rpc.js';
 import type { ProjectLooks } from '../project-looks.js';
 import type { MachinePick, Origin } from './machines.js';
 
-// The projects of every machine the browser lists: what the project picker and the Projects view
-// show. They come from each machine's loaded lists: every project's active sessions, which the
-// browser model holds while it shows all projects and otherwise asks for at most once per open,
-// and the archived sessions it listed.
+// The projects of every machine the browser lists, in one list: what the project picker and the
+// Projects view show. They come from each machine's loaded lists: every project's active
+// sessions, which the browser model holds while it shows all projects and otherwise asks for at
+// most once per open, and the archived sessions it listed.
 
 /**
  * What one server's model lists: every project, the routed session's project (resolved from the
@@ -38,6 +38,11 @@ export interface ProjectEntry {
   /** The project's key on its server. */
   readonly project: string;
   readonly server: ServerRef;
+  /**
+   * The machine's name for a project of a server other than this machine's, once the app lists
+   * more than one, as a session row names its machine (`machineTag` in src/host/gui.ts).
+   */
+  readonly machine: string | undefined;
   readonly selection: MachinePick;
   readonly look: ProjectLook;
   /** The folder the project's root sits in, with `~` for the home directory. */
@@ -52,12 +57,6 @@ export interface ProjectEntry {
   /** Its sessions, active and archived, newest first. */
   readonly recent: readonly SessionInfo[];
   readonly latest: number;
-}
-
-/** A machine and its projects, newest activity first. */
-export interface ProjectMachine {
-  readonly server: ServerRef;
-  readonly projects: readonly ProjectEntry[];
 }
 
 /** The All pick's key. */
@@ -147,7 +146,8 @@ function tally(sample: SessionInfo | undefined): Tally {
 
 /**
  * Every machine's projects with an active or archived session in the loaded lists, and the
- * routed session's project, newest activity first. Call it under the view's owner.
+ * routed session's project, in one list across the machines, newest activity first. Call it
+ * under the view's owner.
  */
 export function createProjects(input: ProjectsInput) {
   // Every project's active sessions from each machine's model, which keeps them across opens and
@@ -178,11 +178,17 @@ export function createProjects(input: ProjectsInput) {
     return info === undefined ? undefined : machineKey(origin.server, projectKey(info));
   });
 
-  const machines = createMemo((): ProjectMachine[] => {
+  /**
+   * Every machine's projects in one list, newest activity first. The sort is stable, so equal
+   * activity keeps the machines' order, the app's own first.
+   */
+  const entries = createMemo((): ProjectEntry[] => {
     const routed = routedKey();
     const origin = input.origin();
-    return input.machines().map((machine) => {
+    const count = input.machines().length;
+    const projects = input.machines().flatMap((machine) => {
       const server = machine.server;
+      const tag = machineTag(server, count);
       const tallies = new Map<string, Tally>();
       const seen = new Set<string>();
       const add = (session: SessionInfo, archived: boolean) => {
@@ -214,54 +220,58 @@ export function createProjects(input: ProjectsInput) {
       if (routedProject !== undefined && !tallies.has(routedProject)) {
         tallies.set(routedProject, tally(undefined));
       }
-      const projects = [...tallies.entries()]
-        .sort(([, a], [, b]) => b.latest - a.latest)
-        .map(([project, entry]): ProjectEntry => {
-          const directory = project.startsWith('directory:')
-            ? project.slice('directory:'.length)
-            : undefined;
-          const id = project.startsWith('project:') ? project.slice('project:'.length) : 'global';
-          const selection: MachinePick =
-            project === routedProject
-              ? { type: 'routed' }
-              : directory !== undefined
-                ? { type: 'directory', directory, server: server.id }
-                : { type: 'project', project: id, subpath: '', server: server.id };
-          const look = input.looks.of(
-            server,
-            id,
-            directory ?? entry.sample?.location.directory ?? origin?.directory ?? ''
-          );
-          return {
-            key: machineKey(server.id, project),
-            project,
-            server,
-            selection,
-            look,
-            place: parentFolder(look.root),
-            active: entry.active,
-            running: entry.running,
-            unread: entry.unread,
-            busy: entry.busy
-              .sort(
-                (a, b) =>
-                  Number(b.status === 'waiting') - Number(a.status === 'waiting') ||
-                  activityTime(b.session) - activityTime(a.session)
-              )
-              .slice(0, BUSY_LINES),
-            recent: entry.recent
-              .sort((a, b) => activityTime(b) - activityTime(a))
-              .slice(0, RECENT_LINES),
-            latest: entry.latest
-          };
-        });
-      return { server, projects };
+      return [...tallies.entries()].map(([project, entry]): ProjectEntry => {
+        const directory = project.startsWith('directory:')
+          ? project.slice('directory:'.length)
+          : undefined;
+        const id = project.startsWith('project:') ? project.slice('project:'.length) : 'global';
+        const selection: MachinePick =
+          project === routedProject
+            ? { type: 'routed' }
+            : directory !== undefined
+              ? { type: 'directory', directory, server: server.id }
+              : { type: 'project', project: id, subpath: '', server: server.id };
+        const look = input.looks.of(
+          server,
+          id,
+          directory ?? entry.sample?.location.directory ?? origin?.directory ?? ''
+        );
+        return {
+          key: machineKey(server.id, project),
+          project,
+          server,
+          machine: tag,
+          selection,
+          look,
+          place: parentFolder(look.root),
+          active: entry.active,
+          running: entry.running,
+          unread: entry.unread,
+          busy: entry.busy
+            .sort(
+              (a, b) =>
+                Number(b.status === 'waiting') - Number(a.status === 'waiting') ||
+                activityTime(b.session) - activityTime(a.session)
+            )
+            .slice(0, BUSY_LINES),
+          recent: entry.recent
+            .sort((a, b) => activityTime(b) - activityTime(a))
+            .slice(0, RECENT_LINES),
+          latest: entry.latest
+        };
+      });
     });
+    return projects.sort((a, b) => b.latest - a.latest);
   });
-  /** Every project in list order, across the machines. */
-  const entries = createMemo(() => machines().flatMap((machine) => machine.projects));
+  /** The machines the app lists that are not connected, whose projects are missing. */
+  const offline = createMemo(() =>
+    input
+      .machines()
+      .map((machine) => machine.server)
+      .filter((server) => !server.connected)
+  );
 
-  return { machines, entries, routedKey };
+  return { entries, offline, routedKey };
 }
 
 export type Projects = ReturnType<typeof createProjects>;

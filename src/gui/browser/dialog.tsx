@@ -305,16 +305,9 @@ function SessionBrowser(props: SessionBrowserProps) {
   // The Projects view: every machine's projects the search matches, and the selected one, the
   // first until the user picks another.
   const headed = () => machines.servers().length > 1;
-  const shownProjects = createMemo(() =>
-    projects
-      .machines()
-      .map((machine) => ({
-        server: machine.server,
-        projects: machine.projects.filter((project) => projectMatches(project, query()))
-      }))
-      .filter((machine) => machine.projects.length > 0 || !machine.server.connected)
+  const projectRows = createMemo(() =>
+    projects.entries().filter((project) => projectMatches(project, query()))
   );
-  const projectRows = createMemo(() => shownProjects().flatMap((machine) => machine.projects));
   const [projectPick, setProjectPick] = createSignal<string>();
   const selectedProject = () => {
     const rows = projectRows();
@@ -524,7 +517,7 @@ function SessionBrowser(props: SessionBrowserProps) {
           </For>
         </div>
         <ProjectPicker
-          machines={projects.machines()}
+          projects={projects.entries()}
           picked={pickedKey()}
           onPick={pick}
           open={picking()}
@@ -605,12 +598,12 @@ function SessionBrowser(props: SessionBrowserProps) {
               }
             >
               <Show
-                when={projectRows().length > 0 || shownProjects().length > 0}
+                when={projectRows().length > 0 || projects.offline().length > 0}
                 fallback={<p class="ss-note ss-list-note">{ctx.t('browser.empty.projects')}</p>}
               >
                 <ProjectList
-                  machines={shownProjects()}
-                  headed={headed()}
+                  projects={projectRows()}
+                  offline={projects.offline()}
                   selected={selectedProject()?.key}
                   now={browser.now()}
                   onSelect={(project) => setProjectPick(project.key)}

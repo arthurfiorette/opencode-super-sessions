@@ -452,12 +452,6 @@
   line-height: 18px;
 }
 
-.ss-machine-title [data-slot="icon-svg"],
-.ss-machine-title svg {
-  flex-shrink: 0;
-  color: var(--v2-icon-icon-muted);
-}
-
 /* The session search's row (dialog.css:44-235): 32px with 8px and 6px insets and 6px corners,
    the avatar, the 13px title at weight 440 and its faint description in one line, the 11px muted
    age at the end. The selected row takes the overlay the search gives its active row; hovering
@@ -782,16 +776,38 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* A machine's heading: the app's group label with the sidebar's server icon before the full
-   name. */
-.ss-picker-machine[data-slot="menu-v2-group-label"] {
-  gap: 6px;
-  padding-inline: 8px;
+/* Another machine's project, in the Projects view and the picker: the sidebar's server icon and
+   the machine's name right after the folder, in the faint text a session row names its machine
+   with. The folder gives up its free space so the mark sits next to it. */
+.ss-machine-mark {
+  display: inline-flex;
+  flex-shrink: 1;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 40%;
+  color: var(--v2-text-text-faint);
+  white-space: nowrap;
 }
 
-.ss-picker-machine span {
+.ss-machine-mark [data-slot="icon-svg"],
+.ss-machine-mark svg {
+  flex-shrink: 0;
+  color: var(--v2-icon-icon-muted);
+}
+
+.ss-machine-mark-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.ss-row-text .ss-machine-mark {
+  font-size: 13px;
+  font-weight: 440;
+  letter-spacing: -0.04px;
+}
+
+.ss-row-text:has(.ss-machine-mark) > .ss-row-description {
+  flex: 0 1 auto;
 }

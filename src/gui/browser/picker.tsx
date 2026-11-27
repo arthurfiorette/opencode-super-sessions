@@ -1,17 +1,19 @@
 import { usePlugin } from '@opencode/plugin/gui';
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
-import { activitySpinner, MACHINE_ICON } from '../../host/gui.js';
+import { activitySpinner } from '../../host/gui.js';
 import { ProjectAvatar } from '../project-avatar.js';
-import { ALL_KEY, type ProjectEntry, type ProjectMachine } from './projects.js';
+import { ALL_KEY, type ProjectEntry } from './projects.js';
+import { MachineMark } from './projects-view.js';
 
 // The browser's project picker: the Settings server switcher's trigger in the dialog's header,
-// and a menu of All projects and each machine's projects in the app's menu markup (BUTTON and
+// and a menu of All projects and every machine's projects in the app's menu markup (BUTTON and
 // MENU in src/host/gui.ts). `ui.Menu` and `ui.Select` list text and icons only, and each project
-// here shows its avatar, its folder and what runs in it.
+// here shows its avatar, its folder, its machine when it is another one, and what runs in it.
 
 /** Props of {@link ProjectPicker}. */
 export interface ProjectPickerProps {
-  readonly machines: readonly ProjectMachine[];
+  /** Every machine's projects in one list; one that is not connected lists none. */
+  readonly projects: readonly ProjectEntry[];
   /** The picked project's key, `all` for every project. */
   readonly picked: string | undefined;
   /** Picks a project, or every project for undefined. */
@@ -27,19 +29,15 @@ interface Option {
 }
 
 /**
- * The picker. The menu opens from the trigger or `alt+p`, lists All first, then the projects
- * under each machine's name when the app lists more than one, and takes up, down, home, end,
- * enter and escape while it has the focus, as the app's menus do.
+ * The picker. The menu opens from the trigger or `alt+p`, lists All first, then every machine's
+ * projects in one list, and takes up, down, home, end, enter and escape while it has the focus,
+ * as the app's menus do.
  */
 export function ProjectPicker(props: ProjectPickerProps) {
   const ctx = usePlugin();
-  /** Machines with a project to pick; one that is not connected lists none. */
-  const groups = createMemo(() => props.machines.filter((machine) => machine.projects.length > 0));
   const options = createMemo((): Option[] => [
     { key: ALL_KEY, project: undefined },
-    ...groups().flatMap((machine) =>
-      machine.projects.map((project) => ({ key: project.key, project }))
-    )
+    ...props.projects.map((project) => ({ key: project.key, project }))
   ]);
   const current = () => options().find((option) => option.key === props.picked)?.project;
   const [active, setActive] = createSignal<string | undefined>();
@@ -142,32 +140,18 @@ export function ProjectPicker(props: ProjectPickerProps) {
             onHover={setActive}
             onChoose={choose}
           />
-          <For each={groups()}>
-            {(machine) => (
-              <div data-machine-group={machine.server.id}>
-                <hr data-slot="menu-v2-separator" />
-                <Show when={props.machines.length > 1}>
-                  <div
-                    data-slot="menu-v2-group-label"
-                    class="ss-picker-machine"
-                    data-machine={machine.server.id}
-                  >
-                    <ctx.ui.Icon name={MACHINE_ICON} size="small" />
-                    <span>{machine.server.name}</span>
-                  </div>
-                </Show>
-                <For each={machine.projects}>
-                  {(project) => (
-                    <Item
-                      option={{ key: project.key, project }}
-                      active={active() === project.key}
-                      checked={props.picked === project.key}
-                      onHover={setActive}
-                      onChoose={choose}
-                    />
-                  )}
-                </For>
-              </div>
+          <Show when={props.projects.length > 0}>
+            <hr data-slot="menu-v2-separator" />
+          </Show>
+          <For each={props.projects}>
+            {(project) => (
+              <Item
+                option={{ key: project.key, project }}
+                active={active() === project.key}
+                checked={props.picked === project.key}
+                onHover={setActive}
+                onChoose={choose}
+              />
             )}
           </For>
         </div>
@@ -191,8 +175,8 @@ interface ItemProps {
 }
 
 /**
- * A row of the menu as the app's menu items draw: the avatar, the name, the folder muted, what
- * runs or waits at the end, and the check of the picked one.
+ * A row of the menu as the app's menu items draw: the avatar, the name, the folder and another
+ * machine's name muted, what runs or waits at the end, and the check of the picked one.
  */
 function Item(props: ItemProps) {
   const ctx = usePlugin();
@@ -224,6 +208,7 @@ function Item(props: ItemProps) {
         <Show when={project()}>
           {(entry) => <span class="ss-picker-place">{entry().place}</span>}
         </Show>
+        <Show when={project()?.machine}>{(name) => <MachineMark name={name()} />}</Show>
       </span>
       <Show when={project()}>
         {(entry) => (

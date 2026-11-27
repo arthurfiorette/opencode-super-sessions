@@ -643,15 +643,22 @@ async function openOnBoth(windowsHandlers) {
 test('All lists every machine, and a remote row opens and archives on its own server', async () => {
   const { local, windows } = await openOnBoth();
 
-  // The picker heads each machine's projects with its full name; the remote row names its
-  // machine and the local one does not, as the app's sidebar labels them.
+  // The picker lists both machines' projects in one list by latest activity, after All, and
+  // marks only the remote one with its machine; the remote session row names its machine and
+  // the local one does not, as the app's sidebar labels them.
   openPicker();
   await until(() => option('project:winproj'), 'the Windows project');
   assert.deepEqual(
-    [...document.querySelectorAll('.ss-picker-machine, [data-option]')].map(
-      (node) => node.dataset.machine ?? node.dataset.option.split('\n').at(-1)
-    ),
-    ['all', 'sidecar', 'project:proj', 'project:other', WINDOWS_ID, 'project:winproj']
+    [...document.querySelectorAll('[data-option]')].map((node) => [
+      node.dataset.option.split('\n').at(-1),
+      node.querySelector('[data-machine-mark]')?.textContent
+    ]),
+    [
+      ['all', undefined],
+      ['project:proj', undefined],
+      ['project:winproj', 'Windows'],
+      ['project:other', undefined]
+    ]
   );
   document.querySelector('.ss-picker-trigger').click();
   assert.equal(
@@ -674,22 +681,27 @@ test('All lists every machine, and a remote row opens and archives on its own se
   assert.deepEqual(updates(local), []);
 });
 
-test("the Projects view lists each machine's projects, and enter lists one in Active", async () => {
+test("the Projects view lists every machine's projects, and enter lists one in Active", async () => {
   const { windows } = await openOnBoth();
 
   tab('projects').click();
   await until(() => document.querySelector('[data-project$="project:winproj"]'), 'the projects');
-  // Under each machine's name, newest activity first, as the app's sidebar groups by server.
+  // One list, newest activity first, the remote project marked with its machine.
   assert.deepEqual(
-    [...document.querySelectorAll('.ss-machine-title, [data-project]')].map(
-      (node) => node.dataset.machine ?? node.dataset.project.split('\n').at(-1)
-    ),
-    ['sidecar', 'project:proj', 'project:other', WINDOWS_ID, 'project:winproj']
+    [...document.querySelectorAll('[data-project]')].map((node) => [
+      node.dataset.project.split('\n').at(-1),
+      node.querySelector('[data-machine-mark]')?.textContent
+    ]),
+    [
+      ['project:proj', undefined],
+      ['project:winproj', 'Windows'],
+      ['project:other', undefined]
+    ]
   );
 
-  // The search narrows the projects by name or path.
+  // The search matches the machine's name too.
   const input = search();
-  input.value = 'install';
+  input.value = 'windows';
   input.dispatchEvent(new Event('input', { bubbles: true }));
   await until(() => document.querySelectorAll('[data-project]').length === 1, 'the match');
   press({ key: 'Enter' });

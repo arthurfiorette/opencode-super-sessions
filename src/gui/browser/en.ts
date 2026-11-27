@@ -18,7 +18,7 @@ export const browserEn = {
   'browser.projects.recent': 'Recent sessions',
   'browser.view.projects': 'Projects',
   'browser.empty.projects': 'No projects',
-  'browser.search.projects': 'Search projects by name or path',
+  'browser.search.projects': 'Search projects by name, path or machine',
   'browser.hint.scope': 'show sessions',
   'browser.waiting': 'Waiting for you',
   'time.justNow': 'Just now',
