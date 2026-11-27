@@ -68,6 +68,12 @@ const SESSIONS = [
   session('ses_plain', 'Read the logs', { created: NOW - 3 * HOUR })
 ];
 const ARCHIVED = [session('ses_old', 'Old spike', { archived: NOW - HOUR })];
+// A session of another project, older than every session of the routed one.
+const OTHER = {
+  ...session('ses_other', 'Other repo work', { created: NOW - 10 * HOUR, updated: NOW - 9 * HOUR }),
+  projectID: 'other',
+  location: { directory: '/work/other' }
+};
 // It tracks nothing: the server answers an empty view.
 const plain = sessionRefViewSchema.parse({ links: [], branchRefs: [], states: {} });
 const VIEWS = { ses_busy: busy, ses_merged: merged, ses_plain: plain };
@@ -80,8 +86,13 @@ const viewsOf = (ids) =>
 function fixtureServer(handlers = {}, data = {}) {
   const client = createClient({
     'session.get': ({ sessionID }) =>
-      [...SESSIONS, ...ARCHIVED].find((item) => item.id === sessionID),
-    'session.list': ({ archived }) => ({ data: archived ? ARCHIVED : SESSIONS }),
+      [...SESSIONS, ...ARCHIVED, OTHER].find((item) => item.id === sessionID),
+    // The host's project filter; a list without one has every project's sessions.
+    'session.list': ({ archived, project }) => ({
+      data: (archived ? ARCHIVED : [...SESSIONS, OTHER]).filter(
+        (item) => project === undefined || item.projectID === project
+      )
+    }),
     'session.update': () => undefined,
     // The user last wrote before the pull request merged.
     'message.list': () => ({ data: [{ time: { created: NOW - 2 * HOUR } }] }),
@@ -256,23 +267,64 @@ test('without the server plugin, sessions still list, with a note', async () => 
   assert.equal(row('ses_busy').querySelector('[aria-label="Mark Done"]'), null);
 });
 
-test('this project lists the routed session project, all projects lists every one', async () => {
-  const client = await openBrowser();
+const tile = (key) => document.querySelector(`[data-tile="${key}"]`);
+const runningBadge = (key) => tile(key)?.querySelector('.ss-rail-running')?.textContent;
+
+test('the rail lists the picked project whole, and All lists every project', async () => {
+  const client = await openBrowser(undefined, { running: ['ses_other'] });
   const filters = () =>
     client.calls
       .filter((call) => call.name === 'session.list')
       .map((call) => [call.input.archived, call.input.project, call.input.subpath]);
 
-  assert.deepEqual(filters(), [
-    [false, 'proj', ''],
-    [true, 'proj', '']
+  // The routed session's project, with every worktree and subfolder: no subpath.
+  await until(() => tile('project:other'), 'the other project tile');
+  assert.deepEqual(listed(), ['ses_busy', 'ses_plain']);
+  assert.equal(tile('project:proj').getAttribute('aria-pressed'), 'true');
+  assert.ok(filters().some((item) => item.join() === [false, 'proj', undefined].join()));
+
+  const before = filters().length;
+  tile('project:other').click();
+  await until(() => listed().join() === 'ses_other', 'the other project');
+  assert.deepEqual(filters().slice(before), [
+    [false, 'other', undefined],
+    [true, 'other', undefined]
   ]);
-  document.querySelector('.ss-scope').click();
-  await until(() => filters().length === 4, 'the reload');
-  assert.deepEqual(filters().slice(2), [
+
+  tile('all').click();
+  await until(() => listed().length === 3, 'every project');
+  assert.deepEqual(listed().sort(), ['ses_busy', 'ses_other', 'ses_plain']);
+  assert.deepEqual(filters().slice(-2), [
     [false, undefined, undefined],
     [true, undefined, undefined]
   ]);
+});
+
+test('a project tile counts its running sessions, and All counts them all', async () => {
+  await openBrowser(undefined, { running: ['ses_other', 'ses_plain', 'ses_busy'] });
+
+  await until(() => runningBadge('project:other'), 'the badges');
+  assert.equal(runningBadge('project:other'), '1');
+  assert.equal(runningBadge('project:proj'), '2');
+  assert.equal(runningBadge('all'), '3');
+});
+
+test('alt+down picks the next project on the rail, alt+up the one before', async () => {
+  await openBrowser();
+  await until(() => tile('project:other'), 'the rail');
+  // Newest activity first: the routed project, then the other one.
+  assert.deepEqual(
+    [...document.querySelectorAll('[data-tile]')].map((node) => node.dataset.tile),
+    ['all', 'project:proj', 'project:other']
+  );
+
+  press({ key: 'ArrowDown', altKey: true });
+  await until(() => listed().join() === 'ses_other', 'the next project');
+  assert.equal(tile('project:other').getAttribute('aria-pressed'), 'true');
+  // The rows move with plain arrows only, so the selection starts over on the first row.
+  assert.equal(row('ses_other').getAttribute('aria-selected'), 'true');
+  press({ key: 'ArrowUp', altKey: true });
+  await until(() => listed().join() === 'ses_busy,ses_plain', 'the project before');
 });
 
 const MODEL = { providerID: 'acme', id: 'large' };

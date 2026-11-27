@@ -109,6 +109,18 @@ export function claimCommandKeys<E extends KeyEvent>(
   return () => target.removeEventListener('keydown', listener, { capture: true });
 }
 
+/**
+ * The keys that move along the browser's project rail, and why the app does not run its own
+ * command on them while the browser is open. The app binds `alt+arrowup` and `alt+arrowdown` to
+ * the previous and next session tab (packages/app/src/shell/titlebar/tab-strip.tsx:64 at
+ * v2.4.2), but its keymap runs no command while a dialog is open
+ * (packages/app/src/shell/commands/command.tsx:437). On macOS the Go menu gives the same keys as
+ * Option+Up and Option+Down (packages/app/src/shell/commands/desktop-menu.ts:250), and macOS hands
+ * the menu only the keys the page leaves unhandled (packages/desktop/src/renderer/platform/menu.ts:26),
+ * so the browser calls `preventDefault` on them.
+ */
+export const RAIL_KEYS = { previous: 'alt+arrowup', next: 'alt+arrowdown' } as const;
+
 /** The `+` menu before the side panel's tabs, where `MenuItem` adds entries (registries.ts:105). */
 export const PANEL_MENU = 'session.panel';
 

@@ -1,0 +1,179 @@
+import type { SessionInfo } from '@opencode/client';
+import type { ServerRef } from '@opencode/plugin/gui';
+import { createEffect, createMemo, createSignal, untrack } from 'solid-js';
+import type { ProjectLook } from '../../host/gui.js';
+import { activityTime } from '../../host/session-info.js';
+import type { SearchScope } from '../../rpc.js';
+import { type LocalProject, sessionProjectLook } from '../project-avatar.js';
+
+// The browser's project rail: a tile for every project, then one for all of them, with each
+// project's running and unread sessions. The tiles come from one list of every project's active
+// sessions, which the browser already holds while it shows all projects and otherwise asks for
+// once per open, beside its own load.
+
+/**
+ * What the rail selects: every project, the routed session's project (resolved from the session
+ * as "this project" was, so a removed worktree still lists), or another project or directory.
+ */
+export type RailSelection =
+  | { readonly type: 'all' }
+  | { readonly type: 'routed' }
+  | Exclude<SearchScope, { type: 'all' }>;
+
+/** One tile of the rail. */
+export interface RailTile {
+  /** `all`, `project:<id>` or `directory:<path>`. */
+  readonly key: string;
+  readonly selection: RailSelection;
+  /** The project's avatar; undefined for the All tile. */
+  readonly look: ProjectLook | undefined;
+  /** The tile's running sessions. */
+  readonly running: number;
+  /** Whether one of the tile's sessions is unread or waits on the user. */
+  readonly unread: boolean;
+}
+
+/** The All tile's key. */
+export const ALL_KEY = 'all';
+
+/** Sessions asked for the rail when the browser lists one project: the list's own page size. */
+const RAIL_LIMIT = 200;
+
+/**
+ * The tile a session belongs to: its project, or its directory for a session outside one, which
+ * the host stores under the `global` project.
+ */
+export function tileKey(session: Pick<SessionInfo, 'projectID' | 'location'>): string {
+  return session.projectID === 'global'
+    ? `directory:${session.location.directory}`
+    : `project:${session.projectID}`;
+}
+
+/** The rail's key of a selection, given the routed session's tile. */
+export function selectionKey(
+  selection: RailSelection,
+  routed: string | undefined
+): string | undefined {
+  if (selection.type === 'all') return ALL_KEY;
+  if (selection.type === 'routed') return routed;
+  return selection.type === 'project'
+    ? `project:${selection.project}`
+    : `directory:${selection.directory}`;
+}
+
+/** What {@link createRail} reads. */
+export interface RailInput {
+  readonly server: ServerRef;
+  /** The routed session; undefined on Home. */
+  readonly origin: { readonly id: string; readonly directory: string } | undefined;
+  /** The routed session's project with the user's local name and icon, when the app has it. */
+  readonly local: () => LocalProject | undefined;
+  /** Whether the browser lists every project now. */
+  readonly all: () => boolean;
+  /** The browser's active sessions once loaded, every project's while `all()` holds. */
+  readonly active: () => readonly SessionInfo[] | undefined;
+  readonly running: (session: SessionInfo) => boolean;
+  /** Whether the session is unread or waits on the user. */
+  readonly unread: (session: SessionInfo) => boolean;
+}
+
+/**
+ * The rail's tiles: All first, then a tile for every project with an active session and for the
+ * routed session's project, newest activity first. Call it under the dialog's owner.
+ */
+export function createRail(input: RailInput) {
+  // Every project's active sessions: the browser's own list while it shows all projects, which
+  // stays current, else one list asked for once and kept for the rest of the open.
+  const [fetched, setFetched] = createSignal<readonly SessionInfo[]>();
+  const [shownAll, setShownAll] = createSignal<readonly SessionInfo[]>();
+  let asked = false;
+  createEffect(() => {
+    const active = input.active();
+    if (input.all()) {
+      if (active !== undefined) setShownAll(active);
+      return;
+    }
+    if (asked || untrack(shownAll) !== undefined) return;
+    asked = true;
+    untrack(() => input.server.client)
+      .session.list({ limit: RAIL_LIMIT, order: 'desc', parentID: null, archived: false })
+      .then((page) => setFetched(page.data))
+      .catch(() => {
+        // The tiles keep to the routed project; the next open asks again.
+      });
+  });
+  const sessions = (): readonly SessionInfo[] => shownAll() ?? fetched() ?? [];
+
+  /** The routed session's tile, once its project is known. */
+  const routedKey = createMemo(() => {
+    if (input.origin === undefined) return undefined;
+    const id = input.origin.id;
+    const info =
+      input.server.data.session.get(id) ??
+      sessions().find((session) => session.id === id) ??
+      input.active()?.find((session) => session.id === id);
+    if (info !== undefined) return tileKey(info);
+    const local = input.local();
+    return local === undefined ? undefined : `project:${local.id}`;
+  });
+
+  const tiles = createMemo((): RailTile[] => {
+    const groups = new Map<
+      string,
+      { sample: SessionInfo | undefined; latest: number; running: number; unread: boolean }
+    >();
+    let running = 0;
+    let unread = false;
+    for (const session of sessions()) {
+      const key = tileKey(session);
+      const group = groups.get(key) ?? { sample: session, latest: 0, running: 0, unread: false };
+      group.latest = Math.max(group.latest, activityTime(session));
+      if (input.running(session)) {
+        group.running += 1;
+        running += 1;
+      }
+      if (input.unread(session)) {
+        group.unread = true;
+        unread = true;
+      }
+      groups.set(key, group);
+    }
+    const routed = routedKey();
+    if (routed !== undefined && !groups.has(routed)) {
+      groups.set(routed, { sample: undefined, latest: 0, running: 0, unread: false });
+    }
+    const local = input.local();
+    const projects = [...groups.entries()]
+      .sort(([, a], [, b]) => b.latest - a.latest)
+      .map(([key, group]): RailTile => {
+        const directory = key.startsWith('directory:') ? key.slice('directory:'.length) : undefined;
+        const project = key.startsWith('project:') ? key.slice('project:'.length) : 'global';
+        const selection: RailSelection =
+          key === routed
+            ? { type: 'routed' }
+            : directory !== undefined
+              ? { type: 'directory', directory }
+              : { type: 'project', project, subpath: '' };
+        return {
+          key,
+          selection,
+          look: sessionProjectLook(
+            input.server,
+            project,
+            directory ?? group.sample?.location.directory ?? input.origin?.directory ?? '',
+            local
+          ),
+          running: group.running,
+          unread: group.unread
+        };
+      });
+    return [
+      { key: ALL_KEY, selection: { type: 'all' }, look: undefined, running, unread },
+      ...projects
+    ];
+  });
+
+  return { tiles, routedKey };
+}
+
+export type Rail = ReturnType<typeof createRail>;

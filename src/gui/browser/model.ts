@@ -2,7 +2,7 @@ import type { SessionInfo } from '@opencode/client';
 import { createKeyed, type ServerRef } from '@opencode/plugin/gui';
 import { createEffect, createMemo, createSignal, onCleanup, untrack } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import { listFilters, sessionScope } from '../../host/session-info.js';
+import { projectListFilters, sessionScope, wholeProject } from '../../host/session-info.js';
 import {
   createPageController,
   filterPulls,
@@ -19,6 +19,7 @@ import {
 } from '../../page/state.js';
 import type { SearchScope } from '../../rpc.js';
 import { rpcAt, rpcOn, serverPluginMissing } from '../server.js';
+import type { RailSelection } from './rail.js';
 
 // The browser's data for one open dialog: the TUI's page controller (`src/page/state.ts`) bound to
 // the window's `ServerRef`, as `src/page/model.ts` binds it to the TUI's client and `data`. The
@@ -39,7 +40,8 @@ export interface BrowserTarget {
 /** What {@link createBrowserModel} reads besides the target. */
 export interface BrowserInput {
   readonly target: BrowserTarget;
-  readonly scope: () => PageScope;
+  /** The rail's pick; the lists and the search follow it. */
+  readonly selection: () => RailSelection;
   readonly view: () => PageView;
   readonly query: () => string;
 }
@@ -69,11 +71,21 @@ export function createBrowserModel(input: BrowserInput) {
     });
     return reading;
   };
-  /** The scope as the server's list and search take it. */
-  const searchScope = async (scope: PageScope): Promise<SearchScope> =>
-    scope === 'all' || origin === undefined
+  /** The controller's name for the rail's pick, which it only tells apart as all or one. */
+  const pageScope = (): PageScope => (input.selection().type === 'all' ? 'all' : 'project');
+  /**
+   * The rail's pick as the server's list and search take it, read when a request starts: a pick
+   * resets the controller, which drops the answers of earlier picks. A project is the whole
+   * project, as the sidebar's project group lists it.
+   */
+  const searchScope = async (): Promise<SearchScope> => {
+    const selection = input.selection();
+    if (selection.type === 'all') return { type: 'all' };
+    if (selection.type !== 'routed') return selection;
+    return origin === undefined
       ? { type: 'all' }
-      : sessionScope(await originSession(origin.id));
+      : wholeProject(sessionScope(await originSession(origin.id)));
+  };
   // The routed session's Location answers for the plugin there; on Home, or when that directory no
   // longer resolves, the server's default one.
   const rpcOptions = async () =>
@@ -99,7 +111,7 @@ export function createBrowserModel(input: BrowserInput) {
     {
       async list(request) {
         const response = await client().session.list({
-          ...listFilters(await searchScope(request.scope)),
+          ...projectListFilters(await searchScope()),
           ...(request.search ? { search: request.search } : {}),
           limit: 200,
           order: 'desc',
@@ -110,7 +122,7 @@ export function createBrowserModel(input: BrowserInput) {
       },
       get: (sessionID) => client().session.get({ sessionID }),
       search: async (request) => {
-        const scope = await searchScope(request.scope);
+        const scope = await searchScope();
         return rpc(async () =>
           rpcOn(server).search(
             { query: request.query, archived: request.archived, scope, limit: 100 },
@@ -217,7 +229,7 @@ export function createBrowserModel(input: BrowserInput) {
   /** Loads the lists for the scope, then asks the forge about the rows of the view on screen. */
   const load = async () => {
     const token = ++loadToken;
-    await controller.load(input.scope());
+    await controller.load(pageScope());
     if (token === loadToken) refreshNew(visibleIDs());
   };
 

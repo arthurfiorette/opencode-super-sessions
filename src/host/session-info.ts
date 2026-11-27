@@ -64,6 +64,37 @@ export function listFilters(
 }
 
 /**
+ * A scope widened to its whole project: a project scope with an empty subpath. The Desktop
+ * browser's project rail lists a project as the app sidebar's project group does, with the
+ * sessions of all its worktrees and subfolders (`sandboxes` on the project, and
+ * packages/app/src/shell/titlebar/sidebar-customized.tsx at v2.4.2). Other scopes stay as they
+ * are.
+ */
+export function wholeProject(scope: SearchScope): SearchScope {
+  return scope.type === 'project'
+    ? { type: 'project', project: scope.project, subpath: '' }
+    : scope;
+}
+
+/**
+ * `session.list` filters for the Desktop browser's scope, where a project scope with an empty
+ * subpath is the whole project (see {@link wholeProject}), as the `search` RPC reads it
+ * (`listScope` in src/server/views.ts). The host filters on `subpath` only when one is given
+ * (packages/core/src/session/store.ts:162 at v2.4.2), so a project alone lists every session
+ * stored under the project's id, in any worktree or subfolder.
+ */
+export function projectListFilters(
+  scope: SearchScope
+):
+  | { directory: string }
+  | { project: string }
+  | { project: string; subpath: string }
+  | Record<string, never> {
+  if (scope.type === 'project' && scope.subpath === '') return { project: scope.project };
+  return listFilters(scope);
+}
+
+/**
  * Whether a session finished a run the user has not looked at since: the host's own unread rule
  * for tabs (packages/tui/src/context/session-tabs.tsx:125). `time.viewed` has no doc comment in
  * the schema, so this follows the host's reading of it.

@@ -518,20 +518,97 @@
   gap: 6px;
 }
 
-.ss-scope {
-  padding: 2px 4px;
+/* The project rail: a column of 32px tiles at the dialog's left edge, the picked one on the
+   pressed overlay with a pill on the rail's edge. A long rail scrolls on its own. */
+.ss-rail {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 2px 8px 2px 6px;
+  overflow-y: auto;
+  border-right: 1px solid var(--v2-border-border-base);
+}
+
+.ss-rail-tile {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   background: none;
-  color: inherit;
-  font: inherit;
+  color: var(--v2-icon-icon-muted);
   cursor: pointer;
 }
 
-.ss-scope:hover {
+.ss-rail-tile:hover {
   background: var(--v2-overlay-simple-overlay-hover);
 }
 
-.ss-scope-home {
-  color: var(--v2-text-text-faint);
+.ss-rail-tile[aria-pressed="true"] {
+  background: var(--v2-overlay-simple-overlay-pressed);
+  color: var(--v2-text-text-base);
+}
+
+.ss-rail-tile[aria-pressed="true"]::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: -6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--v2-text-text-base);
+  content: "";
+}
+
+.ss-rail-tile:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: -2px;
+}
+
+/* The app's avatar at rail size; the sidebar draws it at 16px. */
+.ss-rail [data-component="project-avatar-v2"] {
+  width: 20px;
+  height: 20px;
+}
+
+.ss-rail [data-slot="project-avatar-surface"] {
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+/* Running sessions in the running color, at the tile's bottom right. */
+.ss-rail-running {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--v2-state-fg-warning);
+  color: var(--v2-background-bg-base);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+}
+
+/* The sidebar's unread dot, at the tile's top right. */
+.ss-rail-unread {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--v2-text-text-base);
 }

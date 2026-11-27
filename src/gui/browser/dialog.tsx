@@ -20,8 +20,14 @@ import {
   Switch,
   untrack
 } from 'solid-js';
-import { closeSessionTab, openSession, openWebLink, type ProjectLook } from '../../host/gui.js';
-import { isBusy, setArchived } from '../../host/session-info.js';
+import {
+  closeSessionTab,
+  openSession,
+  openWebLink,
+  type ProjectLook,
+  RAIL_KEYS
+} from '../../host/gui.js';
+import { isBusy, isUnread, setArchived } from '../../host/session-info.js';
 import {
   keepSelection,
   moveSelection,
@@ -40,19 +46,25 @@ import { sessionProjectLook } from '../project-avatar.js';
 import type { RefsStore } from '../refs-store.js';
 import { rpcOn, serverFor } from '../server.js';
 import { type BrowserModel, type BrowserTarget, createBrowserModel } from './model.js';
-import type { BrowserPrefs } from './prefs.js';
+import { type BrowserPrefs, opensOnAll } from './prefs.js';
 import { Preview } from './preview.js';
+import { ALL_KEY, createRail, type RailSelection, type RailTile, selectionKey } from './rail.js';
+import { ProjectRail } from './rail-view.js';
 import { PullItem, SessionRow } from './row.js';
 
 // The session browser dialog: the TUI's browser (src/page/view.ts) in the window, on the same
 // controller and grouping. Keys, checked against the app's and the text field's (see `onKeyDown`):
 // up and down move, tab and shift+tab switch views, enter opens in a focused tab and mod+enter in
 // the background, alt+s archives or restores, alt+q marks Done or not Done, alt+g opens the
-// session's pull request, issue or link in the web browser, alt+a switches the scope and f5
+// session's pull request, issue or link, alt+up and alt+down move along the project rail and f5
 // reloads the session from its forge.
 
-/** The dialog's chords without `alt` that its hints show. */
-const KEYS = { open: 'enter' } as const;
+/** The dialog's chords without a letter that its hints show. */
+const KEYS = {
+  open: 'enter',
+  previousProject: RAIL_KEYS.previous,
+  nextProject: RAIL_KEYS.next
+} as const;
 
 /** The TUI's tab icons (`tabLabel` in src/page/view.ts); Active has none. */
 const TAB_ICONS: Record<PageView, OcticonName | undefined> = {
@@ -75,7 +87,7 @@ function previewShareOf(value: unknown): number {
 }
 
 /** What an `alt` chord does. */
-type AltAction = 'archive' | 'done' | 'web' | 'scope';
+type AltAction = 'archive' | 'done' | 'web';
 
 /**
  * The `alt` chords by physical key. On macOS `alt` turns a letter into another character
@@ -85,16 +97,14 @@ type AltAction = 'archive' | 'done' | 'web' | 'scope';
 const ALT_CODES: Record<string, AltAction> = {
   KeyS: 'archive',
   KeyQ: 'done',
-  KeyG: 'web',
-  KeyA: 'scope'
+  KeyG: 'web'
 };
 
 /** The physical key of each `alt` chord: the inverse of {@link ALT_CODES}. */
 const ALT_KEYS: Record<AltAction, string> = {
   archive: 'KeyS',
   done: 'KeyQ',
-  web: 'KeyG',
-  scope: 'KeyA'
+  web: 'KeyG'
 };
 
 /**
@@ -178,11 +188,24 @@ interface SessionBrowserProps {
   readonly close: () => void;
 }
 
-/** The dialog's content: tabs, scope, search, the list and the preview. */
+/** The dialog's content: the project rail, tabs, search, the list and the preview. */
 function SessionBrowser(props: SessionBrowserProps) {
   const ctx = usePlugin();
   const target = untrack(() => props.target);
   const home = target.origin === undefined;
+  // The rail's pick: every project on Home, where no project is routed, else the user's last
+  // pick, read once per open. A pick of a project reopens on the routed session's project.
+  const [selection, setSelection] = createSignal<RailSelection>(
+    home ||
+      opensOnAll(
+        untrack(() => props.prefs.value),
+        ctx.options.scope
+      )
+      ? { type: 'all' }
+      : { type: 'routed' }
+  );
+  /** The controller's view of the pick, which tells only all projects from one. */
+  const scope = (): PageScope => (selection().type === 'all' ? 'all' : 'project');
   const [view, setView] = createSignal<PageView>('active');
   const [query, setQuery] = createSignal('');
   // The user's last pick of a row and of a pull request. A new object per pick, so picking the
@@ -191,13 +214,7 @@ function SessionBrowser(props: SessionBrowserProps) {
   const [pullPick, setPullPick] = createSignal<Choice>(NO_PICK, { equals: false });
   const setSelected = (id: string | undefined) => setRowPick({ id });
   const setPull = (key: string | undefined) => setPullPick({ id: key });
-  /** The scope the list shows: always all projects on Home, where no project is routed. */
-  const scope = (): PageScope => {
-    if (home) return 'all';
-    const stored = props.prefs.value.allProjects;
-    return (stored ?? ctx.options.scope === 'all') ? 'all' : 'project';
-  };
-  const model: BrowserModel = createBrowserModel({ target, scope, view, query });
+  const model: BrowserModel = createBrowserModel({ target, selection, view, query });
   const store = model.data;
   const pullView = () => view() === 'pulls';
 
@@ -292,17 +309,60 @@ function SessionBrowser(props: SessionBrowserProps) {
   const previewShare = previewShareOf(ctx.options.previewWidth);
   const titleEnd = () => TITLE_ORANGE[ctx.appearance.mode() === 'light' ? 'light' : 'dark'];
 
-  // The scope's first value loads the lists; a later one starts over in the other scope.
+  // The first pick loads the lists; a later one starts over in the picked project.
   createEffect(
-    on(scope, (_, previous) => {
+    on(selection, (_, previous) => {
       if (previous !== undefined) model.controller.reset();
       void model.load();
     })
   );
-  // The Pull requests view filters its own rows; the session search stays off there.
-  createEffect(() =>
-    model.controller.search(pullView() ? '' : query(), view() === 'archived', scope())
-  );
+  // The Pull requests view filters its own rows; the session search stays off there. A new pick
+  // asks again, since starting over cleared the results.
+  createEffect(() => {
+    selection();
+    model.controller.search(pullView() ? '' : query(), view() === 'archived', scope());
+  });
+
+  // The rail's tiles, from every project's active sessions.
+  const rail = createRail({
+    server: target.server,
+    origin: target.origin,
+    local: () => {
+      const project = ctx.sessions.current()?.project;
+      return project === undefined
+        ? undefined
+        : { id: project.id, name: project.name, icon: project.icon };
+    },
+    all: () => scope() === 'all',
+    active: () => (store.status === 'ready' ? store.active : undefined),
+    running: (session) => running(session),
+    unread: (session) => isUnread(live(session)) || waiting(session.id) !== undefined
+  });
+  /** The tile the rail shows as picked. */
+  const pickedTile = () => selectionKey(selection(), rail.routedKey());
+  /**
+   * Lists a tile's sessions, keeping the view and the search, and selects the first row. The pick
+   * outlasts the open: `all`, or `project`, which the next open reads as the routed project. Only
+   * this pick writes, so the old `allProjects` is read once and dropped here.
+   */
+  const pickTile = (tile: RailTile) => {
+    if (tile.key === pickedTile()) return;
+    setSelection(tile.selection);
+    setSelected(undefined);
+    setPull(undefined);
+    props.prefs.update((draft) => {
+      draft.rail = tile.key === ALL_KEY ? 'all' : 'project';
+      delete draft.allProjects;
+      return undefined;
+    });
+  };
+  /** Picks the tile `delta` places along the rail, stopping at its ends. */
+  const moveTile = (delta: number) => {
+    const tiles = rail.tiles();
+    const index = tiles.findIndex((tile) => tile.key === pickedTile());
+    const next = tiles[Math.min(tiles.length - 1, Math.max(0, (index === -1 ? 0 : index) + delta))];
+    if (next !== undefined) pickTile(next);
+  };
 
   // The selected row scrolls into view as the keys move it.
   const elements = new Map<string, HTMLElement>();
@@ -341,14 +401,6 @@ function SessionBrowser(props: SessionBrowserProps) {
     setView(to);
     setSelected(undefined);
     setPull(undefined);
-  };
-  const toggleScope = () => {
-    if (home) return;
-    const all = scope() === 'all';
-    props.prefs.update((draft) => {
-      draft.allProjects = !all;
-      return undefined;
-    });
   };
   /** Opens the session in a tab, focused unless `background`, and closes the dialog. */
   const open = (session: SessionInfo | undefined, background = false) => {
@@ -450,19 +502,24 @@ function SessionBrowser(props: SessionBrowserProps) {
    * search field and the dialog itself can clash: arrows and tab do nothing useful in a one-line
    * field, enter has no submit there, the `alt` letters only type symbols on macOS and nothing
    * elsewhere, and f5 is the browser panel's reload, a command the dialog already suspends.
-   * `mod+a` stays the field's select-all, so the scope takes `alt+a`. Enter on a focused button
-   * or link stays that control's. Tab switches views only from the search field or the dialog
-   * itself; on a button or link it moves the focus as usual, so the keyboard reaches the scope
-   * button, Retry and the preview's buttons. Without the server plugin, `alt+q`, `alt+g` and f5
+   * `alt+up` and `alt+down` move along the rail from anywhere in the dialog, plain up and down
+   * keep moving the rows; on macOS the app's Go menu binds them to the previous and next session,
+   * which taking them here keeps from running (RAIL_KEYS in src/host/gui.ts). Enter on a focused
+   * button or link stays that control's. Tab switches views only from the search field or the
+   * dialog itself; on a button or link it moves the focus as usual, so the keyboard reaches the
+   * rail, Retry and the preview's buttons. Without the server plugin, `alt+q`, `alt+g` and f5
    * have nothing to act on and do nothing, and their hints are hidden.
    */
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.isComposing) return;
     const mod = event.metaKey || event.ctrlKey;
     const plain = !mod && !event.altKey && !event.shiftKey;
+    const onlyAlt = event.altKey && !mod && !event.shiftKey;
     const missing = model.missing();
     let handled = true;
-    if (event.key === 'ArrowDown' && plain) move(1);
+    if (event.key === 'ArrowDown' && onlyAlt) moveTile(1);
+    else if (event.key === 'ArrowUp' && onlyAlt) moveTile(-1);
+    else if (event.key === 'ArrowDown' && plain) move(1);
     else if (event.key === 'ArrowUp' && plain) move(-1);
     else if (
       event.key === 'Tab' &&
@@ -476,11 +533,10 @@ function SessionBrowser(props: SessionBrowserProps) {
       if (event.target instanceof Element && event.target.closest('button, a')) return;
       open(current(), mod);
     } else if (event.key === 'F5' && plain) void reload();
-    else if (event.altKey && !mod && !event.shiftKey && ALT_CODES[event.code] !== undefined) {
+    else if (onlyAlt && ALT_CODES[event.code] !== undefined) {
       // Taken even when it does nothing, so the field does not type the key's `alt` symbol.
       const action = ALT_CODES[event.code];
       if (action === 'archive') void archive(current());
-      else if (action === 'scope') toggleScope();
       else if (action === 'done') void toggleDone(current());
       else if (!missing) openWeb();
     } else handled = false;
@@ -546,6 +602,7 @@ function SessionBrowser(props: SessionBrowserProps) {
       on:keydown={onKeyDown}
     >
       <div class="ss-browser-main">
+        <ProjectRail tiles={rail.tiles()} picked={pickedTile()} onPick={pickTile} />
         <div class="ss-browser-left">
           <div class="ss-browser-bar">
             <span class="ss-title" aria-hidden="true" style={{ '--ss-title-end': titleEnd() }}>
@@ -692,7 +749,7 @@ function SessionBrowser(props: SessionBrowserProps) {
           </aside>
         </Show>
       </div>
-      {/* The TUI's footer: actions on the selected row on the left, the scope on the right. */}
+      {/* The TUI's footer: actions on the selected row on the left, the rail's keys on the right. */}
       <div class="ss-hints">
         <div class="ss-hints-actions">
           <Hint keys={KEYS.open} label={ctx.t('browser.hint.open')} />
@@ -717,24 +774,11 @@ function SessionBrowser(props: SessionBrowserProps) {
             </Show>
           </Show>
         </div>
-        <Show
-          when={!home}
-          fallback={
-            // On Home no project is routed, so there is no scope to switch to; this says why.
-            <span class="ss-scope-home">
-              {`${ctx.t('browser.scope.all')}. ${ctx.t('browser.scope.home')}`}
-            </span>
-          }
-        >
-          <ctx.ui.Tooltip value={ctx.t('browser.scope.toggle')}>
-            <button type="button" class="ss-hint ss-scope" onClick={toggleScope}>
-              <ctx.ui.Keybind keys={ctx.keybinds.keys(alt('scope'))} />
-              <span>
-                {ctx.t(scope() === 'all' ? 'browser.hint.thisProject' : 'browser.hint.allProjects')}
-              </span>
-            </button>
-          </ctx.ui.Tooltip>
-        </Show>
+        <span class="ss-hint">
+          <ctx.ui.Keybind keys={ctx.keybinds.keys(KEYS.previousProject)} />
+          <ctx.ui.Keybind keys={ctx.keybinds.keys(KEYS.nextProject)} />
+          <span>{ctx.t('browser.hint.projects')}</span>
+        </span>
       </div>
     </div>
   );

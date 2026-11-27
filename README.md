@@ -95,29 +95,32 @@ Sessions that match only in their message text appear a moment later, in an `In 
 
 The same plugin adds to OpenCode Desktop 2.4:
 
-- the session browser as a dialog. Press `cmd+shift+s` (`ctrl+shift+s` on Windows and Linux) or run "Super Sessions: Browse sessions" from the command palette. It has the same views, search and project scope as the terminal browser, and shows the selected session's context usage, work and latest messages on the right. The `preview` and `previewWidth` options apply to it too.
-- the session's pull requests and issues in the session header, with their state, review and CI
+- the session browser as a dialog. Press `cmd+shift+s` (`ctrl+shift+s` on Windows and Linux) or run "Super Sessions: Browse sessions" from the command palette. It has the same views and search as the terminal browser, and shows the selected session's context usage, work and latest messages on the right. The `preview` and `previewWidth` options apply to it too.
+- a project rail down the browser's left edge. The top tile lists every project, and each project below it, in its sidebar icon, lists that project's sessions in all its worktrees and subfolders. Tiles show how many sessions run and a dot for unread ones. The browser opens on the open session's project, or on all projects when you last picked that tile or no session is open.
+- the session's pull requests and issues in the session header, with their state, review and CI. `+N` shows or hides the Work panel.
 - a Work side panel, from the side panel's `+` menu or "Super Sessions: Show work", with the failed checks of open pull requests. You can open, copy, link and unlink work there.
 - the session's open pull request above the message box, colored by its checks and review, with a menu of its checks
 
 Desktop's own session list in the sidebar stays as it is, since plugins cannot change it. Use the browser to list one project's sessions or to see their pull requests.
 
+Links follow Settings > Browser in Desktop: with "Open links in OpenCode" on, a pull request, issue, check or link opens in Desktop's browser beside its session, and otherwise in your default browser. Hold `shift` while clicking to use your default browser anyway.
+
 Pins, rename, delete, fork and peek are only in the terminal browser. Auto-archive and worktree cleanup run only while a terminal TUI is open, and they treat sessions open in Desktop tabs as open.
 
 Keys in the browser:
 
-| Key                 | Action                                                                   |
-| ------------------- | ------------------------------------------------------------------------ |
-| `up` / `down`       | Select a session                                                         |
-| `tab` / `shift+tab` | Next or previous view, from the search box                               |
-| `enter`             | Open the session                                                         |
-| `cmd+enter`         | Open the session in a background tab (`ctrl+enter` on Windows and Linux) |
-| `alt+a`             | Switch between this project and all projects, when a session is open     |
-| `alt+s`             | Archive, or restore in the Archived view                                 |
-| `alt+q`             | Mark Done, or not Done                                                   |
-| `alt+g`             | Open the session's pull request, issue or link in the browser            |
-| `f5`                | Reload the selected session from GitHub or GitLab                        |
-| `esc`               | Close the browser                                                        |
+| Key                   | Action                                                                   |
+| --------------------- | ------------------------------------------------------------------------ |
+| `up` / `down`         | Select a session                                                         |
+| `tab` / `shift+tab`   | Next or previous view, from the search box                               |
+| `enter`               | Open the session                                                         |
+| `cmd+enter`           | Open the session in a background tab (`ctrl+enter` on Windows and Linux) |
+| `alt+up` / `alt+down` | Previous or next project on the rail                                     |
+| `alt+s`               | Archive, or restore in the Archived view                                 |
+| `alt+q`               | Mark Done, or not Done                                                   |
+| `alt+g`               | Open the session's pull request, issue or link in the browser            |
+| `f5`                  | Reload the selected session from GitHub or GitLab                        |
+| `esc`                 | Close the browser                                                        |
 
 The `alt` keys are the keys in those places on a QWERTY keyboard, and the browser shows the letter your layout puts there. `closeTabOnArchive` and `colors` apply in Desktop too.
 

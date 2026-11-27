@@ -21,12 +21,14 @@ import {
   forkSession,
   listFilters,
   postNotice,
+  projectListFilters,
   projectScope,
   regenerateTitle,
   sendsNow,
   sessionPrompts,
   sessionScope,
-  setArchived
+  setArchived,
+  wholeProject
 } from '../../src/host/session-api.js';
 import { shellCall } from '../../src/host/tool-hook.js';
 import { projectWorktrees, removeWorktree } from '../../src/host/worktree.js';
@@ -510,6 +512,11 @@ test('session.list scopes by project subpath, directory, title, root sessions an
   assert.deepEqual(await ids(await scope(repo)), [top.id]);
   assert.deepEqual(await ids(await scope(app)), [nested.id]);
   assert.deepEqual(await ids(await scope(loose)), [other.id]);
+  // A project in the Desktop browser's rail lists the whole project, subfolders included.
+  const whole = wholeProject(
+    projectScope(await host.location.get({ location: { directory: app } }))
+  );
+  assert.deepEqual(await ids(projectListFilters(whole)), [top.id, nested.id].sort());
   // Server search filters by directory for directory scopes.
   assert.deepEqual(await ids({ directory: loose }), [other.id]);
   assert.deepEqual(await ids({ search: 'needle' }), [top.id, nested.id].sort());
@@ -544,6 +551,7 @@ test('a session scopes the list like its directory: root, subdirectory, worktree
   git(repo, 'commit', '-q', '--allow-empty', '-m', 'scope init');
   const { project } = await host.location.get({ location: { directory: repo } });
   const worktree = await host.worktree.create({ projectID: project.id, name: 'scope' });
+  const created: SessionInfo[] = [];
   for (const target of [
     repo,
     directory('scope-repo', 'pkg'),
@@ -551,12 +559,21 @@ test('a session scopes the list like its directory: root, subdirectory, worktree
     directory('scope-loose')
   ]) {
     const session = await host.sessions.create({ location: { directory: target } });
+    created.push(session);
     assert.deepEqual(
       sessionScope(session),
       projectScope(await host.location.get({ location: { directory: target } })),
       target
     );
   }
+  // The Desktop rail's project, read from the worktree's session, lists the project's root,
+  // subfolder and worktree sessions, and not the loose one.
+  const [root, sub, tree] = created.map((session) => session.id);
+  const whole = projectListFilters(wholeProject(sessionScope(created[2] as SessionInfo)));
+  const listed = (await host.sessions.list({ ...whole, parentID: null })).data.map(
+    (item: SessionInfo) => item.id
+  );
+  assert.deepEqual(listed.sort(), [root, sub, tree].sort());
 });
 
 test('worktree list marks the main checkout, and remove without force keeps a dirty worktree', async () => {

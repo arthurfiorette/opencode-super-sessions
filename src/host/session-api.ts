@@ -16,10 +16,12 @@ export {
   isUnread,
   latestRunStart,
   listFilters,
+  projectListFilters,
   regenerateTitle,
   type SessionUpdater,
   sessionScope,
-  setArchived
+  setArchived,
+  wholeProject
 } from './session-info.js';
 
 /** What the server plugin's `prompt` hook carries that {@link sendsNow} reads. */

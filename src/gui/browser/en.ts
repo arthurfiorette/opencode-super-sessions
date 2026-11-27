@@ -9,10 +9,10 @@ export const browserEn = {
   'browser.search.placeholder': 'Search sessions, #numbers, PR and issue titles',
   'browser.search.pulls': 'Search pull requests by #number or title',
   'browser.search.failed': 'The search failed. The list shows title matches only.',
-  'browser.scope.project': 'This project',
-  'browser.scope.all': 'All projects',
-  'browser.scope.toggle': 'Switch between this project and all projects',
-  'browser.scope.home': 'Open a session to list only its project.',
+  'browser.rail': 'Projects',
+  'browser.rail.all': 'All projects',
+  'browser.rail.running': '{{count}} running',
+  'browser.rail.unread': 'unread',
   'browser.empty.active': 'No sessions',
   'browser.empty.done': 'No Done sessions',
   'browser.empty.archived': 'No archived sessions',
@@ -64,6 +64,5 @@ export const browserEn = {
   'browser.hint.restore': 'restore',
   'browser.hint.done': 'done',
   'browser.hint.web': 'open PR',
-  'browser.hint.allProjects': 'all projects',
-  'browser.hint.thisProject': 'this project'
+  'browser.hint.projects': 'project'
 } as const;
