@@ -254,6 +254,64 @@ test('a reopen draws the cached rows at once, before asking the server again', a
   assert.equal(listLoads(client), loads);
 });
 
+// Every other test lists a handful of rows, all inside the first window.
+test('a long list draws its first rows at open and every session once scrolled toward', async () => {
+  // happy-dom's IntersectionObserver never reports, so this one reports when the test says the
+  // spacer under the mounted rows came near the visible list.
+  const observers = [];
+  const original = globalThis.IntersectionObserver;
+  globalThis.IntersectionObserver = class {
+    constructor(callback) {
+      this.callback = callback;
+      this.targets = [];
+      observers.push(this);
+    }
+    observe(target) {
+      this.targets.push(target);
+    }
+    disconnect() {
+      this.targets = [];
+    }
+  };
+  try {
+    const many = Array.from({ length: 100 }, (_, index) =>
+      session(`ses_${String(index).padStart(3, '0')}`, `Session ${index}`, {
+        created: NOW - (index + 2) * HOUR,
+        updated: NOW - (index + 2) * HOUR
+      })
+    );
+    const server = fixtureServer({
+      'session.get': ({ sessionID }) => many.find((item) => item.id === sessionID),
+      'session.list': ({ archived }) => ({ data: archived ? [] : many })
+    });
+    gui = await startGui({
+      session: { server, id: 'ses_000', key: `${server.id}\nses_000`, directory: '/work/widgets' },
+      servers: [server]
+    });
+    await gui.command('browse').run();
+    await until(() => row('ses_000'), 'the first row');
+    const first = listed().length;
+    assert.ok(first > 0 && first < many.length, `${first} rows at open`);
+    assert.equal(count('active'), String(many.length));
+
+    // The keys reach a row below the mounted ones.
+    for (let index = 0; index < first + 2; index++) press({ key: 'ArrowDown' });
+    const below = many[first + 2].id;
+    await until(() => row(below)?.getAttribute('aria-selected') === 'true', 'the selection');
+
+    const near = () => observers.find((observer) => observer.targets.length > 0);
+    await until(near, 'the spacer to be watched');
+    near().callback([{ isIntersecting: true, target: near().targets[0] }]);
+    await until(() => listed().length === many.length, 'every session');
+    assert.deepEqual(
+      listed(),
+      many.map((item) => item.id)
+    );
+  } finally {
+    globalThis.IntersectionObserver = original;
+  }
+});
+
 test('a cold open draws the titles before the refs answer', async () => {
   let listsAsked = () => {};
   const asked = new Promise((resolve) => {

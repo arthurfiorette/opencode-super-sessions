@@ -13,6 +13,7 @@ import {
   createMemo,
   createSignal,
   For,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -320,12 +321,20 @@ function SessionBrowser(props: SessionBrowserProps) {
     setProjectPick(rows[Math.min(rows.length - 1, Math.max(0, index + delta))]?.key);
   };
 
-  // The selected row scrolls into view as the keys move it.
+  // The selected row scrolls into view as the keys move it. Not the first selection of a list,
+  // which is its top row at the top of the list: scrolling it forced a layout of every mounted
+  // row in the middle of the open's task.
   const elements = new Map<string, HTMLElement>();
-  createEffect(() => {
-    const key = projectsView() ? selectedProject()?.key : pullView() ? pull() : selected();
-    if (key !== undefined) elements.get(key)?.scrollIntoView?.({ block: 'nearest' });
-  });
+  createEffect(
+    on(
+      () => (projectsView() ? selectedProject()?.key : pullView() ? pull() : selected()),
+      (key, previous) => {
+        if (key !== undefined && previous !== undefined) {
+          elements.get(key)?.scrollIntoView?.({ block: 'nearest' });
+        }
+      }
+    )
+  );
   /**
    * Remembers a row's element under its key while the row is on screen. Called from the row's
    * `ref`, under the row's owner, so the entry leaves with the row.

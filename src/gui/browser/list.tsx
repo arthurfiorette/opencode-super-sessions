@@ -1,6 +1,19 @@
 import type { SessionInfo } from '@opencode/client';
 import { type Context, type Persisted, type ServerRef, usePlugin } from '@opencode/plugin/gui';
-import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from 'solid-js';
+import {
+  createComputed,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  Match,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Switch,
+  untrack
+} from 'solid-js';
 import { closeSessionTab } from '../../host/gui.js';
 import { isBusy, isUnread, setArchived } from '../../host/session-info.js';
 import {
@@ -37,6 +50,105 @@ export interface ListGroup {
 
 /** Row height in px a skipped group is laid out with until it was drawn once (browser.css). */
 const ROW_ESTIMATE = 40;
+
+/**
+ * Rows a list mounts when it shows: about what the dialog at full screen height shows at once,
+ * since most rows carry detail lines; when they fall short, the first idle step fills in. A
+ * list of 400 rows mounted about 13,000 elements in the open's task, and the window then spent
+ * about 100 ms styling them, 90 ms on every layout while the dialog stayed open, and 200 ms
+ * styling them again on close.
+ */
+const FIRST_ROWS = 30;
+
+/** Rows each later step mounts, while the end of the mounted rows is near the visible list. */
+const STEP_ROWS = 30;
+
+/** How far below the visible list the end of the mounted rows asks for the next step. */
+const AHEAD = '0px 0px 100% 0px';
+
+/** Runs `run` once the window is idle, or within 200 ms; returns the cancel. */
+function whenIdle(run: () => void): () => void {
+  if (typeof requestIdleCallback === 'function') {
+    const handle = requestIdleCallback(run, { timeout: 200 });
+    return () => cancelIdleCallback(handle);
+  }
+  const timer = setTimeout(run, 16);
+  return () => clearTimeout(timer);
+}
+
+/**
+ * How many rows of a list are mounted: {@link FIRST_ROWS} when it shows, then
+ * {@link STEP_ROWS} more per idle moment while the spacer under the mounted rows is within one
+ * list height of the visible part, and always up to past `wanted`, the row the keys selected.
+ * Rows mount and never unmount until `reset` changes, so a row keeps its element, its hover and
+ * its scroll place. Call it under the list's owner.
+ */
+export function createRowWindow(options: {
+  readonly total: () => number;
+  readonly wanted: () => number;
+  readonly reset: () => unknown;
+}) {
+  const [limit, setLimit] = createSignal(FIRST_ROWS);
+  createComputed(on(options.reset, () => setLimit(FIRST_ROWS), { defer: true }));
+  // A keyboard move past the mounted rows mounts the rows up to it before the move scrolls.
+  createComputed(() => {
+    const wanted = options.wanted();
+    if (wanted >= untrack(limit)) setLimit(wanted + STEP_ROWS);
+  });
+  const remaining = createMemo(() => Math.max(0, options.total() - limit()));
+  // Whether the spacer is near the visible rows. Without IntersectionObserver every row mounts,
+  // one step per idle moment.
+  let near = typeof IntersectionObserver === 'undefined';
+  let cancel: (() => void) | undefined;
+  const schedule = () => {
+    if (cancel !== undefined || !near || untrack(remaining) === 0) return;
+    cancel = whenIdle(() => {
+      cancel = undefined;
+      if (!near) return;
+      setLimit((value) => Math.min(untrack(options.total), value + STEP_ROWS));
+      // The observer reports the moved spacer after the next layout, before this runs again.
+      schedule();
+    });
+  };
+  onCleanup(() => cancel?.());
+  /** Watches the spacer under the mounted rows, in the list's scroll box. */
+  const watch = (spacer: HTMLElement) => {
+    if (typeof IntersectionObserver === 'undefined') return schedule();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        near = entries.at(-1)?.isIntersecting ?? near;
+        schedule();
+      },
+      { root: spacer.closest('[role="listbox"]'), rootMargin: AHEAD }
+    );
+    observer.observe(spacer);
+    onCleanup(() => {
+      observer.disconnect();
+      near = false;
+    });
+  };
+  return { limit, remaining, watch };
+}
+
+/**
+ * The room the rows a list has not mounted yet would take, so the scroll bar shows the whole
+ * list; it asks for more rows as it nears the visible part.
+ */
+function MoreRows(props: { rows: number; watch: (spacer: HTMLElement) => void }) {
+  let spacer: HTMLDivElement | undefined;
+  // After the insert, when the spacer is in the list and `closest` finds the scroll box.
+  onMount(() => {
+    if (spacer !== undefined) props.watch(spacer);
+  });
+  return (
+    <div
+      ref={spacer}
+      class="ss-more"
+      aria-hidden="true"
+      style={{ height: `${props.rows * ROW_ESTIMATE}px` }}
+    />
+  );
+}
 
 /** Whether two builds of a pull request row show the same thing. */
 function samePull(a: PullRow, b: PullRow): boolean {
@@ -400,6 +512,32 @@ export function ListBody(props: ListBodyProps) {
     store.search !== undefined && !pullView()
       ? ctx.t('browser.empty.search')
       : ctx.t(`browser.empty.${props.view}`);
+  const rows = createRowWindow({
+    total: () => (pullView() ? props.list.pulls().length : props.list.rows().length),
+    wanted: () =>
+      pullView()
+        ? props.list.pulls().findIndex((item) => item.key === props.list.pull())
+        : props.list.rows().findIndex((session) => session.id === props.list.selected()),
+    reset: () => props.view
+  });
+  /**
+   * The mounted share of each group, in list order: groups take the window's rows in turn, and a
+   * group past the window is left out.
+   */
+  const cut = <T,>(groups: readonly ListGroup[], items: ReadonlyMap<ListGroup, readonly T[]>) => {
+    let left = rows.limit();
+    const shown = new Map<ListGroup, readonly T[]>();
+    for (const group of groups) {
+      if (left <= 0) break;
+      const all = items.get(group) ?? [];
+      const part = all.length <= left ? all : all.slice(0, left);
+      left -= part.length;
+      shown.set(group, part);
+    }
+    return shown;
+  };
+  const shownSessions = createMemo(() => cut(props.list.sessionGroups(), props.list.sessionsIn()));
+  const shownPulls = createMemo(() => cut(props.list.pullGroups(), props.list.pullsIn()));
   return (
     <>
       <Show when={props.browser.loading() && store.status === 'ready'}>
@@ -452,24 +590,30 @@ export function ListBody(props: ListBodyProps) {
             when={props.list.pulls().length > 0}
             fallback={<p class="ss-note">{emptyNote()}</p>}
           >
-            <For each={props.list.pullGroups()}>
+            <For each={[...shownPulls().keys()]}>
               {(group) => (
-                <GroupBlock group={group} rows={props.list.pullsIn().get(group)?.length ?? 0}>
-                  <For each={props.list.pullsIn().get(group) ?? []}>{props.pull}</For>
+                <GroupBlock group={group} rows={shownPulls().get(group)?.length ?? 0}>
+                  <For each={shownPulls().get(group) ?? []}>{props.pull}</For>
                 </GroupBlock>
               )}
             </For>
+            <Show when={rows.remaining() > 0}>
+              <MoreRows rows={rows.remaining()} watch={rows.watch} />
+            </Show>
           </Show>
         </Match>
         <Match when={true}>
           <Show when={props.list.rows().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
-            <For each={props.list.sessionGroups()}>
+            <For each={[...shownSessions().keys()]}>
               {(group) => (
-                <GroupBlock group={group} rows={props.list.sessionsIn().get(group)?.length ?? 0}>
-                  <For each={props.list.sessionsIn().get(group) ?? []}>{props.session}</For>
+                <GroupBlock group={group} rows={shownSessions().get(group)?.length ?? 0}>
+                  <For each={shownSessions().get(group) ?? []}>{props.session}</For>
                 </GroupBlock>
               )}
             </For>
+            <Show when={rows.remaining() > 0}>
+              <MoreRows rows={rows.remaining()} watch={rows.watch} />
+            </Show>
           </Show>
         </Match>
       </Switch>
