@@ -9,7 +9,9 @@ import {
   type JSX,
   Match,
   onCleanup,
-  Switch
+  Show,
+  Switch,
+  untrack
 } from 'solid-js';
 import { openSessionKeepingTab } from '../../host/gui.js';
 import { activityTime, isUnread } from '../../host/session-info.js';
@@ -21,11 +23,13 @@ import { projectKey } from '../browser/projects.js';
 import { onControl, RowLines, RowStatus, useAge } from '../browser/row.js';
 import { createBrowserView } from '../browser/view.js';
 import { type LinkScope, LinkScopeProvider } from '../links.js';
+import { createProjectLooks } from '../project-looks.js';
 import { createStable } from '../stable.js';
 
-// The side tab's session list: the routed project's active sessions, every worktree of it, in the
-// Desktop sidebar's row style, running ones first, then by recency. It never remounts while the
-// tab stays listed, and a route change touches only the rows that were and become current.
+// The side tab's session list: the routed project's active sessions, every worktree of it, or
+// every project's on every connected machine, in the Desktop sidebar's row style, running ones
+// first, then by recency. It never remounts while the tab stays listed, and a route change
+// touches only the rows that were and become current.
 
 /** Detail lines a row lists under its title, pull requests first, before the rest fold into +N. */
 const ROW_LINES = 2;
@@ -40,6 +44,9 @@ export interface SideSessionsProps {
   readonly panelKey: string;
   /** The tab is on screen; the list asks nothing of the servers while it is not. */
   readonly shown: boolean;
+  /** The list shows every project's sessions on every connected machine. */
+  readonly allProjects: boolean;
+  readonly setAllProjects: (all: boolean) => void;
   /** Opens the session browser. */
   readonly browse: () => void;
 }
@@ -50,9 +57,10 @@ function sessionKey(server: string, id: string): string {
 }
 
 /**
- * The "Sessions" header with its "All sessions…" action, and the rows. A click on a row opens its
- * session in its tab, on the session's own server. Up, down and enter move and open while the
- * list has the focus, and `alt+s` and `alt+q` archive and mark Done the selected row; the tab
+ * The "Sessions" header with its scope switch and "All sessions…" action, and the rows. The
+ * scope is the routed project, or every project, whose rows name their project and machine. A
+ * click on a row opens its session in its tab, on the session's own server. Up, down and enter
+ * move and open while the list has the focus, and `alt+s` and `alt+q` archive and mark Done the selected row; the tab
  * takes no key anywhere else.
  */
 export function SideSessions(props: SideSessionsProps) {
@@ -71,7 +79,10 @@ export function SideSessions(props: SideSessionsProps) {
       equals: (a, b) => a.server === b.server && a.id === b.id && a.directory === b.directory
     }
   );
-  const target = createMemo((): MachinesTarget => ({ origin: origin(), pick: { type: 'routed' } }));
+  const all = () => props.allProjects;
+  const target = createMemo(
+    (): MachinesTarget => ({ origin: origin(), pick: { type: all() ? 'all' : 'routed' } })
+  );
   const routedServer = createStable(() => props.session.server.id);
   const browser = createBrowserView(machines, {
     target,
@@ -100,13 +111,27 @@ export function SideSessions(props: SideSessionsProps) {
       store.archived.find((session) => session.id === id);
     return info === undefined ? undefined : projectKey(info);
   });
+  // Every project's active sessions, asked once per machine while the tab shows the routed
+  // project, as the browser's project picker asks (`createProjects` in ../browser/projects.ts). A
+  // switch to all projects then draws that list at once (`seedFor` in ../browser/model.ts) and
+  // reloads it behind the rows, instead of blanking the list until the servers answer.
+  const warmed = new Set<string>();
+  createEffect(() => {
+    if (!props.shown || all()) return;
+    for (const model of machines.models()) {
+      if (!model.server.connected || warmed.has(model.server.id)) continue;
+      warmed.add(model.server.id);
+      untrack(model.wantEveryActive);
+    }
+  });
   /**
-   * The project's active sessions, as the browser's Active view orders them: running first, then
+   * The listed active sessions, as the browser's Active view orders them: running first, then
    * newest. While another view lists another scope on the shared model, only the routed
-   * project's rows show.
+   * project's rows show in this project's scope.
    */
   const rows = createMemo(
     () => {
+      if (all()) return rowsOf(browser.groups());
       const project = routedProject();
       const server = routedServer();
       return rowsOf(browser.groups()).filter(
@@ -131,6 +156,27 @@ export function SideSessions(props: SideSessionsProps) {
         .list()
         .find((open) => open.server.id === row.serverOf(id).id && open.id === id) ?? props.session
   });
+  // The routed session's project carries the user's local name for it.
+  const looks = createProjectLooks(() => {
+    const project = props.session.project;
+    return project === undefined
+      ? undefined
+      : { server: props.session.server.id, id: project.id, name: project.name, icon: project.icon };
+  });
+  /**
+   * A row's faint text after its title, as the browser's rows write it: across every project the
+   * project, then the machine of a session on another server. None in this project's scope.
+   */
+  const describe = (session: SessionInfo): string | undefined => {
+    if (!all()) return undefined;
+    const project = looks.of(
+      row.serverOf(session.id),
+      session.projectID,
+      session.location.directory
+    ).name;
+    const machine = browser.machine(session.id);
+    return machine === undefined ? project : ctx.t('browser.location', { project, machine });
+  };
   /**
    * Opens the session in its tab on its own server, focused, and keeps this tab on screen there
    * when it shows here (openSessionKeepingTab in src/host/gui.ts).
@@ -193,6 +239,17 @@ export function SideSessions(props: SideSessionsProps) {
     <section class="ss-side-sessions" aria-label={ctx.t('side.sessions')}>
       <div class="ss-side-header">
         <span class="ss-side-header-title">{ctx.t('side.sessions')}</span>
+        {/* Names the scope shown, and a click, enter or space switches to the other one. */}
+        <ctx.ui.Tooltip value={ctx.t(all() ? 'side.scope.toProject' : 'side.scope.toAll')}>
+          <ctx.ui.Button
+            variant="ghost-muted"
+            size="small"
+            class="ss-side-scope"
+            onClick={() => props.setAllProjects(!all())}
+          >
+            {ctx.t(all() ? 'side.scope.all' : 'side.scope.project')}
+          </ctx.ui.Button>
+        </ctx.ui.Tooltip>
         <ctx.ui.Button
           variant="ghost-muted"
           size="small"
@@ -226,7 +283,9 @@ export function SideSessions(props: SideSessionsProps) {
             </div>
           </Match>
           <Match when={rows().length === 0}>
-            <p class="ss-note ss-side-empty">{ctx.t('side.sessions.empty')}</p>
+            <p class="ss-note ss-side-empty">
+              {ctx.t(all() ? 'side.sessions.emptyAll' : 'side.sessions.empty')}
+            </p>
           </Match>
           <Match when={true}>
             <For each={rows()}>
@@ -234,6 +293,7 @@ export function SideSessions(props: SideSessionsProps) {
                 <LinkScopeProvider scope={linkScope(item.id)}>
                   <SideRow
                     session={row.live(item)}
+                    description={describe(item)}
                     view={store.refs[item.id]}
                     current={isCurrent(sessionKey(row.serverOf(item.id).id, item.id))}
                     selected={isSelected(item.id)}
@@ -257,6 +317,8 @@ export function SideSessions(props: SideSessionsProps) {
 /** Props of {@link SideRow}. */
 interface SideRowProps {
   readonly session: SessionInfo;
+  /** The faint project and machine after the title, if any. */
+  readonly description: string | undefined;
   readonly view: SessionRefView | undefined;
   /** The routed session's row. */
   readonly current: boolean;
@@ -271,8 +333,9 @@ interface SideRowProps {
 
 /**
  * A session as the Desktop sidebar lists it (`SIDEBAR_ROW` in src/host/gui.ts): the 13px title,
- * faint until current, the muted age, the activity ring or the unread dot, which the current row
- * does not show, and at most {@link ROW_LINES} detail lines under it.
+ * faint until current, then its project and machine across every project, the muted age, the
+ * activity ring or the unread dot, which the current row does not show, and at most
+ * {@link ROW_LINES} detail lines under it.
  */
 function SideRow(props: SideRowProps) {
   const ctx = usePlugin();
@@ -295,7 +358,12 @@ function SideRow(props: SideRowProps) {
       }}
     >
       <div class="ss-side-row-head">
-        <span class="ss-side-row-title">{props.session.title || ctx.t('browser.untitled')}</span>
+        <span class="ss-side-row-text">
+          <span class="ss-side-row-title">{props.session.title || ctx.t('browser.untitled')}</span>
+          <Show when={props.description}>
+            {(description) => <span class="ss-side-row-description">{description()}</span>}
+          </Show>
+        </span>
         <span class="ss-row-actions">{props.actions}</span>
         <span class="ss-side-row-age">{age(activityTime(props.session), props.now)}</span>
         <RowStatus

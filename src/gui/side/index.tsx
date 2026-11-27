@@ -16,13 +16,13 @@ import { LinkScopeProvider } from '../links.js';
 import { Octicon } from '../octicons.js';
 import type { RefsStore, SessionTarget } from '../refs-store.js';
 import type { StatusIcons } from '../status/pill.js';
-import { type SidePrefs, workFolded } from './prefs.js';
+import { listsAllProjects, type SidePrefs, workFolded } from './prefs.js';
 import { SideSessions } from './sessions.js';
 import css from './side.css?inline';
 import { WorkSection } from './work.js';
 
-// The Super Sessions side tab: the routed session's work above its project's active sessions, in
-// a tab pinned to every session's strip. It can stand in for the app's sidebar while in a session.
+// The Super Sessions side tab: the routed session's work above the active sessions of its project
+// or of every project, in a tab pinned to every session's strip. It can stand in for the app's sidebar while in a session.
 
 /** The panel's id, and its one tab's. */
 const SIDE = 'sessions';
@@ -160,6 +160,13 @@ function SidePanel(props: SidePanelProps) {
   );
   // A memo, so a route change that keeps the tab visible changes nothing that reads it.
   const shown = createMemo(() => ctx.layout.state(props.panelKey, props.session) === 'visible');
+  /** Lists every project's sessions, or the routed project's again, and keeps the choice. */
+  const setAllProjects = (all: boolean) =>
+    deps.sidePrefs.update((draft) => {
+      if (all) draft.scope = 'all';
+      else delete draft.scope;
+      return undefined;
+    });
   return (
     <LinkScopeProvider scope={{ session: () => props.session }}>
       <div class="ss-side">
@@ -177,6 +184,8 @@ function SidePanel(props: SidePanelProps) {
           session={props.session}
           panelKey={props.panelKey}
           shown={shown()}
+          allProjects={listsAllProjects(deps.sidePrefs.value)}
+          setAllProjects={setAllProjects}
           browse={deps.browse}
         />
       </div>

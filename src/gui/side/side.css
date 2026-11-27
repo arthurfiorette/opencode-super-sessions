@@ -1,9 +1,8 @@
-/* The Super Sessions side tab: the routed session's work at the top, then the routed project's
-   active sessions in the Desktop sidebar's style (SIDEBAR_ROW in src/host/gui.ts). The Work list
-   and the detail lines take the status and browser rules (../status/status.css,
-   ../browser/browser.css). Nothing here takes its size from the routed session: the Work line
-   is one fixed line, and unfolded Work a fixed share of the tab, so a session switch changes
-   only what sits inside them. */
+/* The Super Sessions side tab: the routed session's work at the top, then the active sessions
+   of the routed project or of every project in the Desktop sidebar's style (SIDEBAR_ROW in
+   src/host/gui.ts). The Work list and the detail lines take the status and browser rules
+   (../status/status.css, ../browser/browser.css). Folded, the Work line is one fixed line, so a session switch changes
+   only what sits inside it. Unfolded, Work takes its list's height up to half the tab. */
 
 .ss-side {
   --ss-line: var(--line-height-compact, 16px);
@@ -25,18 +24,17 @@
   gap: 6px;
 }
 
-/* Work: one 28px line folded; unfolded, 40% of the tab with the list scrolling inside it. */
+/* Work: one 28px line folded. Unfolded, the height of its content, which the browser lays out
+   with no script measuring it, up to half the tab; past that the body shrinks and scrolls, and
+   its bottom padding keeps the last line clear of the edge. */
 .ss-side-work {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
   min-height: 0;
+  max-height: 50%;
   padding: 4px 8px;
   border-bottom: 1px solid var(--v2-border-border-base);
-}
-
-.ss-side-work[data-folded="false"] {
-  flex: 0 0 40%;
 }
 
 .ss-side-work-head {
@@ -115,14 +113,14 @@
 }
 
 .ss-side-work-body {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
   padding: 4px 4px 4px 26px;
   overflow-y: auto;
 }
 
-/* The project's active sessions under the sidebar's "Sessions" header: a 28px line of 13px
-   medium muted text 8px in, its action at the end. */
+/* The active sessions under the sidebar's "Sessions" header: a 28px line of 13px medium muted
+   text 8px in, the scope switch and the browser action at its end, both small ghost buttons. */
 .ss-side-sessions {
   display: flex;
   flex: 1;
@@ -214,10 +212,35 @@
   height: 28px;
 }
 
+.ss-side-row-text {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .ss-side-row-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Across every project the title keeps most of the row, and the project and machine after it
+   take the browser rows' faint regular text (.ss-row-description in ../browser/browser.css). */
+.ss-side-row-text:has(.ss-side-row-description) > .ss-side-row-title {
+  flex: 0 1 auto;
+  max-width: 60%;
+}
+
+.ss-side-row-description {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-faint);
+  font-weight: 440;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

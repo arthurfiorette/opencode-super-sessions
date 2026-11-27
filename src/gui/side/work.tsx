@@ -9,9 +9,9 @@ import { workActions } from '../status/actions.js';
 import { mainPull } from '../status/pill.js';
 import { WorkList } from '../status/work-list.js';
 
-// The top of the side tab: the routed session's work, folded by default into one summary line,
-// and when unfolded the Work list in an area of a fixed share of the tab, so switching sessions
-// never moves the session list under it.
+// The top of the side tab: the routed session's work, folded by default into one summary line of
+// one height, so switching sessions never moves the session list under it. Unfolded, the Work
+// list takes its own height up to half the tab, and scrolls only past that.
 
 /** Props of {@link WorkSection}. */
 export interface WorkSectionProps {
@@ -118,11 +118,10 @@ export function WorkSection(props: WorkSectionProps) {
           </ctx.ui.Button>
         </Show>
       </div>
-      <Show when={!props.folded}>
+      {/* No body while there is nothing to list, so its padding leaves no empty band. */}
+      <Show when={!props.folded && (state()?.status ?? 'loading') !== 'loading' && !empty()}>
         <div class="ss-side-work-body">
-          <Show when={(state()?.status ?? 'loading') !== 'loading' && !empty()}>
-            <WorkList refs={props.refs} target={props.target} actions />
-          </Show>
+          <WorkList refs={props.refs} target={props.target} actions />
         </div>
       </Show>
     </section>

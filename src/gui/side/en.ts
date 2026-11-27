@@ -14,5 +14,10 @@ export const sideEn = {
   'side.work.link': 'Link…',
   'side.sessions': 'Sessions',
   'side.sessions.all': 'All sessions…',
-  'side.sessions.empty': 'No active sessions in this project'
+  'side.sessions.empty': 'No active sessions in this project',
+  'side.sessions.emptyAll': 'No active sessions',
+  'side.scope.project': 'This project',
+  'side.scope.all': 'All projects',
+  'side.scope.toAll': 'Show the sessions of every project',
+  'side.scope.toProject': 'Show the sessions of this project'
 } as const;

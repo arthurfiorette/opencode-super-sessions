@@ -55,9 +55,10 @@ afterEach(() => gui?.dispose());
 
 /**
  * Starts the GUI on a fake server with `ses_a` routed. `refs` answers the `refs` RPC, by default
- * at once. Returns the client, the routed session's getter and a route to another session.
+ * at once. `others` are more servers the app lists. Returns the client, the routed session's
+ * getter and a route to another session.
  */
-async function start(refs = ({ sessionIDs }) => viewsOf(sessionIDs)) {
+async function start(refs = ({ sessionIDs }) => viewsOf(sessionIDs), others = []) {
   const client = createClient({
     'session.get': ({ sessionID }) => [...SESSIONS, OTHER].find((item) => item.id === sessionID),
     'session.list': ({ archived, project }) => ({
@@ -87,7 +88,7 @@ async function start(refs = ({ sessionIDs }) => viewsOf(sessionIDs)) {
   const server = createServer({ client, data });
   const refOf = (id) => ({ server, id, key: `${server.id}\n${id}`, directory: '/work/widgets' });
   const [routed, route] = createSignal(refOf('ses_a'));
-  gui = await startGui({ session: routed(), servers: [server] });
+  gui = await startGui({ session: routed(), servers: [server, ...others] });
   return {
     client,
     routed,
@@ -178,6 +179,55 @@ test('after a switch, Work shows what the browser holds before the refs answer',
   assert.ok(document.querySelector('.ss-side-work-head [data-ref$="/pr/8"]'));
   assert.equal(document.querySelector('.ss-side-work-head [data-ref$="/pr/7"]'), null);
   assert.equal(document.querySelector('.ss-side-work-count').textContent, ' · 1 PR');
+});
+
+test("All projects lists every project's sessions on every machine, then the routed project's again", async () => {
+  const remoteClient = createClient({
+    'session.list': ({ archived }) => ({
+      data: archived
+        ? []
+        : [
+            {
+              ...session('ses_remote', 'Remote work', 0, 'far'),
+              location: { directory: '/srv/far' }
+            }
+          ]
+    }),
+    'rpc.refs': ({ sessionIDs }) => viewsOf(sessionIDs),
+    'rpc.refresh': ({ sessionIDs }) => viewsOf(sessionIDs),
+    'rpc.done.facts': ({ sessionIDs }) =>
+      Object.fromEntries(sessionIDs.map((id) => [id, { pending: false }])),
+    'rpc.search': () => []
+  });
+  // Another machine: neither the app's own server nor a loopback connection.
+  const remote = {
+    ...createServer({ id: 'remote', client: remoteClient, builtin: false }),
+    local: false
+  };
+  const { routed } = await start(undefined, [remote]);
+  await showTab(routed);
+  assert.deepEqual(sideRows(), ['ses_a', 'ses_b', 'ses_c']);
+
+  const scope = document.querySelector('.ss-side-scope');
+  // Every project's list, which showing the tab asked each machine for, draws the rows in the
+  // same task as the click: the list never blanks while the servers answer.
+  await until(
+    () => remoteClient.calls.some((call) => call.name === 'session.list'),
+    "the other machine's list"
+  );
+  // The fake answers in microtasks; one task later the answer is in the model.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  scope.click();
+  assert.ok(sideRow('ses_a') && sideRow('ses_remote') && sideRow('ses_other'));
+  const description = (id) => sideRow(id).querySelector('.ss-side-row-description')?.textContent;
+  assert.equal(description('ses_other'), 'other');
+  assert.equal(description('ses_remote'), 'far · remote');
+  assert.equal(scope.textContent, 'All projects');
+
+  scope.click();
+  await until(() => sideRow('ses_remote') === null, 'the routed project alone');
+  assert.deepEqual(sideRows(), ['ses_a', 'ses_b', 'ses_c']);
+  assert.equal(sideRow('ses_a').querySelector('.ss-side-row-description'), null);
 });
 
 test('a click on a row opens its session in a focused tab', async () => {
