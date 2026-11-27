@@ -1,4 +1,4 @@
-import { afterEach, test } from 'bun:test';
+import { afterEach, jest, test } from 'bun:test';
 import assert from 'node:assert/strict';
 import {
   createClient,
@@ -110,7 +110,10 @@ function fixtureServer(handlers = {}, data = {}) {
 }
 
 let gui;
-afterEach(() => gui?.dispose());
+afterEach(() => {
+  jest.useRealTimers();
+  gui?.dispose();
+});
 
 /** Starts the GUI with `ses_busy` routed, opens the browser and waits for its first row. */
 async function openBrowser(handlers, data) {
@@ -410,6 +413,70 @@ test('the keys archive the selected session and open one in a focused tab', asyn
   press({ key: 'Enter' });
   assert.deepEqual(gui.tabs.at(-1), { server: 'sidecar', id: 'ses_busy', focus: true });
   assert.equal(document.querySelector('[role="dialog"]'), null);
+});
+
+/** Moves the pointer onto an element, as the window reports it: pointerenter does not bubble. */
+const enter = (element) => element.dispatchEvent(new PointerEvent('pointerenter'));
+/** Moves the pointer off an element. */
+const leave = (element) => element.dispatchEvent(new PointerEvent('pointerleave'));
+/** The first pull request line of a row. */
+const prLine = (id) => row(id).querySelector('.ss-ref');
+
+test('a click on a row opens its session, on its pull request line too until the pointer rested there', async () => {
+  await openBrowser();
+  await until(() => prLine('ses_busy'), 'the ref lines');
+
+  prLine('ses_busy').click();
+  assert.deepEqual(gui.tabs, [{ server: 'sidecar', id: 'ses_busy', focus: true }]);
+  assert.deepEqual(gui.linked, []);
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+
+  await gui.command('browse').run();
+  const line = prLine('ses_busy');
+  jest.useFakeTimers();
+  enter(line);
+  jest.advanceTimersByTime(399);
+  line.click();
+  assert.equal(gui.tabs.length, 2);
+  assert.deepEqual(gui.linked, []);
+
+  await gui.command('browse').run();
+  const rested = prLine('ses_busy');
+  enter(rested);
+  jest.advanceTimersByTime(400);
+  rested.click();
+  assert.deepEqual(
+    gui.linked.map((link) => link.href),
+    ['https://github.com/acme/widgets/pull/4930']
+  );
+  assert.equal(gui.tabs.length, 2);
+  assert.ok(document.querySelector('[role="dialog"]'));
+});
+
+test('resting the pointer on a row selects and previews it, passing over one does not', async () => {
+  const client = await openBrowser();
+  const title = () => document.querySelector('.ss-preview-title')?.textContent;
+  const previewed = () =>
+    client.calls.filter((call) => call.name === 'message.list').map((call) => call.input.sessionID);
+  await until(() => previewed().includes('ses_busy'), 'the first preview');
+  jest.useFakeTimers();
+
+  enter(row('ses_plain'));
+  jest.advanceTimersByTime(200);
+  leave(row('ses_plain'));
+  jest.advanceTimersByTime(1000);
+  enter(row('ses_plain'));
+  jest.advanceTimersByTime(299);
+  assert.equal(title(), 'Split the build');
+  assert.equal(row('ses_plain').getAttribute('aria-selected'), 'false');
+
+  jest.advanceTimersByTime(1);
+  assert.equal(row('ses_plain').getAttribute('aria-selected'), 'true');
+  assert.equal(title(), 'Read the logs');
+  // The messages load once the selection settled, as after a key.
+  jest.advanceTimersByTime(150);
+  jest.useRealTimers();
+  await until(() => previewed().includes('ses_plain'), 'the preview of the rested row');
 });
 
 test('restoring a session also keeps auto-archive from taking it again', async () => {
@@ -726,10 +793,10 @@ test('All lists every machine, and a remote row opens and archives on its own se
   assert.equal(row('ses_busy').querySelector('.ss-row-description').textContent, 'widgets');
   await until(() => row('ses_win').querySelector('.ss-ref'), 'the remote ref line');
 
-  row('ses_win').click();
-  await until(() => row('ses_win').getAttribute('aria-selected') === 'true', 'the selection');
-  press({ key: 'Enter', ctrlKey: true });
+  // ctrl+click opens in the background and keeps the browser open on that row.
+  row('ses_win').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
   assert.deepEqual(gui.tabs, [{ server: WINDOWS_ID, id: 'ses_win', focus: false }]);
+  assert.equal(row('ses_win').getAttribute('aria-selected'), 'true');
 
   row('ses_win').querySelector('[aria-label="Archive"]').click();
   await until(() => !listed().includes('ses_win'), 'the archived row to leave');

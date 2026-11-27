@@ -143,20 +143,29 @@ export interface SessionRowProps {
    * a session on another server (`PALETTE_ROW` in src/host/gui.ts). Undefined for none.
    */
   readonly description?: string | undefined;
-  readonly onSelect: () => void;
-  readonly onOpen: () => void;
+  /** A click on the row, outside its buttons and armed links. */
+  readonly onOpen: (event: MouseEvent) => void;
+  /** The pointer entered the row. */
+  readonly onEnter: () => void;
+  /** The pointer left the row. */
+  readonly onLeave: () => void;
   readonly ref: (element: HTMLElement) => void;
 }
 
-/** Whether a pointer event started on a control of its own, which the row leaves alone. */
+/**
+ * Whether a pointer event started on a control of its own, which the row leaves alone: a button,
+ * or a link with a page. A row's detail line has none until the pointer rests on it
+ * (`ExternalLink` in src/gui/ref-view.tsx), so a click on it is the row's.
+ */
 export function onControl(event: MouseEvent): boolean {
-  return event.target instanceof Element && event.target.closest('a, button') !== null;
+  return event.target instanceof Element && event.target.closest('a[href], button') !== null;
 }
 
 /**
  * The detail lines under a session's title, by the TUI's rule ({@link rowLines}): pull requests,
  * then issues and links, with the `+N` of the refs left out. `limit` caps the lines, the rest
- * folding into one more `+N`. Nothing when the session tracks nothing.
+ * folding into one more `+N`. Nothing when the session tracks nothing. The lines are part of the
+ * row's click until the pointer rests on one (`dwell` of `ExternalLink` in src/gui/ref-view.tsx).
  */
 export function RowLines(props: { view: SessionRefView | undefined; limit?: number }) {
   const ctx = usePlugin();
@@ -179,7 +188,7 @@ export function RowLines(props: { view: SessionRefView | undefined; limit?: numb
           <For each={shown().prs}>
             {(ref, index) => (
               <div class="ss-row-line">
-                <RefLine item={ref} state={view()?.states[refKey(ref)]} />
+                <RefLine item={ref} state={view()?.states[refKey(ref)]} dwell />
                 <Show when={index() === 0}>
                   <Extra count={shown().extra} />
                 </Show>
@@ -190,9 +199,9 @@ export function RowLines(props: { view: SessionRefView | undefined; limit?: numb
             {(item, index) => (
               <div class="ss-row-line">
                 {item.kind === 'ref' ? (
-                  <RefLine item={item.ref} state={view()?.states[refKey(item.ref)]} />
+                  <RefLine item={item.ref} state={view()?.states[refKey(item.ref)]} dwell />
                 ) : (
-                  <WorkLinkLine link={item.link} />
+                  <WorkLinkLine link={item.link} dwell />
                 )}
                 <Show when={index() === 0 && shown().prs.length === 0}>
                   <Extra count={shown().extra} />
@@ -217,8 +226,8 @@ export function RowLines(props: { view: SessionRefView | undefined; limit?: numb
  * One session as the app's session search lists it (`PALETTE_ROW` in src/host/gui.ts): the
  * project avatar, the title and its faint description, the age at the end, or the activity ring
  * while it runs, and the dot while it waits or is unread. Under it the lines of
- * {@link RowLines}. A click selects the row, a double click opens it; a click on a ref line opens
- * the ref's page instead.
+ * {@link RowLines}. A click opens the session and resting the pointer on the row selects it; a
+ * click on a detail line is the row's until the pointer rested on the line.
  */
 export function SessionRow(props: SessionRowProps) {
   const ctx = usePlugin();
@@ -238,11 +247,10 @@ export function SessionRow(props: SessionRowProps) {
       aria-selected={props.selected}
       data-session={props.session.id}
       onClick={(event) => {
-        if (!onControl(event)) props.onSelect();
+        if (!onControl(event)) props.onOpen(event);
       }}
-      onDblClick={(event) => {
-        if (!onControl(event)) props.onOpen();
-      }}
+      onPointerEnter={() => props.onEnter()}
+      onPointerLeave={() => props.onLeave()}
     >
       <div class="ss-row-head">
         <span class="ss-row-project" title={props.project.name}>
@@ -280,15 +288,20 @@ export function SessionRow(props: SessionRowProps) {
 export interface PullItemProps {
   readonly pull: PullRow;
   readonly selected: boolean;
-  readonly onSelect: () => void;
-  readonly onOpen: () => void;
+  /** A click on the row, outside an armed link. */
+  readonly onOpen: (event: MouseEvent) => void;
+  /** The pointer entered the row. */
+  readonly onEnter: () => void;
+  /** The pointer left the row. */
+  readonly onLeave: () => void;
   readonly ref: (element: HTMLElement) => void;
 }
 
 /**
  * A pull request of the Pull requests view in one line, as in the TUI (`pullLine` in
  * src/page/row.ts): its state, number, badges and title, and the number of
- * sessions that worked on it. The preview shows its newest session, which double click opens.
+ * sessions that worked on it. The preview shows its newest session, which a click opens; the
+ * pull request's own page opens from the line once the pointer rested on it.
  */
 export function PullItem(props: PullItemProps) {
   const ctx = usePlugin();
@@ -303,15 +316,14 @@ export function PullItem(props: PullItemProps) {
       aria-selected={props.selected}
       data-pull={props.pull.key}
       onClick={(event) => {
-        if (!onControl(event)) props.onSelect();
+        if (!onControl(event)) props.onOpen(event);
       }}
-      onDblClick={(event) => {
-        if (!onControl(event)) props.onOpen();
-      }}
+      onPointerEnter={() => props.onEnter()}
+      onPointerLeave={() => props.onLeave()}
     >
       <div class="ss-row-head">
         <span class="ss-row-pull">
-          <RefLine item={props.pull.ref} state={props.pull.state} />
+          <RefLine item={props.pull.ref} state={props.pull.state} dwell />
         </span>
         <span class="ss-row-meta">
           {ctx.plural('browser.sessions', props.pull.sessions.length)}

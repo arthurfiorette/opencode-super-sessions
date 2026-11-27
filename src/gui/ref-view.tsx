@@ -1,5 +1,5 @@
 import { usePlugin } from '@opencode/plugin/gui';
-import { For, type JSX, Show } from 'solid-js';
+import { createSignal, For, type JSX, onCleanup, Show } from 'solid-js';
 import {
   type LookIcon,
   openBadges,
@@ -68,35 +68,77 @@ function refColor(
   return status === undefined ? undefined : stateColor(colors, status, mode);
 }
 
+/** How long the pointer rests on a row's detail line before the line becomes a link. */
+export const LINK_DWELL = 400;
+
 /** Props of {@link ExternalLink}. */
 export interface ExternalLinkProps {
   readonly url: string;
   readonly class: string;
   readonly title?: string | undefined;
+  /**
+   * A line inside a row that a click opens: the line is the row's until the pointer rests on it
+   * for {@link LINK_DWELL}, and a middle click or a click with cmd or ctrl opens it at once.
+   */
+  readonly dwell?: boolean | undefined;
   readonly children: JSX.Element;
 }
 
 /**
  * A link that opens its page where the app's link setting says, for the session of the surface
- * it renders in (`useOpenUrl`). The click stops here, so a row it sits in does not take it as a
- * selection, and the window never navigates away from the app.
+ * it renders in (`useOpenUrl`). An opening click stops here, so a row it sits in does not take
+ * it, and the window never navigates away from the app.
+ *
+ * With `dwell` it has no page, underline or pointer cursor until it is armed, so a row's onControl
+ * check passes the click to the row. Armed, it shows its title in the app's tooltip markup at
+ * once: the native `title` tooltip comes on the system's own delay after a pointer move.
  */
 export function ExternalLink(props: ExternalLinkProps) {
   const open = useOpenUrl();
-  const href = () => (webUrl(props.url) ? props.url : undefined);
+  const [armed, setArmed] = createSignal(false);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const disarm = () => {
+    clearTimeout(timer);
+    setArmed(false);
+  };
+  onCleanup(() => clearTimeout(timer));
+  const live = () => props.dwell !== true || armed();
+  const href = () => (live() && webUrl(props.url) ? props.url : undefined);
+  /** Opens the page now, whatever the line's state. */
+  const go = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (webUrl(props.url)) open(props.url, event);
+  };
   return (
     <a
       class={props.class}
       href={href()}
-      title={props.title}
+      title={props.dwell === true ? undefined : props.title}
+      data-dwell={props.dwell === true ? (armed() ? 'armed' : 'inert') : undefined}
+      onPointerEnter={() => {
+        if (props.dwell !== true) return;
+        clearTimeout(timer);
+        timer = setTimeout(() => setArmed(true), LINK_DWELL);
+      }}
+      onPointerLeave={disarm}
       onClick={(event) => {
+        if (live() || event.metaKey || event.ctrlKey) return go(event);
+        // Inert: no page to follow, and the click goes on to the row.
         event.preventDefault();
-        event.stopPropagation();
-        const url = href();
-        if (url !== undefined) open(url, event);
+      }}
+      on:auxclick={(event) => {
+        if (event.button === 1) go(event);
       }}
     >
       {props.children}
+      <Show when={props.dwell === true && armed() ? props.title : undefined}>
+        {(title) => (
+          <span data-component="tooltip-v2" class="ss-ref-tip" role="tooltip">
+            {title()}
+          </span>
+        )}
+      </Show>
     </a>
   );
 }
@@ -117,6 +159,8 @@ export interface RefLineProps {
   readonly stacked?: boolean;
   /** Wraps a long title onto more lines under itself instead of cutting it. Defaults to false. */
   readonly wrap?: boolean;
+  /** A line inside a row: a link only once the pointer rested on it (`ExternalLink`). */
+  readonly dwell?: boolean;
 }
 
 /** The class of a ref or work link line, which wraps its title when `wrap` is set. */
@@ -139,6 +183,7 @@ export function RefLine(props: RefLineProps) {
       class={lineClass('ss-ref', props.wrap)}
       url={refUrl(props.item, props.state)}
       title={props.state?.title}
+      dwell={props.dwell}
     >
       <span
         class={`ss-ref-mark ss-state-${status() ?? 'unknown'}`}
@@ -214,6 +259,8 @@ export interface WorkLinkLineProps {
   readonly titled?: boolean;
   /** Wraps a long title onto more lines under itself instead of cutting it. Defaults to false. */
   readonly wrap?: boolean;
+  /** A line inside a row: a link only once the pointer rested on it (`ExternalLink`). */
+  readonly dwell?: boolean;
 }
 
 /**
@@ -228,6 +275,7 @@ export function WorkLinkLine(props: WorkLinkLineProps) {
       class={lineClass('ss-ref ss-work-link', props.wrap)}
       url={props.link.url}
       title={LINK_PROVIDER_NAMES[props.link.provider]}
+      dwell={props.dwell}
     >
       <span class="ss-ref-mark ss-tone-info">
         <Octicon name="link" class="ss-ref-icon" />

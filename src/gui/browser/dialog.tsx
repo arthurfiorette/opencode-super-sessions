@@ -8,17 +8,7 @@ import {
   type SessionRef,
   usePlugin
 } from '@opencode/plugin/gui';
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  on,
-  onCleanup,
-  onMount,
-  Show,
-  untrack
-} from 'solid-js';
+import { createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js';
 import { openSession, openWebLink, PICKER_KEY, type ProjectLook } from '../../host/gui.js';
 import { type PageView, VIEWS } from '../../page/state.js';
 import { refUrl } from '../../refs/look.js';
@@ -30,6 +20,7 @@ import { createProjectLooks } from '../project-looks.js';
 import type { RefsStore } from '../refs-store.js';
 import { serverFor } from '../server.js';
 import {
+  createDwell,
   createListState,
   createPick,
   createRowActions,
@@ -321,20 +312,20 @@ function SessionBrowser(props: SessionBrowserProps) {
     setProjectPick(rows[Math.min(rows.length - 1, Math.max(0, index + delta))]?.key);
   };
 
-  // The selected row scrolls into view as the keys move it. Not the first selection of a list,
-  // which is its top row at the top of the list: scrolling it forced a layout of every mounted
-  // row in the middle of the open's task.
+  // The selected row scrolls into view as the keys move it, and only then: a row the pointer
+  // selected is under it already, and the first selection of a list is its top row at the top.
+  // Each scroll forces a layout of the mounted rows in the task that asked for it.
   const elements = new Map<string, HTMLElement>();
-  createEffect(
-    on(
-      () => (projectsView() ? selectedProject()?.key : pullView() ? pull() : selected()),
-      (key, previous) => {
-        if (key !== undefined && previous !== undefined) {
-          elements.get(key)?.scrollIntoView?.({ block: 'nearest' });
-        }
-      }
-    )
-  );
+  /** Moves the selection by keys: drops a pending hover selection and shows the new row. */
+  const moveByKeys = (delta: number) => {
+    dwell.cancel();
+    if (projectsView()) moveProject(delta);
+    else list.move(delta);
+    const key = projectsView() ? selectedProject()?.key : pullView() ? pull() : selected();
+    if (key !== undefined) elements.get(key)?.scrollIntoView?.({ block: 'nearest' });
+  };
+  // Resting the pointer on a row selects it (ROW_DWELL in list.tsx).
+  const dwell = createDwell();
   /**
    * Remembers a row's element under its key while the row is on screen. Called from the row's
    * `ref`, under the row's owner, so the entry leaves with the row.
@@ -363,17 +354,35 @@ function SessionBrowser(props: SessionBrowserProps) {
   });
 
   const toast = (title: string) => ctx.toast.show({ title, variant: 'error' });
-  const switchView = (to: DialogView) => {
-    setView(to);
+  /** Selects the first row of a new list, at the top. */
+  const restart = () => {
+    dwell.cancel();
     setSelected(undefined);
     setPull(undefined);
     setProjectPick(undefined);
+    listElement?.scrollTo?.({ top: 0 });
+  };
+  const switchView = (to: DialogView) => {
+    setView(to);
+    restart();
   };
   /** Opens the session in a tab, focused unless `background`, and closes the dialog. */
   const open = (session: SessionInfo | undefined, background = false) => {
     if (session === undefined) return;
     openSession(ctx.tabs, { server: serverOf(session.id).id, id: session.id }, !background);
     if (!background) props.close();
+  };
+  /**
+   * A click on a row: opens its session, focused and closing the dialog, or with cmd or ctrl in
+   * the background, keeping the dialog open on that row.
+   */
+  const clickOpen = (event: MouseEvent, session: SessionInfo | undefined, select: () => void) => {
+    const background = event.metaKey || event.ctrlKey;
+    if (background) {
+      dwell.cancel();
+      select();
+    }
+    open(session, background);
   };
   /** Lists a project's sessions in the Active view; the project search does not carry over. */
   const scopeTo = (project: ProjectEntry | undefined) => {
@@ -448,13 +457,9 @@ function SessionBrowser(props: SessionBrowserProps) {
     const missing =
       selectedSession === undefined ? browser.allMissing() : browser.missing(selectedSession.id);
     let handled = true;
-    if (event.key === 'ArrowDown' && plain) {
-      if (projectsView()) moveProject(1);
-      else list.move(1);
-    } else if (event.key === 'ArrowUp' && plain) {
-      if (projectsView()) moveProject(-1);
-      else list.move(-1);
-    } else if (
+    if (event.key === 'ArrowDown' && plain) moveByKeys(1);
+    else if (event.key === 'ArrowUp' && plain) moveByKeys(-1);
+    else if (
       event.key === 'Tab' &&
       !mod &&
       !event.altKey &&
@@ -548,9 +553,7 @@ function SessionBrowser(props: SessionBrowserProps) {
             value={query()}
             onInput={(value) => {
               setQuery(value);
-              setSelected(undefined);
-              setPull(undefined);
-              setProjectPick(undefined);
+              restart();
             }}
           />
           <PluginNote browser={browser} machines={machines} />
@@ -575,10 +578,13 @@ function SessionBrowser(props: SessionBrowserProps) {
                     <LinkScopeProvider scope={linkScope(() => item.sessions[0]?.id)}>
                       <PullItem
                         pull={item}
-                        selected={pull() === item.key}
+                        selected={list.isPull(item.key)}
                         ref={track(item.key)}
-                        onSelect={() => setPull(item.key)}
-                        onOpen={() => open(item.sessions[0])}
+                        onOpen={(event) =>
+                          clickOpen(event, item.sessions[0], () => setPull(item.key))
+                        }
+                        onEnter={() => dwell.start(() => setPull(item.key))}
+                        onLeave={dwell.cancel}
                       />
                     </LinkScopeProvider>
                   )}
@@ -587,7 +593,7 @@ function SessionBrowser(props: SessionBrowserProps) {
                       <SessionRow
                         session={live(item)}
                         view={store.refs[item.id]}
-                        selected={selected() === item.id}
+                        selected={list.isSelected(item.id)}
                         running={running(item)}
                         waiting={waiting(item.id)}
                         now={browser.now()}
@@ -598,8 +604,9 @@ function SessionBrowser(props: SessionBrowserProps) {
                         project={projectOf(item)}
                         description={describe(item)}
                         ref={track(item.id)}
-                        onSelect={() => setSelected(item.id)}
-                        onOpen={() => open(item)}
+                        onOpen={(event) => clickOpen(event, item, () => setSelected(item.id))}
+                        onEnter={() => dwell.start(() => setSelected(item.id))}
+                        onLeave={dwell.cancel}
                       />
                     </LinkScopeProvider>
                   )}

@@ -10,7 +10,25 @@
   max-width: 100%;
   color: var(--v2-text-text-base);
   text-decoration: none;
+}
+
+/* Only a line with a page to open is a link to the pointer: a row's detail line has none until
+   the pointer rests on it (ExternalLink in ref-view.tsx). */
+.ss-ref[href] {
   cursor: pointer;
+}
+
+/* An armed row line shows its tooltip above it, in the app's tooltip markup, at once. */
+.ss-ref[data-dwell] {
+  position: relative;
+}
+
+.ss-ref-tip[data-component="tooltip-v2"] {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 2;
+  white-space: nowrap;
 }
 
 .ss-ref-mark {
@@ -65,7 +83,7 @@
   white-space: normal;
 }
 
-.ss-ref:hover .ss-ref-title {
+.ss-ref[href]:hover .ss-ref-title {
   text-decoration: underline;
 }
 

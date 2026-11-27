@@ -3,6 +3,7 @@ import { type Context, type Persisted, type ServerRef, usePlugin } from '@openco
 import {
   createComputed,
   createMemo,
+  createSelector,
   createSignal,
   For,
   type JSX,
@@ -65,6 +66,33 @@ const STEP_ROWS = 30;
 
 /** How far below the visible list the end of the mounted rows asks for the next step. */
 const AHEAD = '0px 0px 100% 0px';
+
+/** How long the pointer rests on a row before the row is selected and previewed. */
+export const ROW_DWELL = 300;
+
+/**
+ * The one pending hover selection of a list: `start` replaces the pending one, so moving across
+ * rows selects nothing until the pointer rests on one, and `cancel` drops it, as leaving the row
+ * or a key moving the selection does. Call it under the list's owner.
+ */
+export function createDwell(delay = ROW_DWELL) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  onCleanup(cancel);
+  return {
+    start(run: () => void) {
+      cancel();
+      timer = setTimeout(() => {
+        timer = undefined;
+        run();
+      }, delay);
+    },
+    cancel
+  };
+}
 
 /** Runs `run` once the window is idle, or within 200 ms; returns the cancel. */
 function whenIdle(run: () => void): () => void {
@@ -265,6 +293,9 @@ export function createListState(browser: BrowserView, view: () => PageView) {
   );
   const selected = () => rowSelection().id;
   const pull = () => pullSelection().id;
+  // A selection change updates only the row it leaves and the row it reaches.
+  const isSelected = createSelector(selected);
+  const isPull = createSelector(pull);
   const selectedPull = () => pulls().find((item) => item.key === pull());
 
   return {
@@ -276,6 +307,10 @@ export function createListState(browser: BrowserView, view: () => PageView) {
     pullsIn,
     selected,
     pull,
+    /** Whether a session's row is the selected one, read per row. */
+    isSelected,
+    /** Whether a pull request's row is the selected one, read per row. */
+    isPull,
     selectedPull,
     /** Selects a row; undefined selects the first. */
     setSelected: (id: string | undefined) => setRowPick({ id }),
