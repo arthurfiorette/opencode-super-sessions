@@ -1,6 +1,5 @@
-import type { ServerRef } from '@opencode/plugin/gui';
 import { Show } from 'solid-js';
-import { type ProjectIconInfo, type ProjectLook, projectLook } from '../host/gui.js';
+import type { ProjectIconInfo, ProjectLook } from '../host/gui.js';
 
 // A project's avatar in the app's own markup (PROJECT_AVATAR in src/host/gui.ts), so the app's
 // stylesheet draws it as the sidebar does: the user's icon, or the letter on its color.
@@ -46,31 +45,4 @@ export interface LocalProject {
   readonly id: string;
   readonly name?: string | undefined;
   readonly icon?: ProjectIconInfo | undefined;
-}
-
-/**
- * The look of a session's project on `server`: the user's local name and icon when `local` is
- * that project (only the routed session carries them), else what the server stores. `directory`
- * names a project the server has not synced, or the global project of sessions outside one.
- */
-export function sessionProjectLook(
-  server: ServerRef,
-  projectID: string,
-  directory: string,
-  local?: LocalProject
-): ProjectLook {
-  const stored = projectID === 'global' ? undefined : findProject(server, projectID);
-  const source = local?.id === projectID ? local : undefined;
-  return projectLook({
-    id: projectID,
-    name: source?.name ?? stored?.name,
-    root: stored?.canonical ?? directory,
-    icon: source?.icon ?? stored?.icon
-  });
-}
-
-/** The server's synced project, if it has one by that id. */
-function findProject(server: ServerRef, projectID: string) {
-  // `list` reads the synced projects; a server that synced none answers an empty list.
-  return server.data.project?.list().find((project) => project.id === projectID);
 }

@@ -9,21 +9,20 @@ import {
   Style,
   usePlugin
 } from '@opencode/plugin/gui';
-import { createEffect, createSignal, on, untrack } from 'solid-js';
+import { createEffect, createMemo, createSignal, on, untrack } from 'solid-js';
 import { PANEL_MENU, panelKey, togglePinnedTab } from '../../host/gui.js';
 import type { Machines } from '../browser/machines.js';
-import type { BrowserPrefs } from '../browser/prefs.js';
 import { LinkScopeProvider } from '../links.js';
 import { Octicon } from '../octicons.js';
 import type { RefsStore, SessionTarget } from '../refs-store.js';
 import type { StatusIcons } from '../status/pill.js';
-import type { SidePrefs } from './prefs.js';
+import { type SidePrefs, workFolded } from './prefs.js';
 import { SideSessions } from './sessions.js';
 import css from './side.css?inline';
 import { WorkSection } from './work.js';
 
-// The Super Sessions side tab: the routed session's work above the session browser's list, in a
-// tab pinned to every session's strip. It can stand in for the app's sidebar while in a session.
+// The Super Sessions side tab: the routed session's work above its project's active sessions, in
+// a tab pinned to every session's strip. It can stand in for the app's sidebar while in a session.
 
 /** The panel's id, and its one tab's. */
 const SIDE = 'sessions';
@@ -48,8 +47,9 @@ export interface SideDeps {
   readonly icons: StatusIcons;
   /** Every server's browser model, the dialog's own. */
   readonly machines: Machines;
-  readonly browserPrefs: Persisted<BrowserPrefs, BrowserPrefs>;
   readonly sidePrefs: Persisted<SidePrefs, SidePrefs>;
+  /** Opens the session browser, as `cmd+shift+s` does. */
+  readonly browse: () => void;
 }
 
 /** Where a session's refs are asked for. */
@@ -63,12 +63,12 @@ export function addSidePanel(ctx: Context, deps: SideDeps): SideControls {
   const key = panelKey(ctx.id, SIDE);
   // Moves each time the header asks for the Work section; the render scrolls to it.
   const [revealed, setRevealed] = createSignal(0);
-  const folded = () => deps.sidePrefs.value.workFolded === true;
+  const folded = () => workFolded(deps.sidePrefs.value);
   /** Folds or unfolds the Work section in every session. */
   const setFolded = (next: boolean) =>
     deps.sidePrefs.update((draft) => {
-      if (next) draft.workFolded = true;
-      else delete draft.workFolded;
+      if (next) delete draft.workFolded;
+      else draft.workFolded = false;
       return undefined;
     });
 
@@ -158,7 +158,8 @@ function SidePanel(props: SidePanelProps) {
       { defer: true }
     )
   );
-  const shown = () => ctx.layout.state(props.panelKey, props.session) === 'visible';
+  // A memo, so a route change that keeps the tab visible changes nothing that reads it.
+  const shown = createMemo(() => ctx.layout.state(props.panelKey, props.session) === 'visible');
   return (
     <LinkScopeProvider scope={{ session: () => props.session }}>
       <div class="ss-side">
@@ -174,9 +175,9 @@ function SidePanel(props: SidePanelProps) {
         <SideSessions
           machines={deps.machines}
           session={props.session}
-          prefs={deps.browserPrefs}
           panelKey={props.panelKey}
           shown={shown()}
+          browse={deps.browse}
         />
       </div>
     </LinkScopeProvider>

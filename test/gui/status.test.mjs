@@ -162,8 +162,8 @@ test('a header pull request opens where the app link setting says, for its sessi
 
 test('+N in the header shows the side tab with its Work unfolded, and hides it again', async () => {
   const side = 'opencode-super-sessions:sessions';
-  // The user folded the Work section earlier.
-  const { session } = await start(() => full, {}, { stores: { side: { workFolded: true } } });
+  // The Work section is folded, as it starts.
+  const { session } = await start(() => full);
   const [header] = gui.slot('session.header', {
     session,
     screen: {},
@@ -253,8 +253,11 @@ test('surfaces of one session share one fetch, which stops once none shows it', 
   }
 });
 
+/** The side tab with its Work section unfolded, as the user left it. */
+const unfolded = { stores: { side: { workFolded: false } } };
+
 test('the Work section lists the work and the checks that failed, each opening its page', async () => {
-  const { session } = await start(() => full);
+  const { session } = await start(() => full, {}, unfolded);
   const panel = gui.panel('sessions', session);
 
   const failed = await until(() => {
@@ -278,17 +281,21 @@ test('the Work section lists the work and the checks that failed, each opening i
 test('unlinking asks first, then unlinks on the server and the item leaves the list', async () => {
   let view = full;
   const unlinked = [];
-  const { session } = await start(() => view, {
-    'rpc.unlink': (input) => {
-      unlinked.push(input);
-      view = viewOf({
-        links: full.links.filter((link) => key(link.ref) !== input.key),
-        states: full.states,
-        urls: full.urls
-      });
-      return {};
-    }
-  });
+  const { session } = await start(
+    () => view,
+    {
+      'rpc.unlink': (input) => {
+        unlinked.push(input);
+        view = viewOf({
+          links: full.links.filter((link) => key(link.ref) !== input.key),
+          states: full.states,
+          urls: full.urls
+        });
+        return {};
+      }
+    },
+    unfolded
+  );
   const panel = gui.panel('sessions', session);
   const row = await until(
     () => panel.container.querySelector(`[data-ref="${key(merged)}"]`)?.closest('li'),
@@ -324,11 +331,15 @@ test('a link the server refuses becomes an error toast that says why', async () 
     [{}, 'Could not link.']
   ];
   let refusal;
-  const { session } = await start(() => full, {
-    'rpc.link': () => {
-      throw Object.assign(new Error('refused'), refusal);
-    }
-  });
+  const { session } = await start(
+    () => full,
+    {
+      'rpc.link': () => {
+        throw Object.assign(new Error('refused'), refusal);
+      }
+    },
+    unfolded
+  );
   const panel = gui.panel('sessions', session);
   const button = await until(
     () => [...panel.container.querySelectorAll('button')].find((b) => b.textContent === 'Link'),
@@ -390,14 +401,18 @@ test('the composer pill hides when the session has no open pull request', async 
 });
 
 test('without the server plugin the panel says so and the header and pill show nothing', async () => {
-  const { session } = await start(() => full, {
-    'rpc.refs': () => {
-      throw rpcUnavailable();
+  const { session } = await start(
+    () => full,
+    {
+      'rpc.refs': () => {
+        throw rpcUnavailable();
+      },
+      'rpc.refresh': () => {
+        throw rpcUnavailable();
+      }
     },
-    'rpc.refresh': () => {
-      throw rpcUnavailable();
-    }
-  });
+    unfolded
+  );
   const [header] = gui.slot('session.header', {
     session,
     screen: {},

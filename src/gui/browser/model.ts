@@ -77,7 +77,11 @@ export function createBrowserModel(server: ServerRef) {
   const originSession = (id: string) => {
     const known = origins.get(id);
     if (known !== undefined) return known;
-    const reading = Promise.resolve(data().session.get(id)).then(
+    // A session the lists hold needs no request, as after a switch to another row of the list.
+    const listed = untrack(() =>
+      [...store.active, ...store.archived].find((session) => session.id === id)
+    );
+    const reading = Promise.resolve(data().session.get(id) ?? listed).then(
       (found) => found ?? client().session.get({ sessionID: id })
     );
     origins.set(id, reading);

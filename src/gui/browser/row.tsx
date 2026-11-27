@@ -143,8 +143,6 @@ export interface SessionRowProps {
    * a session on another server (`PALETTE_ROW` in src/host/gui.ts). Undefined for none.
    */
   readonly description?: string | undefined;
-  /** The session the window routes, which the side tab's list marks. Defaults to false. */
-  readonly current?: boolean;
   readonly onSelect: () => void;
   readonly onOpen: () => void;
   readonly ref: (element: HTMLElement) => void;
@@ -234,11 +232,10 @@ export function SessionRow(props: SessionRowProps) {
     <div
       ref={props.ref}
       class="ss-row"
-      classList={{ 'ss-row-selected': props.selected, 'ss-row-current': props.current === true }}
+      classList={{ 'ss-row-selected': props.selected }}
       role="option"
       tabIndex={-1}
       aria-selected={props.selected}
-      aria-current={props.current === true ? 'true' : undefined}
       data-session={props.session.id}
       onClick={(event) => {
         if (!onControl(event)) props.onSelect();

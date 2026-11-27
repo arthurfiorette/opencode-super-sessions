@@ -160,11 +160,25 @@ export function relativeTime(
   if (hours < 24) return copy.hours(hours);
   if (days < 7) return copy.days(days);
   const date = new Date(then);
-  return new Intl.DateTimeFormat(locale, {
-    day: 'numeric',
-    month: 'short',
-    year: date.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric'
-  }).format(date);
+  return dateFormat(locale, date.getFullYear() !== new Date(now).getFullYear()).format(date);
+}
+
+/** Date formats by locale and whether they show the year; a list formats hundreds of dates. */
+const DATE_FORMATS = new Map<string, Intl.DateTimeFormat>();
+
+/** The date format of {@link relativeTime}, made once per locale and year choice. */
+function dateFormat(locale: string | undefined, year: boolean): Intl.DateTimeFormat {
+  const key = `${locale ?? ''}\n${year}`;
+  let format = DATE_FORMATS.get(key);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat(locale, {
+      day: 'numeric',
+      month: 'short',
+      year: year ? 'numeric' : undefined
+    });
+    DATE_FORMATS.set(key, format);
+  }
+  return format;
 }
 
 /** The parts of a DOM `KeyboardEvent` {@link claimCommandKeys} uses; this file also builds without DOM types. */

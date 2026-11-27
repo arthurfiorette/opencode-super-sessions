@@ -17,6 +17,7 @@ import {
   type SearchState
 } from '../../page/state.js';
 import type { SessionRefView } from '../../rpc.js';
+import { createStable } from '../stable.js';
 import type { Machines, MachinesTarget } from './machines.js';
 import type { BrowserModel } from './model.js';
 
@@ -84,11 +85,24 @@ function sameModels(a: readonly BrowserModel[], b: readonly BrowserModel[]): boo
  * and searches for itself when it shows and again when another view goes away (`released`).
  */
 export function createBrowserView(machines: Machines, input: BrowserViewInput) {
-  const shown = input.shown ?? (() => true);
-  const listed = createMemo(() => machines.listed(input.target()), undefined, {
+  // A memo: the side tab's visibility is read from the layout, which moves on every route change
+  // while the tab stays visible, and each change would end this showing and start another.
+  const shown = createMemo(input.shown ?? (() => true));
+  // The pick and the routed server, cut from the target where they hold still, so a route
+  // change inside one project reaches nothing that reads the lists (createStable in
+  // src/gui/stable.ts).
+  const pick = createStable(
+    () => input.target().pick,
+    (a, b) => JSON.stringify(a) === JSON.stringify(b)
+  );
+  const routedServer = createStable(() => input.target().origin?.server);
+  const listed = createMemo(() => machines.listed(pick(), routedServer()), undefined, {
     equals: sameModels
   });
-  const [now, setNow] = createSignal(Date.now());
+  // Ages show minutes at most, so a tick within the same minute changes no row.
+  const [now, setNow] = createSignal(Date.now(), {
+    equals: (a, b) => Math.floor(a / 60_000) === Math.floor(b / 60_000)
+  });
   const tick = () => setNow(Date.now());
 
   // The forge calls of the current showing, aborted when it hides or the view goes.
@@ -255,10 +269,13 @@ export function createBrowserView(machines: Machines, input: BrowserViewInput) {
   // The search runs after the sync above, which shows a newly picked scope's lists first, so it
   // searches those. The Pull requests view filters its own rows, so the session search is off
   // there.
+  // By the pick's kind only: a route change moves the target's origin, which must not search
+  // again.
+  const pickType = () => pick().type;
   createEffect(() => {
     if (!shown()) return;
     machines.released();
-    const all = input.target().pick.type === 'all';
+    const all = pickType() === 'all';
     const query = input.view() === 'pulls' ? '' : input.query();
     const archivedView = input.view() === 'archived';
     for (const model of listed()) {
@@ -313,7 +330,7 @@ export function createBrowserView(machines: Machines, input: BrowserViewInput) {
   onCleanup(() => clearInterval(ticker));
 
   /** Whether the pick lists every machine. */
-  const listsAll = () => input.target().pick.type === 'all';
+  const listsAll = () => pickType() === 'all';
   /** Listed servers that run no server plugin, once a call said so. */
   const missingOn = createMemo((): ServerRef[] =>
     listed()

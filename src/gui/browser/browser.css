@@ -621,7 +621,7 @@
 
 .ss-row:hover .ss-row-actions,
 .ss-row:focus-within .ss-row-actions,
-.ss-row-selected .ss-row-actions {
+.ss-row.ss-row-selected .ss-row-actions {
   visibility: visible;
 }
 

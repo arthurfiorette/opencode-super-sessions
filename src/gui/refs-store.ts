@@ -1,6 +1,6 @@
 import { createKeyed, type ServerRef } from '@opencode/plugin/gui';
 import { type Accessor, createMemo, createRoot, onCleanup, untrack } from 'solid-js';
-import { createStore, reconcile } from 'solid-js/store';
+import { createStore, reconcile, unwrap } from 'solid-js/store';
 import type { SessionRefView } from '../rpc.js';
 import { createSidebarState, type SidebarController } from '../sidebar-state.js';
 import type { ForgeQueue } from './forge-queue.js';
@@ -74,8 +74,13 @@ function keyOf(target: SessionTarget): string {
 /**
  * Creates the store. Call it once in setup, under the plugin's owner. `queue` is the window's
  * queue of forge-bound calls, which the store's refreshes and the readers' `pull.details` share.
+ * `cached` gives refs another part of the window already holds for a session, such as the
+ * browser's lists: a session's first reader shows them at once while the store asks again.
  */
-export function createRefsStore(queue: ForgeQueue): RefsStore {
+export function createRefsStore(
+  queue: ForgeQueue,
+  cached: (target: SessionTarget) => SessionRefView | undefined = () => undefined
+): RefsStore {
   const [states, setStates] = createStore<Record<string, RefsState | undefined>>({});
   const entries = new Map<string, Entry>();
 
@@ -158,7 +163,17 @@ export function createRefsStore(queue: ForgeQueue): RefsStore {
   function acquire(key: string, target: SessionTarget): void {
     let entry = entries.get(key);
     if (entry === undefined) {
-      if (states[key] === undefined) setStates(key, { status: 'loading', view: undefined });
+      if (states[key] === undefined) {
+        // A copy: the browser's store reconciles its own object, and this one reconciles the
+        // answers into what it holds.
+        const seed = untrack(() => cached(target));
+        setStates(
+          key,
+          seed === undefined
+            ? { status: 'loading', view: undefined }
+            : { status: 'ready', view: structuredClone(unwrap(seed)) }
+        );
+      }
       entry = open(key, target);
       entries.set(key, entry);
     }
@@ -206,7 +221,14 @@ export function createRefsStore(queue: ForgeQueue): RefsStore {
       );
       return () => {
         const current = key();
-        return current === undefined ? undefined : states[current];
+        if (current === undefined) return undefined;
+        const known = states[current];
+        if (known !== undefined) return known;
+        // Before the entry opens, in the same update as a session switch: what the window
+        // already holds, so a reader never draws the loading state over a cached answer.
+        const shown = untrack(target);
+        const seed = shown === undefined ? undefined : untrack(() => cached(shown));
+        return seed === undefined ? undefined : { status: 'ready', view: seed };
       };
     },
     reload(target) {

@@ -6,7 +6,13 @@ export const sideEn = {
   'side.work.unfold': 'Show Work',
   'side.work.pulls.one': '{{count}} PR',
   'side.work.pulls.other': '{{count}} PRs',
-  'side.work.none': 'Nothing linked.',
+  'side.work.issues.one': '{{count}} issue',
+  'side.work.issues.other': '{{count}} issues',
+  'side.work.links.one': '{{count}} link',
+  'side.work.links.other': '{{count}} links',
+  'side.work.none': 'Nothing linked',
   'side.work.link': 'Link…',
-  'side.current': 'Open here'
+  'side.sessions': 'Sessions',
+  'side.sessions.all': 'All sessions…',
+  'side.sessions.empty': 'No active sessions in this project'
 } as const;

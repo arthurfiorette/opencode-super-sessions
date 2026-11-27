@@ -1,7 +1,9 @@
 /* The Super Sessions side tab: the routed session's work at the top, then the routed project's
-   session list. The rows, groups and Work list take the browser's and
-   the status rules (../browser/browser.css, ../status/status.css); this file lays the tab out in
-   a narrow column and sets the variables those rules read. */
+   active sessions in the Desktop sidebar's style (SIDEBAR_ROW in src/host/gui.ts). The Work list
+   and the detail lines take the status and browser rules (../status/status.css,
+   ../browser/browser.css). Nothing here takes its size from the routed session: the Work line
+   is one fixed line, and unfolded Work a fixed share of the tab, so a session switch changes
+   only what sits inside them. */
 
 .ss-side {
   --ss-line: var(--line-height-compact, 16px);
@@ -23,179 +25,224 @@
   gap: 6px;
 }
 
-/* The Work section takes its natural height up to 45% of the tab and scrolls past it, so the
-   session list keeps the rest. */
+/* Work: one 28px line folded; unfolded, 40% of the tab with the list scrolling inside it. */
 .ss-side-work {
-  flex-shrink: 0;
-  max-height: 45%;
-  padding: 6px 12px 8px;
-  overflow-y: auto;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--v2-border-border-base);
 }
 
-.ss-side-work-folded {
-  padding-bottom: 6px;
+.ss-side-work[data-folded="false"] {
+  flex: 0 0 40%;
 }
 
 .ss-side-work-head {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 24px;
-}
-
-.ss-side-fold {
-  display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 4px 0 0;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+}
+
+/* The fold line reads as the sidebar's section header: 13px medium muted, base on hover. */
+.ss-side-fold {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 4px;
   border: none;
   border-radius: 6px;
   background: none;
-  color: var(--v2-text-text-faint);
+  color: var(--v2-text-text-muted);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
+  text-align: start;
   cursor: pointer;
 }
 
 .ss-side-fold:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
   color: var(--v2-text-text-base);
 }
 
 .ss-side-fold:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
-  outline-offset: 0;
+  outline-offset: -2px;
+}
+
+.ss-side-fold-icon {
+  flex-shrink: 0;
+  color: var(--v2-icon-icon-muted);
+}
+
+.ss-side-work-title {
+  flex-shrink: 0;
 }
 
 .ss-side-work-count {
+  min-width: 0;
+  overflow: hidden;
   color: var(--v2-text-text-faint);
-  font-size: 11px;
   font-variant-numeric: tabular-nums;
-  font-weight: 400;
+  font-weight: 440;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Until the first answer: the app's skeleton bar for a branch that loads
+   (packages/app/src/new-session/view.tsx:363 at v2.4.2), 8px by 48px on layer-02. */
+.ss-side-work-placeholder {
+  flex-shrink: 0;
+  width: 48px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--v2-background-bg-layer-02);
 }
 
 .ss-side-work-main {
   display: inline-flex;
+  flex-shrink: 0;
   min-width: 0;
   font-size: 12px;
 }
 
 .ss-side-work-body {
-  padding-top: 4px;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 4px 4px 26px;
+  overflow-y: auto;
 }
 
-/* A session that tracks nothing: one muted line with the link action. */
-.ss-side-work-none {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  color: var(--v2-text-text-faint);
-  font-size: 12px;
-}
-
-.ss-side-link {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--v2-text-text-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-.ss-side-link:hover {
-  color: var(--v2-text-text-base);
-  text-decoration: underline;
-}
-
+/* The project's active sessions under the sidebar's "Sessions" header: a 28px line of 13px
+   medium muted text 8px in, its action at the end. */
 .ss-side-sessions {
   display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
+  padding-top: 8px;
 }
 
-.ss-side-main {
+.ss-side-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px 0 16px;
+}
+
+.ss-side-header-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-side-sessions > [data-note] {
+  padding: 4px 16px;
+}
+
+.ss-side-list {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 6px;
-  min-width: 0;
+  gap: 1px;
   min-height: 0;
-  padding: 8px 8px 0;
-}
-
-/* The views as a segmented control: one track, the picked segment raised on it. */
-.ss-seg {
-  display: flex;
-  flex-shrink: 0;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 7px;
-  background: var(--v2-overlay-simple-overlay-hover);
-}
-
-.ss-seg-item {
-  display: inline-flex;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-width: 0;
-  height: 22px;
-  padding: 0 6px;
-  border: none;
-  border-radius: 5px;
-  background: none;
-  color: var(--v2-text-text-muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 440;
-  cursor: pointer;
-}
-
-.ss-seg-item:hover {
-  color: var(--v2-text-text-base);
-}
-
-.ss-seg-item[aria-selected="true"] {
-  background: var(--v2-background-bg-base);
-  box-shadow: var(--v2-elevation-raised);
-  color: var(--v2-text-text-base);
-  font-weight: 500;
-}
-
-.ss-seg-item:focus-visible {
-  outline: 2px solid var(--v2-border-border-focus);
-  outline-offset: -2px;
-}
-
-.ss-side:has(.ss-list[aria-busy="true"]) .ss-tab-count {
-  opacity: 0.5;
-}
-
-/* The search field spans the column; see the dialog's rule in browser.css (TEXT_INPUT in
-   src/host/gui.ts). */
-.ss-side-main > [data-component="text-input-v2"] {
-  width: 100%;
-}
-
-.ss-side .ss-list {
+  padding: 0 8px 8px;
+  overflow-y: auto;
   outline: none;
 }
 
-.ss-side .ss-list:focus-visible {
+.ss-side-list:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: -2px;
   border-radius: 6px;
 }
 
-/* The routed session's row: an accent bar on its leading edge, whatever its selection. */
-.ss-row-current {
-  box-shadow: inset 2px 0 0 var(--v2-text-text-accent);
+.ss-side-empty {
+  padding: 4px 8px;
+}
+
+/* The sidebar's session row: 28px, 6px corners, 13px medium titles faint until current, the
+   current one in base text on the pressed overlay, hover on the hover overlay. The keyboard's
+   selection takes the hover overlay too. */
+.ss-side-row {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--v2-text-text-faint);
+  font-weight: 500;
+  cursor: default;
+  user-select: none;
+}
+
+.ss-side-row:hover,
+.ss-side-row[data-selected] {
+  background: var(--v2-overlay-simple-overlay-hover);
+}
+
+.ss-side-row[data-state="pressed"] {
+  background: var(--v2-overlay-simple-overlay-pressed);
+  color: var(--v2-text-text-base);
+}
+
+.ss-side-row:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: -2px;
+}
+
+.ss-side-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 28px;
+}
+
+.ss-side-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The sidebar's trailing label: 11px, regular, faint, at most 40% of the row. */
+.ss-side-row-age {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-side-row .ss-row-lines {
+  margin-top: -4px;
+  padding: 0 0 6px;
+}
+
+.ss-side-row:hover .ss-row-actions,
+.ss-side-row:focus-within .ss-row-actions {
+  visibility: visible;
 }
 
 .ss-visually-hidden {

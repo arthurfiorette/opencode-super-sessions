@@ -772,7 +772,9 @@ export function createPageController(
      */
     async load(scope: PageScope, options: { refs?: 'all' | 'missing' } = {}): Promise<void> {
       const token = ++loadToken;
-      const cold = data.status === 'loading' && hold > 0;
+      // A reload over lists on screen holds its lists for their refs and Done lookups too, so
+      // the rows change in one publish instead of three; the rows already shown stay meanwhile.
+      const cold = (data.status === 'loading' && hold > 0) || data.status === 'ready';
       try {
         const [active, archived] = await Promise.all([
           deps.list({ archived: false, scope }),
@@ -791,7 +793,7 @@ export function createPageController(
         if (!shown) {
           let timer: ReturnType<typeof setTimeout> | undefined;
           const deadline = new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, hold);
+            timer = setTimeout(resolve, hold > 0 ? hold : COLD_DEADLINE);
           });
           // A failure shows up when `loading` is awaited below, after the lists are published.
           await Promise.race([loading, deadline]).catch(() => {});
@@ -845,7 +847,8 @@ export function createPageController(
       const token = ++searchToken;
       const trimmed = query.trim();
       if (trimmed.length === 0) {
-        publish({ search: undefined });
+        // Clearing a clear search publishes nothing, so the rows are left alone.
+        if (data.search !== undefined) publish({ search: undefined });
         return;
       }
       const local = localSearch(trimmed, archived ? data.archived : data.active, data.refs);
@@ -874,8 +877,14 @@ export function createPageController(
       if (ids.length === 0 || signal?.aborted) return;
       try {
         const refs = await deps.refresh(ids.slice(0, RPC_BATCH), false, signal);
-        publish({ refs: { ...data.refs, ...refs } });
-        await classify();
+        const merged = { ...data.refs, ...refs };
+        // The Done lookups the fresh refs call for go out first, so the rows change once.
+        const found = await lookups(data.active, merged).catch(() => undefined);
+        publish(
+          found === undefined
+            ? { refs: { ...data.refs, ...refs } }
+            : { refs: { ...data.refs, ...refs }, extra: { ...data.extra, ...found } }
+        );
       } catch {
         // The server plugin is optional; rows keep their cached refs.
       }

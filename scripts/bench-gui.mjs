@@ -107,6 +107,15 @@ const handlers = Object.fromEntries(
   ])
 );
 const data = createData();
+// The synced projects a row's avatar looks up, as many as a busy machine has.
+data.project = {
+  list: () =>
+    Array.from({ length: 30 }, (_, index) => ({
+      id: index === 0 ? 'proj' : `proj_${index}`,
+      name: index === 0 ? 'widgets' : `project ${index}`,
+      canonical: index === 0 ? '/work/widgets' : `/work/project-${index}`
+    }))
+};
 // The app's permission and form syncs are HTTP requests too.
 for (const domain of [data.session.permission, data.session.form]) {
   domain.sync = () => {
@@ -123,7 +132,9 @@ const gui = await startGui({
     key: `${server.id}\n${sessions[0].id}`,
     directory: '/work/widgets'
   },
-  servers: [server]
+  servers: [server],
+  // Every project, where each row draws its project's avatar.
+  stores: { browser: { rail: 'all' } }
 });
 
 const first = () => document.querySelector('[role="listbox"] [data-session]');
@@ -152,8 +163,47 @@ async function open(name) {
   document.querySelector('[role="dialog"] .ss-esc').click();
 }
 
+/** The routed session, settable for the side tab's route switches. */
+function routeRef(id) {
+  return { server, id, key: `${server.id}\n${id}`, directory: '/work/widgets' };
+}
+
+/**
+ * Shows the side tab and routes from one session to the next, as a click on a session tab does,
+ * and prints how long the window's synchronous update of each switch took: the route signal and
+ * every effect it ran, in the same task.
+ */
+async function switches(count) {
+  const { createSignal } = await import('solid-js');
+  const [routed, setRouted] = createSignal(routeRef(sessions[0].id));
+  const SIDE = `${gui.ctx.id}:sessions`;
+  gui.ctx.layout.open(SIDE, routed());
+  gui.panel('sessions', routed);
+  await until(() => document.querySelectorAll('.ss-side [data-session]').length > 20, 'side rows');
+  await sleep(1000);
+  counted.clear();
+  const times = [];
+  for (let index = 1; index <= count; index++) {
+    const next = routeRef(sessions[index % 40].id);
+    // The tab shows in the next session already, as it does once it was open there.
+    gui.ctx.layout.open(SIDE, next);
+    const start = performance.now();
+    setRouted(next);
+    times.push(performance.now() - start);
+    await sleep(50);
+  }
+  times.sort((a, b) => a - b);
+  const median = times[Math.floor(times.length / 2)];
+  const calls = [...counted].map(([call, total]) => `${call} ${total}`).join(', ') || 'none';
+  console.log(
+    `switch   median ${median.toFixed(1).padStart(6)} ms  max ${times.at(-1).toFixed(1).padStart(6)} ms  (${count} switches)`
+  );
+  console.log(`         ${calls}`);
+}
+
 await open('cold');
 await sleep(500);
 await open('reopen');
+await switches(20);
 gui.dispose();
 process.exit(0);

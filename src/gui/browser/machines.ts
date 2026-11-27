@@ -99,13 +99,13 @@ export function createMachines(ctx: Pick<Context, 'servers'>, pick: MachinePick)
     id === undefined ? undefined : all().find((model) => model.server.id === id);
 
   /**
-   * The models a target lists: every connected machine for All, else the one machine of the
-   * picked project. The routed project is on the routed session's server; on Home it is All.
+   * The models a pick lists: every connected machine for All, else the one machine of the picked
+   * project. The routed project is on the routed session's server, `routedServer`; on Home it is
+   * All.
    */
-  const listed = (target: MachinesTarget): BrowserModel[] => {
-    const { pick: current, origin } = target;
-    if (current.type === 'routed' && origin !== undefined) {
-      const routed = byId(origin.server);
+  const listed = (current: MachinePick, routedServer: string | undefined): BrowserModel[] => {
+    if (current.type === 'routed' && routedServer !== undefined) {
+      const routed = byId(routedServer);
       return routed === undefined ? [] : [routed];
     }
     if (current.type === 'project' || current.type === 'directory') {
@@ -143,6 +143,8 @@ export function createMachines(ctx: Pick<Context, 'servers'>, pick: MachinePick)
     models: all,
     /** The model of a server by its id. */
     model: byId,
+    /** The model of a server by its id if a view made it already; never makes one. */
+    made: (id: string): BrowserModel | undefined => models.get(id)?.model,
     listed,
     targetFor,
     /** The dialog's project pick. */

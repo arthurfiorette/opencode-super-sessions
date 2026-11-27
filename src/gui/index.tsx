@@ -31,7 +31,6 @@ export default Plugin.define({
   setup(ctx) {
     ctx.add(Style, css);
     ctx.add(Style, browserCss);
-    const refs = createRefsStore(createForgeQueue());
     reportPresence(ctx);
     // Every server's browser model, made on first use by the dialog or the side tab and kept for
     // the window's life, so both draw the cached lists at once. The dialog's first project pick,
@@ -45,14 +44,12 @@ export default Plugin.define({
         ? { type: 'all' }
         : { type: 'routed' }
     );
-    const side = addSidePanel(ctx, {
-      refs,
-      icons: ctx.icons,
-      machines,
-      browserPrefs: ctx.stores.browser,
-      sidePrefs: ctx.stores.side
-    });
-    addStatus(ctx, refs, ctx.icons, side);
+    // A session the browser listed shows its refs from the browser's copy at once, so the side
+    // tab's Work section and the header never wait on the `refs` RPC after a session switch.
+    const refs = createRefsStore(
+      createForgeQueue(),
+      (target) => machines.made(target.server.id)?.data.refs[target.sessionID]
+    );
     // The open browser, if any. Its keys only ever open it: pressed again, they leave it open
     // rather than stack a second browser or reach a command under it.
     let browser: DialogHandle | undefined;
@@ -63,6 +60,14 @@ export default Plugin.define({
       });
       browser = handle;
     };
+    const side = addSidePanel(ctx, {
+      refs,
+      icons: ctx.icons,
+      machines,
+      sidePrefs: ctx.stores.side,
+      browse
+    });
+    addStatus(ctx, refs, ctx.icons, side);
     ctx.add(
       Command,
       (): Command => ({
