@@ -113,6 +113,7 @@ export function addStatus(ctx: Context, refs: RefsStore, icons: StatusIcons): vo
   };
   const state = refs.use(routed);
   const details = createPullDetails({
+    queue: refs.queue,
     target: routed,
     pulls: () => {
       const pull = mainPull(state()?.view);

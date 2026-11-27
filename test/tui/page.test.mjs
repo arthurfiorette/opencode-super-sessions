@@ -239,6 +239,14 @@ async function host(
         // Settings and maintenance listen for server events from setup on.
         events: { on: () => () => {} },
         refs: views,
+        // Every session's last prompt is the newest of PROMPTS, and nothing waits on the user.
+        'done.facts': async (input) =>
+          Object.fromEntries(
+            input.sessionIDs.map((id) => [
+              id,
+              { pending: false, lastUserMessageAt: PROMPTS[0].time.created }
+            ])
+          ),
         refresh: (input, options) => {
           refreshes.push(input.sessionIDs);
           return views(input, options, true);

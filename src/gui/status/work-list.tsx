@@ -54,7 +54,7 @@ export function WorkList(props: WorkListProps) {
         ? [{ ref: line.ref, state: stateOf(line.ref) }]
         : []
     );
-  const details = createPullDetails({ target, pulls: failing });
+  const details = createPullDetails({ target, pulls: failing, queue: props.refs.queue });
   const actions = workActions(ctx, props.refs, target, useOpenUrl());
   const shown = () => (props.actions ?? false) && state() !== undefined;
 

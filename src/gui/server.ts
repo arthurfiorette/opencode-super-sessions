@@ -1,7 +1,12 @@
 import type { RpcCallOptions } from '@opencode/client';
 import type { Context, ServerRef, SessionRef } from '@opencode/plugin/gui';
 import { builtinServer } from '../host/gui.js';
-import { pluginRpc, type SuperSessionsClient, serverPluginMissing } from '../host/rpc.js';
+import {
+  pluginRpc,
+  pluginsLoaded,
+  type SuperSessionsClient,
+  serverPluginMissing
+} from '../host/rpc.js';
 
 // Which server the GUI asks, and how. The desktop app can list several servers, and each session
 // belongs to one; this plugin's server half answers only on servers where it is installed.
@@ -39,6 +44,23 @@ export function serverFor(
  */
 export function rpcOn(server: ServerRef): SuperSessionsClient {
   return pluginRpc(server.client);
+}
+
+/**
+ * Starts what the first RPC to a directory's Location waits for, its `location.get` and the
+ * plugin list, both at once and without waiting, so they run beside a list load instead of
+ * after it. Without a directory it warms the server's default Location.
+ */
+export function warmRpc(server: ServerRef, directory?: string): void {
+  if (directory === undefined) {
+    void pluginsLoaded(server.client);
+    return;
+  }
+  void pluginsLoaded(server.client, { directory });
+  void rpcAt(server, directory).then((options) => {
+    // A directory that does not resolve sends its RPCs to the default Location.
+    if (options.location === undefined) void pluginsLoaded(server.client);
+  });
 }
 
 /**

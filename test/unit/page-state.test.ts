@@ -28,8 +28,7 @@ function deps(overrides: Partial<PageDeps>): PageDeps {
     refs: async () => ({}),
     refresh: async () => ({}),
     running: () => false,
-    pending: async () => false,
-    lastUserMessageAt: async () => undefined,
+    doneFacts: async (ids) => Object.fromEntries(ids.map((id) => [id, { pending: false }])),
     ...overrides
   };
 }

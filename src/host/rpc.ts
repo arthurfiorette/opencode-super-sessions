@@ -33,36 +33,45 @@ const loaded = new WeakMap<RpcHost, Map<string, Promise<void>>>();
  */
 export function pluginRpc(client: RpcHost): SuperSessionsClient {
   const rpc = client.rpc(SuperSessions);
-  const ready = loaded.get(client) ?? new Map<string, Promise<void>>();
-  loaded.set(client, ready);
-  /** Resolves once the Location has loaded its plugins, or after {@link LOAD_WAIT} regardless. */
-  const whenLoaded = (location: RpcCallOptions['location']) => {
-    const key = location?.directory ?? '';
-    const known = ready.get(key);
-    if (known !== undefined) return known;
-    const waiting = waitForPlugins(client, location);
-    ready.set(key, waiting);
-    return waiting;
-  };
   return new Proxy(rpc, {
     get(target, name, receiver) {
       const method: unknown = Reflect.get(target, name, receiver);
       if (typeof method !== 'function' || name === 'events') return method;
+      // `options` goes to the call unchanged, its abort `signal` included.
       return async (input: unknown, options?: RpcCallOptions) => {
-        await whenLoaded(options?.location);
+        await pluginsLoaded(client, options?.location);
         try {
           return await method.call(target, input, options);
         } catch (error) {
           // The host drops idle Locations, so one that loaded before may be cold again: look again
           // on the next call.
           if (rpcError(error).type === 'rpc.unavailable') {
-            ready.delete(options?.location?.directory ?? '');
+            loaded.get(client)?.delete(options?.location?.directory ?? '');
           }
           throw error;
         }
       };
     }
   });
+}
+
+/**
+ * Resolves once the Location has loaded its plugins, or after {@link LOAD_WAIT} regardless, as
+ * {@link pluginRpc}'s calls wait. Calling it ahead of the first call, such as while a list loads,
+ * takes the plugin list's round trip off that call's path.
+ */
+export function pluginsLoaded(
+  client: RpcHost,
+  location?: RpcCallOptions['location']
+): Promise<void> {
+  const ready = loaded.get(client) ?? new Map<string, Promise<void>>();
+  loaded.set(client, ready);
+  const key = location?.directory ?? '';
+  const known = ready.get(key);
+  if (known !== undefined) return known;
+  const waiting = waitForPlugins(client, location);
+  ready.set(key, waiting);
+  return waiting;
 }
 
 /** Polls the Location's plugin list until it has entries, for at most {@link LOAD_WAIT}. */

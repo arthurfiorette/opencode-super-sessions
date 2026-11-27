@@ -154,29 +154,15 @@ export function createBrowserModel(
           rpcOptions()
         ),
       refs: (sessionIDs) => rpc().refs({ sessionIDs }, rpcOptions()),
-      refresh: (sessionIDs, force) =>
-        rpc().refresh(force ? { sessionIDs, force } : { sessionIDs }, rpcOptions()),
+      refresh: (sessionIDs, force, signal) =>
+        rpc().refresh(force ? { sessionIDs, force } : { sessionIDs }, {
+          ...rpcOptions(),
+          ...(signal === undefined ? {} : { signal })
+        }),
       running,
-      async pending(sessionID) {
-        const permission = context.data.session.permission;
-        const form = context.data.session.form;
-        // Lists stay undefined until synced; only Done candidates get here, so syncing is cheap.
-        if (permission.list(sessionID) === undefined)
-          await permission.sync(sessionID).catch(() => {});
-        if (form.list(sessionID) === undefined) await form.sync(sessionID).catch(() => {});
-        return (
-          (permission.list(sessionID)?.length ?? 0) > 0 || (form.list(sessionID)?.length ?? 0) > 0
-        );
-      },
-      async lastUserMessageAt(sessionID) {
-        const page = await client.message.list({
-          sessionID,
-          order: 'desc',
-          limit: 1,
-          type: 'user'
-        });
-        return page.data[0]?.time.created;
-      }
+      // The server tracks permissions and questions in every Location; syncing them here went
+      // through each session's Location and booted the evicted ones.
+      doneFacts: (sessionIDs) => rpc()['done.facts']({ sessionIDs }, rpcOptions())
     },
     (next) => setData(reconcile(next, { key: 'id' }))
   );

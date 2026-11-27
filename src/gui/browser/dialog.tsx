@@ -4,6 +4,7 @@ import {
   createLatest,
   type DialogHandle,
   type Persisted,
+  type ServerRef,
   type SessionRef,
   usePlugin
 } from '@opencode/plugin/gui';
@@ -13,7 +14,6 @@ import {
   createSignal,
   For,
   Match,
-  on,
   onCleanup,
   onMount,
   Show,
@@ -45,7 +45,7 @@ import { Octicon, type OcticonName } from '../octicons.js';
 import { sessionProjectLook } from '../project-avatar.js';
 import type { RefsStore } from '../refs-store.js';
 import { rpcOn, serverFor } from '../server.js';
-import { type BrowserModel, type BrowserTarget, createBrowserModel } from './model.js';
+import { type BrowserModel, type BrowserTarget, createBrowserView } from './model.js';
 import { type BrowserPrefs, opensOnAll } from './prefs.js';
 import { Preview } from './preview.js';
 import { ALL_KEY, createRail, type RailSelection, type RailTile, selectionKey } from './rail.js';
@@ -130,13 +130,15 @@ function altChord(action: AltAction, layout: ReadonlyMap<string, string> | undef
 /**
  * Opens the browser over whatever the window shows. "This project" is the routed session's
  * project, so it is read once here; on Home the dialog lists every project. `refs` is the store
- * the Work panel reads too, so the preview shares its entries and refreshes. `closed` runs once
- * the dialog closes, however it closes.
+ * the Work panel reads too, so the preview shares its entries and refreshes. `models` gives the
+ * server's browser model, which outlives the dialog. `closed` runs once the dialog closes, however
+ * it closes.
  */
 export function openBrowser(
   ctx: Context,
   prefs: Persisted<BrowserPrefs, BrowserPrefs>,
   refs: RefsStore,
+  models: (server: ServerRef) => BrowserModel,
   closed: () => void = () => {}
 ): DialogHandle {
   const routed = ctx.sessions.current();
@@ -157,12 +159,37 @@ export function openBrowser(
       <ctx.ui.Dialog title={ctx.t('browser.title')} size="x-large" closable={target === undefined}>
         <Show when={target} fallback={<p class="ss-note">{ctx.t('browser.noServer')}</p>}>
           {(current) => (
-            <SessionBrowser target={current()} prefs={prefs} refs={refs} close={dialog.close} />
+            <SessionBrowser
+              target={current()}
+              model={models(current().server)}
+              prefs={prefs}
+              refs={refs}
+              close={dialog.close}
+            />
           )}
         </Show>
       </ctx.ui.Dialog>
     );
   });
+}
+
+/** A group's header in the list's single keyed run of items. */
+interface ListHeader {
+  readonly header: string;
+}
+
+/** Whether a list item is a group header rather than a row. */
+function isHeader(item: object): item is ListHeader {
+  return 'header' in item;
+}
+
+/** Whether two builds of a pull request row show the same thing. */
+function samePull(a: PullRow, b: PullRow): boolean {
+  return (
+    a.state === b.state &&
+    a.sessions.length === b.sessions.length &&
+    a.sessions.every((session, index) => session === b.sessions[index])
+  );
 }
 
 /** A row or pull request the user picked; `id` is a session id or a pull request's key. */
@@ -183,6 +210,8 @@ interface Selection<T> {
 /** Props of {@link SessionBrowser}. */
 interface SessionBrowserProps {
   readonly target: BrowserTarget;
+  /** The server's browser model, kept between opens. */
+  readonly model: BrowserModel;
   readonly prefs: Persisted<BrowserPrefs, BrowserPrefs>;
   readonly refs: RefsStore;
   readonly close: () => void;
@@ -214,12 +243,59 @@ function SessionBrowser(props: SessionBrowserProps) {
   const [pullPick, setPullPick] = createSignal<Choice>(NO_PICK, { equals: false });
   const setSelected = (id: string | undefined) => setRowPick({ id });
   const setPull = (key: string | undefined) => setPullPick({ id: key });
-  const model: BrowserModel = createBrowserModel({ target, selection, view, query });
+  const model = untrack(() => props.model);
+  const browser = createBrowserView(model, {
+    target: () => ({ origin: target.origin, selection: selection() }),
+    view,
+    query
+  });
   const store = model.data;
   const pullView = () => view() === 'pulls';
 
-  const rows = createMemo(() => rowsOf(model.groups()));
-  const pulls = createMemo(() => model.pullGroups().flatMap((group) => group.pulls));
+  const rows = createMemo(() => rowsOf(browser.groups()));
+  const pulls = createMemo(() => browser.pullGroups().flatMap((group) => group.pulls));
+  // The list as one keyed run of headers and rows. Rows are the store's own session objects and
+  // headers are kept by title, so a publish (refs arriving, a run ending) only updates the rows
+  // that changed instead of building every row of a group again.
+  const headers = new Map<string, ListHeader>();
+  /** The header object of a group title, the same one on every publish. */
+  const header = (title: string): ListHeader => {
+    let known = headers.get(title);
+    if (known === undefined) {
+      known = { header: title };
+      headers.set(title, known);
+    }
+    return known;
+  };
+  const items = createMemo(
+    (): Array<ListHeader | SessionInfo> =>
+      browser
+        .groups()
+        .flatMap((group) =>
+          group.title === undefined ? group.sessions : [header(group.title), ...group.sessions]
+        )
+  );
+  // Pull request rows are built anew on each publish; one whose fields are unchanged is kept.
+  const pullItems = createMemo(
+    (previous: ReadonlyMap<string, PullRow>): ReadonlyMap<string, PullRow> => {
+      const next = new Map<string, PullRow>();
+      for (const item of pulls()) {
+        const known = previous.get(item.key);
+        next.set(item.key, known !== undefined && samePull(known, item) ? known : item);
+      }
+      return next;
+    },
+    new Map()
+  );
+  const pullList = createMemo(
+    (): Array<ListHeader | PullRow> =>
+      browser
+        .pullGroups()
+        .flatMap((group) => [
+          header(group.title),
+          ...group.pulls.map((item) => pullItems().get(item.key) ?? item)
+        ])
+  );
 
   // Rows change under the selection when sessions are archived, restored or become Done: the row
   // that took the selected one's place is selected. Clearing the selection, as switching views
@@ -309,15 +385,9 @@ function SessionBrowser(props: SessionBrowserProps) {
   const previewShare = previewShareOf(ctx.options.previewWidth);
   const titleEnd = () => TITLE_ORANGE[ctx.appearance.mode() === 'light' ? 'light' : 'dark'];
 
-  // The first pick loads the lists; a later one starts over in the picked project.
-  createEffect(
-    on(selection, (_, previous) => {
-      if (previous !== undefined) model.controller.reset();
-      void model.load();
-    })
-  );
-  // The Pull requests view filters its own rows; the session search stays off there. A new pick
-  // asks again, since starting over cleared the results.
+  // The view syncs the model for every pick, starting over in a newly picked project. The Pull
+  // requests view filters its own rows; the session search stays off there. A new pick asks
+  // again, since starting over cleared the results.
   createEffect(() => {
     selection();
     model.controller.search(pullView() ? '' : query(), view() === 'archived', scope());
@@ -450,7 +520,7 @@ function SessionBrowser(props: SessionBrowserProps) {
       toast(ctx.t(done ? 'browser.done.failed' : 'browser.notDone.failed'));
       return;
     }
-    void model.controller.refresh([session.id]);
+    void model.controller.refresh([session.id], browser.signal);
   };
   /**
    * Opens the selected pull request in the Pull requests view; otherwise the selected session's
@@ -661,63 +731,61 @@ function SessionBrowser(props: SessionBrowserProps) {
               <Match when={store.status === 'error'}>
                 <div class="ss-state">
                   <p class="ss-note">{ctx.t('browser.error')}</p>
-                  <ctx.ui.Button variant="neutral" size="small" onClick={() => void model.load()}>
+                  <ctx.ui.Button
+                    variant="neutral"
+                    size="small"
+                    onClick={() => void browser.load(true)}
+                  >
                     {ctx.t('browser.retry')}
                   </ctx.ui.Button>
                 </div>
               </Match>
               <Match when={pullView()}>
                 <Show when={pulls().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
-                  <For each={model.pullGroups()}>
-                    {(group) => (
-                      <section class="ss-group">
-                        <GroupTitle title={group.title} />
-                        <For each={group.pulls}>
-                          {(item) => (
-                            <LinkScopeProvider scope={linkScope(() => item.sessions[0]?.id)}>
-                              <PullItem
-                                pull={item}
-                                selected={pull() === item.key}
-                                ref={track(item.key)}
-                                onSelect={() => setPull(item.key)}
-                                onOpen={() => open(item.sessions[0])}
-                              />
-                            </LinkScopeProvider>
-                          )}
-                        </For>
-                      </section>
-                    )}
+                  <For each={pullList()}>
+                    {(item) =>
+                      isHeader(item) ? (
+                        <GroupTitle title={item.header} />
+                      ) : (
+                        <LinkScopeProvider scope={linkScope(() => item.sessions[0]?.id)}>
+                          <PullItem
+                            pull={item}
+                            selected={pull() === item.key}
+                            ref={track(item.key)}
+                            onSelect={() => setPull(item.key)}
+                            onOpen={() => open(item.sessions[0])}
+                          />
+                        </LinkScopeProvider>
+                      )
+                    }
                   </For>
                 </Show>
               </Match>
               <Match when={true}>
                 <Show when={rows().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
-                  <For each={model.groups()}>
-                    {(group) => (
-                      <section class="ss-group">
-                        <Show when={group.title}>{(title) => <GroupTitle title={title()} />}</Show>
-                        <For each={group.sessions}>
-                          {(session) => (
-                            <LinkScopeProvider scope={linkScope(() => session.id)}>
-                              <SessionRow
-                                session={live(session)}
-                                view={store.refs[session.id]}
-                                selected={selected() === session.id}
-                                running={running(session)}
-                                waiting={waiting(session.id)}
-                                now={model.now()}
-                                archivedAge={view() === 'archived' && store.search === undefined}
-                                actions={actions(session)}
-                                project={projectOf(live(session))}
-                                ref={track(session.id)}
-                                onSelect={() => setSelected(session.id)}
-                                onOpen={() => open(session)}
-                              />
-                            </LinkScopeProvider>
-                          )}
-                        </For>
-                      </section>
-                    )}
+                  <For each={items()}>
+                    {(item) =>
+                      isHeader(item) ? (
+                        <GroupTitle title={item.header} />
+                      ) : (
+                        <LinkScopeProvider scope={linkScope(() => item.id)}>
+                          <SessionRow
+                            session={live(item)}
+                            view={store.refs[item.id]}
+                            selected={selected() === item.id}
+                            running={running(item)}
+                            waiting={waiting(item.id)}
+                            now={model.now()}
+                            archivedAge={view() === 'archived' && store.search === undefined}
+                            actions={actions(item)}
+                            project={projectOf(live(item))}
+                            ref={track(item.id)}
+                            onSelect={() => setSelected(item.id)}
+                            onOpen={() => open(item)}
+                          />
+                        </LinkScopeProvider>
+                      )
+                    }
                   </For>
                 </Show>
               </Match>

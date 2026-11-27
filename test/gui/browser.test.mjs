@@ -94,8 +94,13 @@ function fixtureServer(handlers = {}, data = {}) {
       )
     }),
     'session.update': () => undefined,
-    // The user last wrote before the pull request merged.
-    'message.list': () => ({ data: [{ time: { created: NOW - 2 * HOUR } }] }),
+    // The preview's page: nothing to draw.
+    'message.list': () => ({ data: [], cursor: {} }),
+    // Nothing waits on the user, who last wrote before the pull request merged.
+    'rpc.done.facts': ({ sessionIDs }) =>
+      Object.fromEntries(
+        sessionIDs.map((id) => [id, { pending: false, lastUserMessageAt: NOW - 2 * HOUR }])
+      ),
     'rpc.refs': ({ sessionIDs }) => viewsOf(sessionIDs),
     'rpc.refresh': ({ sessionIDs }) => viewsOf(sessionIDs),
     'rpc.search': () => [],
@@ -170,6 +175,17 @@ test('sessions sort into the views by their refs, and tab moves between the view
   assert.ok(row('ses_busy').querySelector('.ss-row-lines .ss-ref'));
   assert.equal(row('ses_plain').querySelector('.ss-row-lines'), null);
   assert.deepEqual(['active', 'done', 'archived', 'pulls'].map(count), ['2', '1', '1', '5']);
+  // Done came from the server's facts in one call: asking the host per session booted every
+  // evicted Location on the way, for up to 1.4 s each.
+  assert.deepEqual(
+    client.calls.filter((call) => call.name === 'rpc.done.facts').map((call) => call.input),
+    [{ sessionIDs: ['ses_merged'] }]
+  );
+  assert.deepEqual(gui.ctx.servers.get('sidecar').data.synced, []);
+  assert.equal(
+    client.calls.some((call) => call.name === 'message.list' && call.input.type === 'user'),
+    false
+  );
   tab('done').click();
   await until(() => listed().join() === 'ses_merged', 'the Done view');
   press({ key: 'Tab' });
@@ -178,11 +194,87 @@ test('sessions sort into the views by their refs, and tab moves between the view
   // The routed session's own Location answers for its project, for the list and the preview.
   const locations = client.calls
     .filter((call) => call.name === 'rpc.refs')
-    .map((call) => call.options);
+    .map((call) => call.options.location);
   assert.ok(locations.length > 0);
-  for (const options of locations) {
-    assert.deepEqual(options, { location: { directory: '/work/widgets' } });
+  for (const location of locations) {
+    assert.deepEqual(location, { directory: '/work/widgets' });
   }
+});
+
+/** Closes the open browser with its `esc` button. */
+const closeBrowser = () => document.querySelector('[role="dialog"] .ss-esc').click();
+/** The model's loads of the routed project; the rail lists every project on its own. */
+const listLoads = (client) =>
+  client.calls.filter((call) => call.name === 'session.list' && call.input.project === 'proj')
+    .length;
+
+// Each open loaded the lists afresh, so cmd+shift+s showed a spinner for 0.65 s to 2 s.
+test('a reopen draws the cached rows at once, before asking the server again', async () => {
+  const client = await openBrowser();
+  await until(() => count('done') === '1', 'the first open to settle');
+  closeBrowser();
+  const loads = listLoads(client);
+
+  await gui.command('browse').run();
+  // Synchronously, in the render the command started: no list load came before the rows.
+  assert.deepEqual(listed(), ['ses_busy', 'ses_plain']);
+  assert.ok(row('ses_busy').querySelector('.ss-ref'));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(listLoads(client), loads);
+});
+
+test('a cold open draws the titles before the refs answer', async () => {
+  let listsAsked = () => {};
+  const asked = new Promise((resolve) => {
+    listsAsked = resolve;
+  });
+  let answerLists = () => {};
+  const lists = new Promise((resolve) => {
+    answerLists = resolve;
+  });
+  let answer = () => {};
+  const refs = new Promise((resolve) => {
+    answer = resolve;
+  });
+  const server = fixtureServer({
+    'session.list': (input) => {
+      if (input.project === undefined) return { data: [...SESSIONS, OTHER] };
+      listsAsked();
+      return lists.then(() => ({ data: input.archived ? ARCHIVED : SESSIONS }));
+    },
+    'rpc.refs': ({ sessionIDs }) => refs.then(() => viewsOf(sessionIDs))
+  });
+  gui = await startGui({
+    session: { server, id: 'ses_busy', key: `${server.id}\nses_busy`, directory: '/work/widgets' },
+    servers: [server]
+  });
+  await gui.command('browse').run();
+  await asked;
+  answerLists();
+  // One timer turn: the rows are on screen without waiting for the refs or for a hold timer.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(listed(), ['ses_busy', 'ses_merged', 'ses_plain']);
+  assert.equal(row('ses_busy').querySelector('.ss-ref'), null);
+  answer();
+  await until(() => row('ses_busy').querySelector('.ss-ref'), 'the ref lines');
+  await until(() => count('done') === '1', 'the merged session to move to Done');
+});
+
+// A forge refresh can take seconds, and the app runs four requests per server at once: one left
+// running after the dialog closed held a slot every other read of the window waited for.
+test('closing the browser aborts its forge refreshes', async () => {
+  // The rows' refresh; the routed session's own, for its header and pill, outlives the browser.
+  let signal;
+  await openBrowser({
+    'rpc.refresh': ({ sessionIDs }, options) => {
+      if (sessionIDs.includes('ses_plain')) signal = options.signal;
+      return new Promise(() => {});
+    }
+  });
+  await until(() => signal, 'the rows to be refreshed');
+  assert.equal(signal.aborted, false);
+  closeBrowser();
+  assert.equal(signal.aborted, true);
 });
 
 test('search narrows the list and adds message hits under In messages', async () => {
@@ -196,10 +288,16 @@ test('search narrows the list and adds message hits under In messages', async ()
   input.dispatchEvent(new Event('input', { bubbles: true }));
 
   await until(() => listed().join() === 'ses_plain,ses_merged', 'the search results');
-  const groups = [...document.querySelectorAll('[role="listbox"] .ss-group-title')];
-  assert.equal(groups.at(-1).textContent, 'In messages');
-  assert.ok(groups.at(-1).parentElement.contains(row('ses_merged')));
+  assert.equal(groupOf('ses_merged'), 'In messages');
+  assert.notEqual(groupOf('ses_plain'), 'In messages');
 });
+
+/** The title of the group a row is listed under: the nearest header before it. */
+function groupOf(id) {
+  let node = row(id)?.previousElementSibling;
+  while (node && !node.classList.contains('ss-group-title')) node = node.previousElementSibling;
+  return node?.textContent;
+}
 
 test('the keys archive the selected session and open one in a focused tab', async () => {
   const client = await openBrowser();
@@ -427,8 +525,7 @@ test('a running session sits under Running with the app spinner, a plain one has
     () => row('ses_plain')?.querySelector('[data-marker="running"]'),
     'the mark'
   );
-  const group = row('ses_plain').closest('.ss-group').querySelector('.ss-group-title');
-  assert.equal(group.textContent, 'Running');
+  assert.equal(groupOf('ses_plain'), 'Running');
   // The sidebar's dot grid, which the app's stylesheet paints, not the loading ring.
   assert.ok(mark.querySelector('[data-slot="spinner-dots"]'));
   assert.equal(mark.querySelector('[role="progressbar"]'), null);

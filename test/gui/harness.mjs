@@ -49,9 +49,9 @@ async function providedModules() {
  * not provide, such as a Node.js built-in that the window would turn into an inert placeholder,
  * throws, so window code that would silently get a placeholder fails here.
  */
-export async function loadBundle() {
+export async function loadBundle(bundle = new URL('dist/gui-experimental.cjs', root)) {
   const modules = await providedModules();
-  const code = await readFile(new URL('dist/gui-experimental.cjs', root), 'utf8');
+  const code = await readFile(bundle, 'utf8');
   const module = { exports: {} };
   const require = (name) => {
     const found = modules.get(name);
@@ -124,18 +124,21 @@ export function rpcUnavailable() {
  * A fake `Data` event feed: `on` as the app's, and `emit(event)` to deliver an event to the
  * listeners of its `type`. `session` answers like a server that synced none of the sessions,
  * with every session idle, except the ids in `running`, and no cost. `models` is the model list
- * of every Location.
+ * of every Location. `synced` records each permission and form sync, which asks the session's
+ * Location over HTTP, as `['permission' | 'form', sessionID]`.
  */
 export function createData({ running = [], models = [] } = {}) {
   const listeners = new Map();
+  const synced = [];
   return {
+    synced,
     session: {
       get: () => undefined,
       status: (id) => (running.includes(id) ? 'running' : 'idle'),
       family: () => [],
       cost: () => 0,
-      permission: { list: () => [], sync: async () => {} },
-      form: { list: () => [], sync: async () => {} }
+      permission: { list: () => [], sync: async (id) => void synced.push(['permission', id]) },
+      form: { list: () => [], sync: async (id) => void synced.push(['form', id]) }
     },
     location: { model: { list: () => models } },
     on(type, handler) {
@@ -456,7 +459,8 @@ function read(entry) {
 }
 
 /**
- * Loads the built bundle and runs its `setup` with a fake context (see {@link createContext}).
+ * Loads the built bundle, or the one at `options.bundle`, such as another checkout's for
+ * scripts/bench-gui.mjs, and runs its `setup` with a fake context (see {@link createContext}).
  * Returns the context's records, `items(registryId)` to read what the GUI contributed,
  * `command(id)` to read one command, `slot(at, input)` to render a `Slot`, `panel(id, session)` to
  * render a side `Panel`'s tab of the same id, `pill(id, session)` to read what a `ComposerPill`
@@ -465,7 +469,7 @@ function read(entry) {
  * everything it rendered down.
  */
 export async function startGui(options = {}) {
-  const plugin = await loadBundle();
+  const plugin = await loadBundle(options.bundle);
   const fake = createContext(plugin, options);
   const rendered = [];
   const dispose = solid.createRoot((dispose) => {

@@ -3,6 +3,7 @@ import { type Accessor, createMemo, createRoot, onCleanup, untrack } from 'solid
 import { createStore, reconcile } from 'solid-js/store';
 import type { SessionRefView } from '../rpc.js';
 import { createSidebarState, type SidebarController } from '../sidebar-state.js';
+import type { ForgeQueue } from './forge-queue.js';
 import { rpcAt, rpcOn, serverPluginMissing } from './server.js';
 
 // One fetcher per session for every GUI surface that shows its refs (the header, the Work panel,
@@ -54,6 +55,8 @@ export interface RefsStore {
    * something reads them. Resolves once the answer is in.
    */
   reload(target: SessionTarget): Promise<void>;
+  /** The window's queue of forge-bound calls, for the readers' own `pull.details`. */
+  readonly queue: ForgeQueue;
 }
 
 /** What one read session holds while something reads it. */
@@ -68,8 +71,11 @@ function keyOf(target: SessionTarget): string {
   return `${target.server.id}\n${target.sessionID}`;
 }
 
-/** Creates the store. Call it once in setup, under the plugin's owner. */
-export function createRefsStore(): RefsStore {
+/**
+ * Creates the store. Call it once in setup, under the plugin's owner. `queue` is the window's
+ * queue of forge-bound calls, which the store's refreshes and the readers' `pull.details` share.
+ */
+export function createRefsStore(queue: ForgeQueue): RefsStore {
   const [states, setStates] = createStore<Record<string, RefsState | undefined>>({});
   const entries = new Map<string, Entry>();
 
@@ -77,16 +83,23 @@ export function createRefsStore(): RefsStore {
   function open(key: string, target: SessionTarget): Entry {
     return createRoot((dispose) => {
       let closed = false;
+      // Ends the entry's calls when nothing reads the session anymore, so a tab that closed or a
+      // row the browser's preview passed frees its request slot.
+      const abort = new AbortController();
       /**
        * One RPC call. Marks the session unavailable when its server has no server half, and
-       * failed when nothing answered for it yet, so no surface waits on it forever.
+       * failed when nothing answered for it yet, so no surface waits on it forever. A `refresh`
+       * waits on the forge, so it takes its turn in the window's {@link ForgeQueue}.
        */
       const call = async (method: 'refs' | 'refresh') => {
         try {
-          const answer = await rpcOn(target.server)[method](
-            { sessionIDs: [target.sessionID] },
-            await rpcAt(target.server, target.directory)
-          );
+          const options = await rpcAt(target.server, target.directory);
+          const ask = () =>
+            rpcOn(target.server)[method](
+              { sessionIDs: [target.sessionID] },
+              { ...options, signal: abort.signal }
+            );
+          const answer = await (method === 'refresh' ? queue.run(ask, abort.signal) : ask());
           return answer[target.sessionID];
         } catch (error) {
           if (!closed && serverPluginMissing(error)) {
@@ -130,6 +143,7 @@ export function createRefsStore(): RefsStore {
       }, REFRESH_INTERVAL);
       onCleanup(() => {
         closed = true;
+        abort.abort();
         clearInterval(timer);
         controller.dispose();
       });
@@ -170,6 +184,7 @@ export function createRefsStore(): RefsStore {
   });
 
   return {
+    queue,
     use(target) {
       const key = createMemo(() => {
         const current = target();

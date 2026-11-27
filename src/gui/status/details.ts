@@ -1,6 +1,7 @@
 import { createLatest } from '@opencode/plugin/gui';
 import { untrack } from 'solid-js';
 import { type PullDetails, type Ref, type RefState, refKey } from '../../refs/ref.js';
+import type { ForgeQueue } from '../forge-queue.js';
 import type { SessionTarget } from '../refs-store.js';
 import { rpcAt, rpcOn } from '../server.js';
 
@@ -14,6 +15,8 @@ export interface PullDetailsInput {
   target(): SessionTarget | undefined;
   /** The pull requests whose details to load, with their snapshots. */
   pulls(): Array<{ ref: Ref; state: RefState | undefined }>;
+  /** The window's queue of forge-bound calls; each pull request's details take one turn. */
+  queue: ForgeQueue;
 }
 
 /**
@@ -53,9 +56,9 @@ export function createPullDetails(
       pulls.map(async ({ ref }) => {
         const key = refKey(ref);
         try {
-          const answer = await rpcOn(target.server)['pull.details'](
-            { ref },
-            { ...options, signal }
+          const answer = await input.queue.run(
+            () => rpcOn(target.server)['pull.details']({ ref }, { ...options, signal }),
+            signal
           );
           return [key, answer] as const;
         } catch {

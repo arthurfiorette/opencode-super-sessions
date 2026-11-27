@@ -3,7 +3,7 @@ import { activityTime } from '../host/session-info.js';
 import { type ProviderId, type Ref, type RefState, refKey } from '../refs/ref.js';
 import { rankSessions, searchLinks } from '../refs/search.js';
 import { doneAt, isDone, trackedRefs } from '../refs/summary.js';
-import type { SearchHit, SearchMatch, SessionRefView } from '../rpc.js';
+import type { DoneFact, SearchHit, SearchMatch, SessionRefView } from '../rpc.js';
 
 export type PageView = 'active' | 'done' | 'archived' | 'pulls';
 export type PageScope = 'project' | 'all';
@@ -159,11 +159,11 @@ export type Line =
   /** A row of the Pull requests view. */
   | { kind: 'pull'; pull: PullRow };
 
-/** What the Done rule needs beyond refs. Fetched only for sessions that could be Done. */
-export interface DoneExtra {
-  pending: boolean;
-  lastUserMessageAt?: number | undefined;
-}
+/**
+ * What the Done rule needs beyond refs. Fetched only for sessions that could be Done. A null
+ * `lastUserMessageAt` is unknown and keeps the session out of Done.
+ */
+export type DoneExtra = DoneFact;
 
 /** Input of {@link groupSessions}. */
 export interface GroupInput {
@@ -415,11 +415,31 @@ export interface PageDeps {
   get(sessionID: string): Promise<SessionInfo>;
   search(input: { query: string; archived: boolean; scope: PageScope }): Promise<SearchHit[]>;
   refs(sessionIDs: string[]): Promise<Record<string, SessionRefView>>;
-  /** `force` refetches fresh entries too and reads the git checkouts again. */
-  refresh(sessionIDs: string[], force?: boolean): Promise<Record<string, SessionRefView>>;
+  /**
+   * `force` refetches fresh entries too and reads the git checkouts again. `signal` cancels the
+   * call; the server finishes the refresh into its caches either way.
+   */
+  refresh(
+    sessionIDs: string[],
+    force?: boolean,
+    signal?: AbortSignal
+  ): Promise<Record<string, SessionRefView>>;
   running(sessionID: string): boolean;
-  pending(sessionID: string): Promise<boolean>;
-  lastUserMessageAt(sessionID: string): Promise<number | undefined>;
+  /**
+   * The server's `done.facts` for at most 200 sessions: pending permissions and questions and the
+   * last user message. One call per batch, so deciding Done never asks the host per session.
+   */
+  doneFacts(sessionIDs: string[]): Promise<Record<string, DoneExtra>>;
+}
+
+/** How {@link createPageController} publishes a load. */
+export interface PageOptions {
+  /**
+   * How long a load from empty data holds the lists back for their refs and Done lookups, so
+   * they draw once. 0 publishes the titles as soon as the lists answer and fills the refs in as
+   * they come. Defaults to {@link COLD_DEADLINE}.
+   */
+  hold?: number;
 }
 
 /** Why a session is in the search results. */
@@ -525,7 +545,12 @@ function reasonsOf(hits: readonly SearchHit[]): Record<string, SearchReason> {
  * Loads and keeps the browser's data. Plain TypeScript with a change callback, so it runs under
  * Node in unit tests and the caller decides how to make it reactive.
  */
-export function createPageController(deps: PageDeps, changed: (data: PageData) => void) {
+export function createPageController(
+  deps: PageDeps,
+  changed: (data: PageData) => void,
+  options: PageOptions = {}
+) {
+  const hold = options.hold ?? COLD_DEADLINE;
   let data = initialData();
   let disposed = false;
   let loadToken = 0;
@@ -565,17 +590,24 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
         !extraRequested.has(session.id) && doneCandidate(session, refs, deps.running(session.id))
     );
     if (candidates.length === 0) return undefined;
-    for (const session of candidates) extraRequested.add(session.id);
-    const found = await Promise.all(
-      candidates.map(async (session) => {
-        const [pending, lastUserMessageAt] = await Promise.all([
-          deps.pending(session.id).catch(() => false),
-          deps.lastUserMessageAt(session.id).catch(() => undefined)
-        ]);
-        return [session.id, { pending, lastUserMessageAt }] as const;
+    const ids = candidates.map((session) => session.id);
+    for (const id of ids) extraRequested.add(id);
+    const batches: string[][] = [];
+    for (let start = 0; start < ids.length; start += RPC_BATCH) {
+      batches.push(ids.slice(start, start + RPC_BATCH));
+    }
+    const found: Record<string, DoneExtra> = {};
+    await Promise.all(
+      batches.map(async (batch) => {
+        try {
+          Object.assign(found, await deps.doneFacts(batch));
+        } catch {
+          // The sessions stay in Active, and the next reclassify asks again.
+          for (const id of batch) extraRequested.delete(id);
+        }
       })
     );
-    return Object.fromEntries(found);
+    return Object.keys(found).length === 0 ? undefined : found;
   };
 
   /** Runs the Done lookups for the loaded sessions and publishes what they found. */
@@ -664,12 +696,12 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
     /**
      * Loads both session lists for a scope. Earlier loads still in flight are ignored. A load
      * from empty data holds the lists back until their refs and Done lookups are in, for at most
-     * {@link COLD_DEADLINE} ms, so rows do not grow PR lines and then leave for Done right after
-     * they appear. A reload publishes the lists at once: the rows on screen keep their refs.
+     * the `hold` option's ms, so rows do not grow PR lines and then leave for Done right after
+     * they appear. A reload, and every load without a hold, publishes the lists at once.
      */
     async load(scope: PageScope): Promise<void> {
       const token = ++loadToken;
-      const cold = data.status === 'loading';
+      const cold = data.status === 'loading' && hold > 0;
       try {
         const [active, archived] = await Promise.all([
           deps.list({ archived: false, scope }),
@@ -684,7 +716,7 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
         if (!shown) {
           let timer: ReturnType<typeof setTimeout> | undefined;
           const deadline = new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, COLD_DEADLINE);
+            timer = setTimeout(resolve, hold);
           });
           // A failure shows up when `loading` is awaited below, after the lists are published.
           await Promise.race([loading, deadline]).catch(() => {});
@@ -745,11 +777,14 @@ export function createPageController(deps: PageDeps, changed: (data: PageData) =
       );
     },
 
-    /** Asks the forge for fresh state of the given sessions, then reclassifies Done. */
-    async refresh(ids: string[]): Promise<void> {
-      if (ids.length === 0) return;
+    /**
+     * Asks the forge for fresh state of the given sessions, then reclassifies Done. `signal`
+     * cancels the request, such as when the view that asked closes.
+     */
+    async refresh(ids: string[], signal?: AbortSignal): Promise<void> {
+      if (ids.length === 0 || signal?.aborted) return;
       try {
-        const refs = await deps.refresh(ids.slice(0, RPC_BATCH));
+        const refs = await deps.refresh(ids.slice(0, RPC_BATCH), false, signal);
         publish({ refs: { ...data.refs, ...refs } });
         await classify();
       } catch {

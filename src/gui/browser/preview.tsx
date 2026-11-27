@@ -24,8 +24,12 @@ import { WorkList } from '../status/work-list.js';
 
 /** The selection settles this long before the preview loads its messages, as in the TUI. */
 const FOLLOW_DELAY = 150;
-/** Messages loaded per session: the TUI preview's first page. */
-const PAGE_SIZE = 30;
+/**
+ * Messages loaded per session. `message.list` cannot leave out tool output, and a long session's
+ * newest 30 messages measured up to 1.45 MB; the newest 12 at most 184 KB on the same sessions,
+ * which still covers the last turn or two the column has room for.
+ */
+const PAGE_SIZE = 12;
 /** A burst of the session's events settles this long before the messages load again. */
 const RELOAD_DELAY = 300;
 
@@ -52,7 +56,8 @@ interface Page {
 /** The preview column's content for the selected session. */
 export function Preview(props: PreviewProps) {
   const ctx = usePlugin();
-  // Moving through the list quickly would otherwise load the messages of every row passed.
+  // Moving through the list quickly would otherwise load the messages and the Work list's refs of
+  // every row passed, and the Work list's forge refresh would hold a request slot for each.
   const [shown, setShown] = createSignal(untrack(() => props.session.id));
   createEffect(
     on(
@@ -64,6 +69,16 @@ export function Preview(props: PreviewProps) {
       { defer: true }
     )
   );
+  /** The Work list's session once the selection settled on it; undefined until then. */
+  const workTarget = createMemo(() => {
+    const session = props.session;
+    if (session.id !== shown()) return undefined;
+    return {
+      server: props.server,
+      sessionID: session.id,
+      directory: session.location.directory
+    };
+  });
   // The shown session's own events load its messages again, like the TUI's preview.
   const [version, setVersion] = createSignal(0);
   let reload: ReturnType<typeof setTimeout> | undefined;
@@ -159,15 +174,9 @@ export function Preview(props: PreviewProps) {
       </section>
       <section class="ss-section ss-section-work">
         <h4 class="ss-section-title">{ctx.t('browser.preview.work')}</h4>
-        <WorkList
-          refs={props.refs}
-          target={{
-            server: props.server,
-            sessionID: props.session.id,
-            directory: props.session.location.directory
-          }}
-          actions
-        />
+        <Show when={workTarget()} fallback={<ctx.ui.Loader />}>
+          {(current) => <WorkList refs={props.refs} target={current()} actions />}
+        </Show>
       </section>
       <section class="ss-section ss-section-chat" aria-label={ctx.t('browser.preview.messages')}>
         <Switch>

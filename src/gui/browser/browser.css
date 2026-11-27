@@ -316,26 +316,21 @@
   color: var(--v2-state-fg-warning);
 }
 
-.ss-group {
-  display: flex;
-  flex-direction: column;
-  margin-top: 8px;
-}
-
-.ss-group:first-child {
-  margin-top: 0;
-}
-
-/* The sidebar's section header: a 24px line of 12px medium faint text, 8px in. */
+/* The sidebar's section header: a 24px line of 12px medium faint text, 8px in. Headers and rows
+   are one run of siblings, so a header starts its group with the gap above it. */
 .ss-group-title {
   display: flex;
   align-items: center;
   height: 24px;
-  margin: 0;
+  margin: 8px 0 0;
   padding: 0 8px;
   color: var(--v2-text-text-faint);
   font-size: 12px;
   font-weight: 500;
+}
+
+.ss-group-title:first-child {
+  margin-top: 0;
 }
 
 /* The search field spans the list column. The app's text input sets a fixed 280px width in its
@@ -360,6 +355,10 @@
   font-weight: 500;
   cursor: default;
   user-select: none;
+  /* A list of a few hundred rows laid out about 9,000 objects on every open. Rows off screen
+     skip layout and paint, at the size they last had, or a title and one detail line before. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 52px;
 }
 
 .ss-row:hover {
