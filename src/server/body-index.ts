@@ -265,14 +265,17 @@ function createTextTable(db: DatabaseSync): void {
 
 /**
  * The search over the newest {@link HIT_LIMIT} index hits, with one `instr` check per short token.
- * SQLite's `lower` folds ASCII only, so short non-ASCII tokens match their exact case.
+ * SQLite's `lower` folds ASCII only, so short non-ASCII tokens match their exact case. The hits
+ * carry their text only when a short token needs it: reading up to 32 KiB per hit costs most of
+ * the query (0.59 s against 0.00 s for "mas" on a 31 GB host database), and node:sqlite runs on
+ * the daemon's event loop, so every client waits that long.
  */
 function searchStatement(db: DatabaseSync, shortTokens: number): StatementSync {
   const checks = Array.from({ length: shortTokens }, () => 'AND instr(lower(hits.text), ?) > 0');
   return db.prepare(`
     WITH hits AS (
       -- FTS5 walks rowids backwards and stops at the limit, so this reads only the newest hits.
-      SELECT rowid AS id, text FROM entry_text
+      SELECT rowid AS id${shortTokens > 0 ? ', text' : ''} FROM entry_text
       WHERE entry_text MATCH ?
       ORDER BY rowid DESC
       LIMIT ${HIT_LIMIT}
