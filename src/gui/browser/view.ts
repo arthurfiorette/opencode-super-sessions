@@ -220,8 +220,9 @@ export function createBrowserView(machines: Machines, input: BrowserViewInput) {
    * Whether a session is in the Done view now, by the rule or the user's mark. A server without
    * the server plugin answers no refs, so its sessions never are.
    */
-  const isDone = (sessionID: string) =>
-    rowsOf(doneGroups()).some((session) => session.id === sessionID);
+  // A set, since every row's Done button asks: a scan per row made a publish quadratic.
+  const doneIDs = createMemo(() => new Set(rowsOf(doneGroups()).map((session) => session.id)));
+  const isDone = (sessionID: string) => doneIDs().has(sessionID);
 
   const pullGroups = createMemo((): PullGroup[] =>
     input.view() === 'pulls' ? groupPulls(filterPulls(allPulls(), input.query()), now()) : []
