@@ -4,6 +4,7 @@ import {
   createLatest,
   type DialogHandle,
   type Persisted,
+  type SessionRef,
   usePlugin
 } from '@opencode/plugin/gui';
 import {
@@ -19,23 +20,23 @@ import {
   Switch,
   untrack
 } from 'solid-js';
-import { closeSessionTab, openSession } from '../../host/gui.js';
+import { closeSessionTab, openSession, openWebLink, type ProjectLook } from '../../host/gui.js';
 import { isBusy, setArchived } from '../../host/session-info.js';
 import {
   keepSelection,
-  MESSAGES_GROUP,
   moveSelection,
   type PageScope,
   type PageView,
   type PullRow,
-  RUNNING_GROUP,
   rowsOf,
   VIEWS
 } from '../../page/state.js';
 import { refUrl } from '../../refs/look.js';
 import { refKey } from '../../refs/ref.js';
 import { rowRefs, workLinks } from '../../refs/summary.js';
+import { type LinkScope, LinkScopeProvider } from '../links.js';
 import { Octicon, type OcticonName } from '../octicons.js';
+import { sessionProjectLook } from '../project-avatar.js';
 import type { RefsStore } from '../refs-store.js';
 import { rpcOn, serverFor } from '../server.js';
 import { type BrowserModel, type BrowserTarget, createBrowserModel } from './model.js';
@@ -250,6 +251,42 @@ function SessionBrowser(props: SessionBrowserProps) {
     if ((sessions.form.list(id)?.length ?? 0) > 0) return 'question';
     return undefined;
   };
+  /**
+   * The open session a row's links belong to: the row's own when it is routed or open in a tab,
+   * else the routed one, so the app's link setting can open them in that session's browser pane.
+   * On Home, with no tab of the row open, there is none and links go to the system browser.
+   */
+  const linkSession = (id: string | undefined): SessionRef | undefined =>
+    ctx.sessions.list().find((open) => open.server.id === target.server.id && open.id === id) ??
+    ctx.sessions.current();
+  /**
+   * The links of the row `id()` gives. A page the app opens in its pane opens under this dialog,
+   * so the dialog closes, and the row's tab comes to the front when it is not the routed one.
+   */
+  const linkScope = (id: () => string | undefined): LinkScope => ({
+    session: () => linkSession(id()),
+    opened(where, session) {
+      if (where !== 'app') return;
+      if (session !== undefined && session.key !== ctx.sessions.current()?.key) {
+        openSession(ctx.tabs, { server: session.server.id, id: session.id }, true);
+      }
+      props.close();
+    }
+  });
+  /**
+   * The project a row draws before its title in the all-projects list, as the sidebar's flat
+   * lists do. The routed session's project carries the user's local name and icon.
+   */
+  const projectOf = (session: SessionInfo): ProjectLook | undefined => {
+    if (scope() !== 'all') return undefined;
+    const local = ctx.sessions.current()?.project;
+    return sessionProjectLook(
+      target.server,
+      session.projectID,
+      session.location.directory,
+      local === undefined ? undefined : { id: local.id, name: local.name, icon: local.icon }
+    );
+  };
   // The TUI's `preview` and `previewWidth` options, which the GUI gets unparsed.
   const showPreview = ctx.options.preview !== false;
   const previewShare = previewShareOf(ctx.options.previewWidth);
@@ -368,9 +405,16 @@ function SessionBrowser(props: SessionBrowserProps) {
    * first line: its main pull request, else its first issue, else its newest work link.
    */
   const openWeb = () => {
-    const item = pullView() ? selectedPull() : undefined;
-    if (item !== undefined) return ctx.system.openExternal(refUrl(item.ref, item.state));
     const session = current();
+    const scope = linkScope(() => session?.id);
+    /** Opens a page as a click on the row's own link would. */
+    const go = (url: string) => {
+      const link = scope.session();
+      const where = openWebLink(ctx, url, link);
+      scope.opened?.(where, link);
+    };
+    const item = pullView() ? selectedPull() : undefined;
+    if (item !== undefined) return go(refUrl(item.ref, item.state));
     const refs = session === undefined ? undefined : store.refs[session.id];
     const summary = refs === undefined ? undefined : rowRefs(refs);
     const primary = summary?.prs[0] ?? summary?.issues[0];
@@ -381,7 +425,7 @@ function SessionBrowser(props: SessionBrowserProps) {
           ? undefined
           : workLinks(refs)[0]?.url;
     if (url === undefined) ctx.toast.show({ title: ctx.t('browser.open.none') });
-    else ctx.system.openExternal(url);
+    else go(url);
   };
   /** Refetches the selected session's refs, branch pull requests and checkout, past the caches. */
   const reload = async () => {
@@ -522,12 +566,7 @@ function SessionBrowser(props: SessionBrowserProps) {
                       {(icon) => <Octicon name={icon()} size={14} class="ss-tab-icon" />}
                     </Show>
                     <span class="ss-tab-label">{ctx.t(`browser.view.${item}`)}</span>
-                    <span
-                      class="ss-tab-count"
-                      classList={{ 'ss-tab-empty': model.counts()[item] === 0 }}
-                    >
-                      {model.counts()[item]}
-                    </span>
+                    <span class="ss-tab-count">{model.counts()[item]}</span>
                   </button>
                 )}
               </For>
@@ -578,13 +617,15 @@ function SessionBrowser(props: SessionBrowserProps) {
                         <GroupTitle title={group.title} />
                         <For each={group.pulls}>
                           {(item) => (
-                            <PullItem
-                              pull={item}
-                              selected={pull() === item.key}
-                              ref={track(item.key)}
-                              onSelect={() => setPull(item.key)}
-                              onOpen={() => open(item.sessions[0])}
-                            />
+                            <LinkScopeProvider scope={linkScope(() => item.sessions[0]?.id)}>
+                              <PullItem
+                                pull={item}
+                                selected={pull() === item.key}
+                                ref={track(item.key)}
+                                onSelect={() => setPull(item.key)}
+                                onOpen={() => open(item.sessions[0])}
+                              />
+                            </LinkScopeProvider>
                           )}
                         </For>
                       </section>
@@ -600,19 +641,22 @@ function SessionBrowser(props: SessionBrowserProps) {
                         <Show when={group.title}>{(title) => <GroupTitle title={title()} />}</Show>
                         <For each={group.sessions}>
                           {(session) => (
-                            <SessionRow
-                              session={live(session)}
-                              view={store.refs[session.id]}
-                              selected={selected() === session.id}
-                              running={running(session)}
-                              waiting={waiting(session.id)}
-                              now={model.now()}
-                              archivedAge={view() === 'archived' && store.search === undefined}
-                              actions={actions(session)}
-                              ref={track(session.id)}
-                              onSelect={() => setSelected(session.id)}
-                              onOpen={() => open(session)}
-                            />
+                            <LinkScopeProvider scope={linkScope(() => session.id)}>
+                              <SessionRow
+                                session={live(session)}
+                                view={store.refs[session.id]}
+                                selected={selected() === session.id}
+                                running={running(session)}
+                                waiting={waiting(session.id)}
+                                now={model.now()}
+                                archivedAge={view() === 'archived' && store.search === undefined}
+                                actions={actions(session)}
+                                project={projectOf(live(session))}
+                                ref={track(session.id)}
+                                onSelect={() => setSelected(session.id)}
+                                onOpen={() => open(session)}
+                              />
+                            </LinkScopeProvider>
                           )}
                         </For>
                       </section>
@@ -634,13 +678,15 @@ function SessionBrowser(props: SessionBrowserProps) {
               fallback={<p class="ss-note">{ctx.t('browser.preview.empty')}</p>}
             >
               {(session) => (
-                <Preview
-                  server={target.server}
-                  session={live(session())}
-                  running={running(session())}
-                  now={model.now()}
-                  refs={props.refs}
-                />
+                <LinkScopeProvider scope={linkScope(() => session().id)}>
+                  <Preview
+                    server={target.server}
+                    session={live(session())}
+                    running={running(session())}
+                    now={model.now()}
+                    refs={props.refs}
+                  />
+                </LinkScopeProvider>
               )}
             </Show>
           </aside>
@@ -716,9 +762,8 @@ function CloseHint(props: { close: () => void }) {
 }
 
 /**
- * A group header in the TUI's colors (`renderLine` in src/page/view.ts): Running in the running
- * color, In messages muted below the stronger matches, the others, such as day groups, in the
- * accent color.
+ * A group header, such as a day or Running, drawn as the app sidebar's section headers are
+ * (browser.css), with the group's name translated when the catalog has it.
  */
 function GroupTitle(props: { title: string }) {
   const ctx = usePlugin();
@@ -727,15 +772,5 @@ function GroupTitle(props: { title: string }) {
     const translated = ctx.t(key());
     return translated === key() ? props.title : translated;
   };
-  return (
-    <h3
-      class="ss-group-title"
-      classList={{
-        'ss-group-running': props.title === RUNNING_GROUP,
-        'ss-group-messages': props.title === MESSAGES_GROUP
-      }}
-    >
-      {text()}
-    </h3>
-  );
+  return <h3 class="ss-group-title">{text()}</h3>;
 }

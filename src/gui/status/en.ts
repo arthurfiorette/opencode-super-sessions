@@ -2,7 +2,8 @@
 // messages in ../en.ts.
 export const statusEn = {
   'command.work': 'Super Sessions: Show work',
-  'header.more': 'More pull requests, issues and mentions',
+  'header.showWork': 'Show {{count}} more in Work',
+  'header.hideWork': 'Hide Work',
   'work.title': 'Work',
   'work.mentioned': 'Mentioned',
   'work.more': '+{{count}} more',

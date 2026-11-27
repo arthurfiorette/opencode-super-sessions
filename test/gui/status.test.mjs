@@ -81,9 +81,10 @@ const checks = [
 
 /**
  * Starts the GUI on a session whose server answers `refs` and `refresh` with `view()` and
- * `pull.details` with `checks`; `handlers` adds or replaces RPC answers.
+ * `pull.details` with `checks`; `handlers` adds or replaces RPC answers, and `options` goes to
+ * `startGui`.
  */
-async function start(view, handlers = {}) {
+async function start(view, handlers = {}, options = {}) {
   const answer = ({ sessionIDs }) => ({ [sessionIDs[0]]: view() });
   const client = createClient({
     'rpc.refs': answer,
@@ -93,7 +94,7 @@ async function start(view, handlers = {}) {
   });
   const server = createServer({ client });
   const session = { server, id: 'ses_1', key: `${server.id}\nses_1`, directory: '/work/widgets' };
-  gui = await startGui({ session, servers: [server] });
+  gui = await startGui({ session, servers: [server], ...options });
   return { client, session };
 }
 
@@ -124,6 +125,80 @@ test('the header folds to its first pull request and +N when it needs the room',
   assert.equal(header.container.querySelector('.ss-ref-stack'), null);
   assert.equal(header.container.querySelector('.ss-badge'), null);
   assert.equal(header.container.querySelector('.ss-header-more').textContent, '+5');
+});
+
+test('a header pull request opens where the app link setting says, for its session', async () => {
+  // Whether the app's Browser plugin takes the link: its "Open links in OpenCode" setting.
+  let inApp = false;
+  const { session } = await start(() => full, {}, { links: () => inApp });
+  const [header] = gui.slot('session.header', {
+    session,
+    screen: {},
+    active: true,
+    compact: false
+  });
+  const link = await until(
+    () => header.container.querySelector(`[data-ref="${key(top)}"]`)?.closest('a'),
+    'the pull request'
+  );
+
+  link.click();
+  assert.deepEqual(
+    gui.linked.map((item) => [item.href, item.session]),
+    [[pageOf(top), session]]
+  );
+  assert.deepEqual(gui.opened, [pageOf(top)]);
+
+  inApp = true;
+  link.click();
+  assert.equal(gui.linked.length, 2);
+  assert.deepEqual(gui.opened, [pageOf(top)]);
+
+  // Shift and click is the app's way to the default browser, whatever the setting.
+  link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }));
+  assert.equal(gui.linked.length, 2);
+  assert.deepEqual(gui.opened, [pageOf(top), pageOf(top)]);
+});
+
+test('+N in the header shows the Work panel, and hides it again', async () => {
+  const { session } = await start(() => full);
+  const [header] = gui.slot('session.header', {
+    session,
+    screen: {},
+    active: true,
+    compact: true
+  });
+  const more = await until(() => header.container.querySelector('.ss-header-more'), '+N');
+
+  more.click();
+  assert.deepEqual(gui.toggles, [{ key: 'opencode-super-sessions:work', session: 'ses_1' }]);
+  assert.equal(gui.ctx.layout.state('opencode-super-sessions:work', session), 'visible');
+  assert.equal(more.getAttribute('aria-pressed'), 'true');
+  more.click();
+  assert.equal(gui.ctx.layout.state('opencode-super-sessions:work', session), 'closed');
+  assert.equal(more.getAttribute('aria-pressed'), 'false');
+});
+
+test('a long Work title wraps under itself instead of being cut', async () => {
+  const long = 'Make the session browser follow the sidebar spacing and type '.repeat(4).trim();
+  const view = viewOf({
+    links: [{ ref: bug, source: 'manual', linkedAt: 1 }],
+    states: { [key(bug)]: state(bug, { status: 'open', title: long }) }
+  });
+  const { session } = await start(() => view);
+  const panel = gui.panel('work', session);
+  gui.applyStyles();
+
+  const title = await until(
+    () =>
+      [...panel.container.querySelectorAll('.ss-ref-title')].find(
+        (node) => node.textContent === long
+      ),
+    'the title'
+  );
+  const style = getComputedStyle(title);
+  assert.equal(style.whiteSpace, 'normal');
+  assert.notEqual(style.textOverflow, 'ellipsis');
 });
 
 test('surfaces of one session share one fetch, which stops once none shows it', async () => {

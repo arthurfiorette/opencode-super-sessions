@@ -13,6 +13,7 @@ import {
 import { type Ref, type RefState, type RefStatus, refKey, refNumber } from '../refs/ref.js';
 import type { ShownLink } from '../refs/summary.js';
 import { LINK_PROVIDER_NAMES } from '../refs/work-link.js';
+import { useOpenUrl, webUrl } from './links.js';
 import { Octicon, type OcticonName } from './octicons.js';
 
 // One ref or work link as every GUI surface draws it: the browser's rows, the session header, the
@@ -67,16 +68,6 @@ function refColor(
   return status === undefined ? undefined : stateColor(colors, status, mode);
 }
 
-/** Whether a URL is an http(s) page, the only kind the GUI hands to the system browser. */
-export function webUrl(url: string): boolean {
-  try {
-    const { protocol } = new URL(url);
-    return protocol === 'https:' || protocol === 'http:';
-  } catch {
-    return false;
-  }
-}
-
 /** Props of {@link ExternalLink}. */
 export interface ExternalLinkProps {
   readonly url: string;
@@ -86,11 +77,12 @@ export interface ExternalLinkProps {
 }
 
 /**
- * A link that opens its page in the system browser. The click stops here, so a row it sits in
- * does not take it as a selection, and the window never navigates away from the app.
+ * A link that opens its page where the app's link setting says, for the session of the surface
+ * it renders in (`useOpenUrl`). The click stops here, so a row it sits in does not take it as a
+ * selection, and the window never navigates away from the app.
  */
 export function ExternalLink(props: ExternalLinkProps) {
-  const ctx = usePlugin();
+  const open = useOpenUrl();
   const href = () => (webUrl(props.url) ? props.url : undefined);
   return (
     <a
@@ -101,7 +93,7 @@ export function ExternalLink(props: ExternalLinkProps) {
         event.preventDefault();
         event.stopPropagation();
         const url = href();
-        if (url !== undefined) ctx.system.openExternal(url);
+        if (url !== undefined) open(url, event);
       }}
     >
       {props.children}
@@ -123,6 +115,13 @@ export interface RefLineProps {
   readonly counts?: boolean;
   /** Draws a stacked pull request's place in its stack. Defaults to true. */
   readonly stacked?: boolean;
+  /** Wraps a long title onto more lines under itself instead of cutting it. Defaults to false. */
+  readonly wrap?: boolean;
+}
+
+/** The class of a ref or work link line, which wraps its title when `wrap` is set. */
+function lineClass(base: string, wrap: boolean | undefined): string {
+  return wrap === true ? `${base} ss-ref-wrap` : base;
 }
 
 /**
@@ -136,12 +135,14 @@ export function RefLine(props: RefLineProps) {
   const colors = parseColors(ctx.options.colors);
   const color = () => refColor(colors, status(), ctx.appearance.mode());
   return (
-    <ExternalLink class="ss-ref" url={refUrl(props.item, props.state)} title={props.state?.title}>
+    <ExternalLink
+      class={lineClass('ss-ref', props.wrap)}
+      url={refUrl(props.item, props.state)}
+      title={props.state?.title}
+    >
       <span
         class={`ss-ref-mark ss-state-${status() ?? 'unknown'}`}
-        // A variable instead of `color`, so a surface such as the browser's selected row can
-        // override the state color from its stylesheet.
-        style={color() === undefined ? undefined : { '--ss-state-color': color() }}
+        style={color() === undefined ? undefined : { color: color() }}
         data-ref={refKey(props.item)}
       >
         <Octicon name={OCTICONS[refGlyph(props.item.kind, status())]} class="ss-ref-icon" />
@@ -182,6 +183,8 @@ export interface WorkLinkLineProps {
   readonly link: ShownLink;
   /** Draws the title after the id. Defaults to true; a link without an id always shows it. */
   readonly titled?: boolean;
+  /** Wraps a long title onto more lines under itself instead of cutting it. Defaults to false. */
+  readonly wrap?: boolean;
 }
 
 /**
@@ -193,7 +196,7 @@ export function WorkLinkLine(props: WorkLinkLineProps) {
   const titled = () => (props.titled ?? true) || props.link.name === undefined;
   return (
     <ExternalLink
-      class="ss-ref ss-work-link"
+      class={lineClass('ss-ref ss-work-link', props.wrap)}
       url={props.link.url}
       title={LINK_PROVIDER_NAMES[props.link.provider]}
     >

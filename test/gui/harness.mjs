@@ -252,9 +252,12 @@ function createUi() {
  * (`ctx.tabs.list()`, `{ key, session }`), settable later with `setTabs`. Records what the GUI
  * does: `added` (every `ctx.add`), `opened` (external URLs), `copied`, `tabs` (`ctx.tabs.open`
  * calls), `closed` (`ctx.tabs.close` keys), `toasts`, `dialogs` (each open dialog's `container`
- * in `document.body`), `asked` (each `confirm` and `prompt` with its options) and `layout`
- * (`ctx.layout.open` calls). `replies` answers `confirm` and `prompt` in order; push to
- * it before the GUI asks. An unanswered question resolves as dismissed.
+ * in `document.body`), `asked` (each `confirm` and `prompt` with its options), `layout`
+ * (`ctx.layout.open` calls), `toggles` (`ctx.layout.toggle` calls) and `linked` (each
+ * `ctx.links.open` link, with `handled`). `options.links(link)` decides what `ctx.links.open`
+ * answers, as a matching `LinkHandler` would; without it no handler matches. `replies` answers
+ * `confirm` and `prompt` in order; push to it before the GUI asks. An unanswered question
+ * resolves as dismissed.
  */
 export function createContext(plugin, options = {}) {
   const [session, setSession] = solid.createSignal(options.session);
@@ -271,6 +274,16 @@ export function createContext(plugin, options = {}) {
   const asked = [];
   const replies = [];
   const layout = [];
+  const toggles = [];
+  const linked = [];
+  // Panel keys on screen, by session id: what `open` and `toggle` change and `state` reads.
+  const shown = new Set();
+  const [layoutVersion, setLayoutVersion] = solid.createSignal(0);
+  const show = (key, id, on) => {
+    if (on) shown.add(`${id}\n${key}`);
+    else shown.delete(`${id}\n${key}`);
+    setLayoutVersion((value) => value + 1);
+  };
   const messages = plugin.i18n?.en ?? {};
   const translate = (key, params = {}) =>
     (messages[key] ?? key).replace(/\{\{(\w+)\}\}/g, (_, name) => String(params[name] ?? ''));
@@ -341,15 +354,30 @@ export function createContext(plugin, options = {}) {
         return replies.shift();
       }
     },
+    links: {
+      // The app's link handlers: none matches unless `options.links` answers true for a link.
+      open(link) {
+        const handled = options.links?.(link) === true;
+        linked.push({ ...link, handled });
+        return handled;
+      },
+      exists: () => false
+    },
     layout: {
       narrow: () => false,
       ready: () => true,
-      open: (key, target, openOptions) =>
-        void layout.push({ key, session: target.id, ...openOptions }),
-      state: (key, target) =>
-        layout.some((entry) => entry.key === key && entry.session === target.id)
-          ? 'visible'
-          : 'closed'
+      open(key, target, openOptions) {
+        layout.push({ key, session: target.id, ...openOptions });
+        show(key, target.id, true);
+      },
+      toggle(key, target) {
+        toggles.push({ key, session: target.id });
+        show(key, target.id, !shown.has(`${target.id}\n${key}`));
+      },
+      state(key, target) {
+        layoutVersion();
+        return shown.has(`${target.id}\n${key}`) ? 'visible' : 'closed';
+      }
     },
     keybinds: {
       keybind: () => [],
@@ -384,6 +412,8 @@ export function createContext(plugin, options = {}) {
     asked,
     replies,
     layout,
+    toggles,
+    linked,
     closed,
     setSession,
     setTabs,
@@ -430,7 +460,8 @@ function read(entry) {
  * Returns the context's records, `items(registryId)` to read what the GUI contributed,
  * `command(id)` to read one command, `slot(at, input)` to render a `Slot`, `panel(id, session)` to
  * render a side `Panel`'s tab of the same id, `pill(id, session)` to read what a `ComposerPill`
- * shows (reactive, so read it again after a change), and `dispose` to tear the plugin and
+ * shows (reactive, so read it again after a change), `applyStyles()` to add the GUI's
+ * stylesheets to the document for computed styles, and `dispose` to tear the plugin and
  * everything it rendered down.
  */
 export async function startGui(options = {}) {
@@ -467,6 +498,14 @@ export async function startGui(options = {}) {
       rendered.push(shown);
       return shown;
     },
+    /** Adds the stylesheets the GUI contributed to the document, as the app does. */
+    applyStyles() {
+      for (const css of items('style')) {
+        const style = document.createElement('style');
+        style.textContent = css;
+        document.head.append(style);
+      }
+    },
     pill(id, session) {
       const pill = items('composer-pill').find((item) => item.id === id);
       return pill.show({ session, screen: {} });
@@ -476,6 +515,7 @@ export async function startGui(options = {}) {
       fake.abort.abort();
       dispose();
       document.body.replaceChildren();
+      document.head.replaceChildren();
     }
   };
 }

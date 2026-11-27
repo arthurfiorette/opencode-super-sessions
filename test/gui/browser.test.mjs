@@ -368,11 +368,20 @@ test('moving the selection on never shows a slower answer for the row passed', a
   assert.ok(!document.querySelector('.ss-preview').textContent.includes('Busy prompt'));
 });
 
-test('a running session sits under Running with the running mark', async () => {
+test('a running session sits under Running with the app spinner, a plain one has no mark', async () => {
   await openBrowser(undefined, { running: ['ses_plain'] });
 
-  await until(() => row('ses_plain')?.querySelector('[data-marker="running"]'), 'the mark');
+  const mark = await until(
+    () => row('ses_plain')?.querySelector('[data-marker="running"]'),
+    'the mark'
+  );
   const group = row('ses_plain').closest('.ss-group').querySelector('.ss-group-title');
   assert.equal(group.textContent, 'Running');
-  assert.equal(row('ses_busy').querySelector('[data-marker]'), null);
+  // The sidebar's dot grid, which the app's stylesheet paints, not the loading ring.
+  assert.ok(mark.querySelector('[data-slot="spinner-dots"]'));
+  assert.equal(mark.querySelector('[role="progressbar"]'), null);
+  // An idle, read session's title line is its title and age, with no glyph before or after.
+  const head = row('ses_busy').querySelector('.ss-row-head');
+  const age = head.querySelector('.ss-row-age').textContent;
+  assert.equal(head.textContent, `Split the build${age}`);
 });

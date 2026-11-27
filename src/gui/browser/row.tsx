@@ -1,12 +1,14 @@
 import type { SessionInfo } from '@opencode/client';
 import { usePlugin } from '@opencode/plugin/gui';
 import { createMemo, For, type JSX, Match, Show, Switch } from 'solid-js';
+import { activitySpinner, type ProjectLook } from '../../host/gui.js';
 import { activityTime, isUnread } from '../../host/session-info.js';
 import { formatAge } from '../../page/age.js';
 import type { PullRow } from '../../page/state.js';
 import { type Ref, refKey } from '../../refs/ref.js';
 import { rowRefs, type ShownLink, workLinks } from '../../refs/summary.js';
 import type { SessionRefView } from '../../rpc.js';
+import { ProjectAvatar } from '../project-avatar.js';
 import { RefLine, WorkLinkLine } from '../ref-view.js';
 
 // The browser's rows: a session with its pull request, issue and link lines, and a pull request
@@ -43,47 +45,55 @@ export function rowLines(view: SessionRefView) {
   };
 }
 
-/** Props of {@link Marker}. */
-interface MarkerProps {
+/** Props of {@link RowStatus}. */
+interface RowStatusProps {
   readonly running: boolean;
   readonly waiting: 'permission' | 'question' | undefined;
   readonly unread: boolean;
 }
 
 /**
- * The narrow mark before a title, by the TUI's rule (`markerOf` in src/page/view.ts): `!` for a
- * permission or `?` for a question the session waits on, a spinner while it runs, `●` when it is
- * unread, else a muted `-`, so each session's start shows at a glance. The TUI's pin numbers have
- * no source in the window: pins live in the TUI's own storage.
+ * The status at a row's end, as the app's sidebar draws it beside a session
+ * (packages/app/src/shell/titlebar/project-session-row.tsx:163 at v2.4.2): its dot while the
+ * session waits on the user, which also hides the spinner, else the activity spinner while it
+ * runs, else the dot while it is unread, else nothing. The tooltip says which. The TUI's pin
+ * numbers have no source in the window: pins live in the TUI's own storage.
  */
-function Marker(props: MarkerProps) {
+function RowStatus(props: RowStatusProps) {
   const ctx = usePlugin();
   return (
-    <span class="ss-row-marker">
-      <Switch fallback={<span class="ss-tone-muted">-</span>}>
+    <span class="ss-row-status">
+      <Switch>
         <Match when={props.waiting}>
           {(waiting) => (
             <span
-              class="ss-marker-waiting"
-              title={ctx.t(
-                waiting() === 'permission'
-                  ? 'browser.waiting.permission'
-                  : 'browser.waiting.question'
-              )}
-            >
-              {waiting() === 'permission' ? '!' : '?'}
-            </span>
+              class="ss-row-dot"
+              data-marker="waiting"
+              role="img"
+              aria-label={ctx.t(`browser.waiting.${waiting()}`)}
+              title={ctx.t(`browser.waiting.${waiting()}`)}
+            />
           )}
         </Match>
         <Match when={props.running}>
-          <span class="ss-running" title={ctx.t('browser.running')} data-marker="running">
-            <ctx.ui.Loader size="small" />
+          <span
+            class="ss-row-running"
+            data-marker="running"
+            role="img"
+            aria-label={ctx.t('browser.running')}
+            title={ctx.t('browser.running')}
+          >
+            <span {...activitySpinner(14)} />
           </span>
         </Match>
         <Match when={props.unread}>
-          <span class="ss-tone-info" title={ctx.t('browser.unread')} data-marker="unread">
-            ●
-          </span>
+          <span
+            class="ss-row-dot"
+            data-marker="unread"
+            role="img"
+            aria-label={ctx.t('browser.unread')}
+            title={ctx.t('browser.unread')}
+          />
         </Match>
       </Switch>
     </span>
@@ -112,6 +122,11 @@ export interface SessionRowProps {
   readonly archivedAge: boolean;
   /** The row's hover buttons. */
   readonly actions: JSX.Element;
+  /**
+   * The session's project, drawn before the title where no project names the list, as the
+   * sidebar's flat lists do. Undefined in a one-project list.
+   */
+  readonly project?: ProjectLook | undefined;
   readonly onSelect: () => void;
   readonly onOpen: () => void;
   readonly ref: (element: HTMLElement) => void;
@@ -123,7 +138,8 @@ function onControl(event: MouseEvent): boolean {
 }
 
 /**
- * One session: its running or unread marker, title and age, and under it the lines of
+ * One session: its project in a list of every project, its title, age and status, and under it
+ * the lines of
  * {@link rowLines}. A click selects the row, a double click opens it; a click on a ref line opens
  * the ref's page instead.
  */
@@ -139,7 +155,7 @@ export function SessionRow(props: SessionRowProps) {
     <div
       ref={props.ref}
       class="ss-row"
-      classList={{ 'ss-row-selected': props.selected }}
+      classList={{ 'ss-row-selected': props.selected, 'ss-row-avatared': !!props.project }}
       role="option"
       tabIndex={-1}
       aria-selected={props.selected}
@@ -152,10 +168,21 @@ export function SessionRow(props: SessionRowProps) {
       }}
     >
       <div class="ss-row-head">
-        <Marker running={props.running} waiting={props.waiting} unread={isUnread(props.session)} />
+        <Show when={props.project}>
+          {(look) => (
+            <span class="ss-row-project" title={look().name}>
+              <ProjectAvatar look={look()} />
+            </span>
+          )}
+        </Show>
         <span class="ss-row-title">{props.session.title || ctx.t('browser.untitled')}</span>
         <span class="ss-row-actions">{props.actions}</span>
         <span class="ss-row-age">{age()}</span>
+        <RowStatus
+          running={props.running}
+          waiting={props.waiting}
+          unread={isUnread(props.session)}
+        />
       </div>
       {/* A row without refs or links is its title line alone, with no empty block under it. */}
       <Show when={lines()?.empty === false ? lines() : undefined}>
@@ -208,7 +235,7 @@ export interface PullItemProps {
 
 /**
  * A pull request of the Pull requests view in one line, as in the TUI (`pullLine` in
- * src/page/row.ts): the muted mark, its state, number, badges and title, and the number of
+ * src/page/row.ts): its state, number, badges and title, and the number of
  * sessions that worked on it. The preview shows its newest session, which double click opens.
  */
 export function PullItem(props: PullItemProps) {
@@ -231,7 +258,6 @@ export function PullItem(props: PullItemProps) {
       }}
     >
       <div class="ss-row-head">
-        <span class="ss-row-marker ss-tone-muted">-</span>
         <span class="ss-row-pull">
           <RefLine item={props.pull.ref} state={props.pull.state} />
         </span>

@@ -1,9 +1,11 @@
 /* The session browser dialog, laid out like the TUI's browser (src/page/view.ts): a left column
    with the header, search and list, the preview beside it down to the footer, and the key hints
-   under both. Colors map the TUI theme roles to the app's variables: primary and accent to
-   `--v2-background-bg-accent` and `--v2-text-text-accent`, warning (running) to
-   `--v2-state-fg-warning`, info (unread) to `--v2-state-fg-info`, muted to
-   `--v2-text-text-muted`. Only the list and the preview's parts scroll. */
+   under both. The list's rows, group headers and detail lines take the app sidebar's metrics and
+   colors (packages/app/src/shell/titlebar/project-session-row.tsx and sidebar-customized.tsx at
+   v2.4.2): 13px titles on the compact 16px line in 28px rows, 8px padding and gaps, 6px corners,
+   the sidebar's faint text, hover and pressed overlays, and its 11px secondary text. Everything
+   uses the app's font; numbers line up with tabular figures, as in the sidebar. Only the list and
+   the preview's parts scroll. */
 
 /* The app's x-large dialog stops at 880 by 680px, a small box in a large window, while the
    terminal browser takes about 95% of the screen. The frame that holds the browser grows to most
@@ -12,6 +14,11 @@
 [data-component="dialog-v2"][data-size="x-large"]:has(.ss-browser) [data-slot="dialog-container"] {
   --dialog-height: calc(100vh - 6vh);
   width: calc(100vw - 6vw);
+  /* The app's dialog frame and its edge, as every dialog draws them (dialog.css:27-29): the
+     overlay elevation, whose first rings are the hairline around the frame, and 12px corners.
+     Stated again here, so the grown frame keeps them whatever the size rules do. */
+  border-radius: 12px;
+  box-shadow: var(--v2-elevation-overlay);
 }
 
 /* The browser draws its own header, so the app's title row leaves the layout. The title stays in
@@ -35,15 +42,17 @@
 }
 
 .ss-browser {
-  --ss-mono: var(--v2-font-family-code, var(--font-family-mono, monospace));
-  --ss-marker: 14px;
-  --ss-gap: 6px;
+  --ss-line: var(--line-height-compact, 16px);
+  --ss-avatar: 16px;
+  --ss-gap: 8px;
   display: flex;
   flex: 1;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   padding-top: 16px;
+  font-size: 13px;
+  line-height: var(--ss-line);
   outline: none;
   container-type: inline-size;
 }
@@ -71,14 +80,14 @@
   min-width: 0;
 }
 
-/* The TUI's title: bold, fading from the theme's warning color to orange. */
+/* The TUI's title: fading from the theme's warning color to orange, at the app's heading size. */
 .ss-title {
   flex-shrink: 0;
   background-image: linear-gradient(90deg, var(--v2-state-fg-warning), var(--ss-title-end));
   background-clip: text;
   color: transparent;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -90,40 +99,40 @@
   overflow: hidden;
 }
 
+/* The tabs read like the sidebar's project rows: 13px, muted, base on hover and when current. */
 .ss-tab {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  height: 28px;
+  padding: 0 8px;
   border: none;
   border-radius: 6px;
   background: none;
   color: var(--v2-text-text-muted);
   font: inherit;
+  font-weight: 440;
   cursor: pointer;
 }
 
 .ss-tab:hover {
   background: var(--v2-overlay-simple-overlay-hover);
+  color: var(--v2-text-text-base);
 }
 
-/* The current view reads bold in the base color, the others muted, as in the TUI. */
 .ss-tab[aria-selected="true"] {
+  background: var(--v2-overlay-simple-overlay-pressed);
   color: var(--v2-text-text-base);
-  font-weight: 600;
+  font-weight: 500;
 }
 
-/* A view with sessions in it counts in the base color, an empty one stays muted. */
+/* The sidebar's count beside a collapsed project: 11px and faint. */
 .ss-tab-count {
-  color: var(--v2-text-text-base);
-  font-family: var(--ss-mono);
-  font-size: 12px;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
   font-weight: 400;
-}
-
-.ss-tab-count.ss-tab-empty {
-  color: var(--v2-text-text-muted);
 }
 
 .ss-esc {
@@ -132,8 +141,8 @@
   border: none;
   border-radius: 4px;
   background: none;
-  color: var(--v2-text-text-muted);
-  font-family: var(--ss-mono);
+  color: var(--v2-text-text-faint);
+  font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
@@ -159,7 +168,10 @@
   overflow-y: auto;
 }
 
-/* The preview needs room beside the list; a small window keeps the list alone. */
+/* The preview is a plain column on the dialog's own background, set off from the list by the
+   app's 1px divider color (`--v2-border-border-base`, the hairline of its search dialogs in
+   packages/app/src/shell/search-list.css:335). It needs room beside the list; a small window keeps
+   the list alone. */
 .ss-preview {
   display: none;
   flex: 0 0 var(--ss-preview-share, 40%);
@@ -167,9 +179,8 @@
   gap: 8px;
   min-width: 0;
   min-height: 0;
-  padding: 0 12px 8px;
-  border-radius: 8px;
-  background: var(--v2-background-bg-layer-01);
+  padding: 0 0 8px 16px;
+  border-left: 1px solid var(--v2-border-border-base);
 }
 
 @container (min-width: 720px) {
@@ -202,7 +213,7 @@
   overflow-wrap: anywhere;
   color: var(--v2-text-text-base);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .ss-section {
@@ -212,12 +223,12 @@
   min-width: 0;
 }
 
-/* The TUI's section headings: bold in the base color over muted lines. */
+/* The sidebar's section headers: 12px, medium and faint. */
 .ss-section-title {
   margin: 0;
-  color: var(--v2-text-text-base);
+  color: var(--v2-text-text-faint);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .ss-context {
@@ -251,7 +262,7 @@
   flex: 1;
   min-height: 0;
   padding-top: 8px;
-  border-top: 1px solid var(--v2-border-border-muted);
+  border-top: 1px solid var(--v2-border-border-base);
 }
 
 /* `column-reverse` starts the scroll at the newest message and keeps it there as content fills
@@ -273,6 +284,7 @@
   padding: 0;
   list-style: none;
   font-size: 13px;
+  line-height: normal;
 }
 
 /* A prompt as the TUI draws it: a bar at the left in the accent color. */
@@ -290,10 +302,11 @@
   overflow-wrap: anywhere;
 }
 
+/* A tool call is a command or a path, so it keeps the app's code font, as the timeline's do. */
 .ss-chat-tool {
   overflow: hidden;
   color: var(--v2-text-text-muted);
-  font-family: var(--ss-mono);
+  font-family: var(--v2-font-family-code, var(--font-family-mono, monospace));
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -306,32 +319,45 @@
 .ss-group {
   display: flex;
   flex-direction: column;
-  margin-bottom: 8px;
+  margin-top: 8px;
 }
 
-/* The TUI's group headers: bold, in the accent color; Running in the running color and the
-   search's message hits muted below the stronger matches. */
+.ss-group:first-child {
+  margin-top: 0;
+}
+
+/* The sidebar's section header: a 24px line of 12px medium faint text, 8px in. */
 .ss-group-title {
-  margin: 4px 8px 2px;
-  color: var(--v2-text-text-accent);
+  display: flex;
+  align-items: center;
+  height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  color: var(--v2-text-text-faint);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
-.ss-group-title.ss-group-running {
-  color: var(--v2-state-fg-warning);
+/* The search field spans the list column. The app's text input sets a fixed 280px width in its
+   `components` layer (packages/ui/src/forms/text-input/text-input.css at v2.4.2), which this
+   unlayered rule outranks. It matches the input's markup (TEXT_INPUT in src/host/gui.ts); when
+   that changes, the field goes back to the app's width. */
+.ss-browser-left > [data-component="text-input-v2"] {
+  width: 100%;
 }
 
-.ss-group-title.ss-group-messages {
-  color: var(--v2-text-text-muted);
-}
-
+/* The sidebar's session row (project-session-row.tsx and tab-nav.css at v2.4.2): 28px for its
+   title line, 6px corners, faint text until it is the chosen one, which takes the base text
+   color over the pressed overlay, a step above the hover overlay. The detail lines keep their own
+   state colors either way. */
 .ss-row {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 3px 8px;
+  padding: 6px 8px;
   border-radius: 6px;
+  color: var(--v2-text-text-faint);
+  font-weight: 500;
   cursor: default;
   user-select: none;
 }
@@ -340,27 +366,38 @@
   background: var(--v2-overlay-simple-overlay-hover);
 }
 
+.ss-row-selected,
+.ss-row-selected:hover {
+  background: var(--v2-overlay-simple-overlay-pressed);
+  color: var(--v2-text-text-base);
+}
+
+/* The keys move the selection from the search field; a row that has the focus itself, after a
+   click, shows the app's focus ring inside its edges, as the sidebar's rows do. */
+.ss-row:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: -2px;
+}
+
 .ss-row-head,
 .ss-row-line {
   display: flex;
   align-items: center;
   gap: var(--ss-gap);
   min-width: 0;
-  line-height: 20px;
 }
 
-/* A fixed narrow column keeps the titles still whether the mark is a dash, a dot or a spinner. */
-.ss-row-marker {
+.ss-row-head {
+  min-height: var(--ss-line);
+}
+
+/* The project avatar in the leading slot of a list without a project header, as in the
+   sidebar's flat lists. */
+.ss-row-project {
   display: inline-flex;
-  flex: 0 0 var(--ss-marker);
+  flex: 0 0 var(--ss-avatar);
+  align-items: center;
   justify-content: center;
-  font-family: var(--ss-mono);
-  font-size: 12px;
-}
-
-.ss-marker-waiting {
-  color: var(--v2-state-fg-warning);
-  font-weight: 700;
 }
 
 .ss-row-title,
@@ -368,7 +405,6 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  color: var(--v2-text-text-base);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -377,53 +413,63 @@
   display: flex;
 }
 
-/* Ages and counts right-aligned and muted, in the mono font so the column lines up. */
+/* The sidebar's trailing label: 11px, regular and faint. */
 .ss-row-age,
 .ss-row-extra {
   flex-shrink: 0;
-  color: var(--v2-text-text-muted);
-  font-family: var(--ss-mono);
-  font-size: 12px;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
   text-align: right;
 }
 
-/* The TUI's selection: the theme's primary background with its contrast text over the whole
-   row, state colors included, and the title bold. */
-.ss-row-selected,
-.ss-row-selected:hover {
-  background: var(--v2-background-bg-accent);
-  color: var(--v2-text-text-contrast);
+/* The sidebar's 16px status slot at the row's end: the activity spinner or the unread dot. */
+.ss-row-status {
+  display: inline-flex;
+  flex: 0 0 16px;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
 }
 
-.ss-row-selected
-  :is(
-    .ss-row-title,
-    .ss-row-age,
-    .ss-row-extra,
-    .ss-ref,
-    .ss-ref-mark,
-    .ss-ref-title,
-    .ss-ref-stack,
-    .ss-badge,
-    .ss-running,
-    .ss-marker-waiting,
-    .ss-tone-muted,
-    .ss-tone-info
-  ) {
-  color: inherit;
+.ss-row-status:empty {
+  display: none;
 }
 
-.ss-row-selected .ss-row-title {
-  font-weight: 700;
+.ss-row-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--v2-text-text-base);
 }
 
-/* Detail lines start two characters right of the title, as in the TUI, so titles form their own
-   column. */
+.ss-row-running {
+  display: inline-flex;
+  color: var(--v2-icon-icon-muted);
+}
+
+/* The detail lines: the sidebar's secondary text, starting under the title. */
 .ss-row-lines {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-left: calc(var(--ss-marker) + var(--ss-gap) + 2ch);
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.ss-row-avatared .ss-row-lines {
+  padding-left: calc(var(--ss-avatar) + var(--ss-gap));
+}
+
+.ss-row-lines .ss-ref-title {
+  color: var(--v2-text-text-faint);
+}
+
+.ss-row-lines .ss-ref-icon {
+  width: 12px;
+  height: 12px;
 }
 
 /* The hover buttons never make the title line taller than its text. */
@@ -431,18 +477,13 @@
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  margin-block: -4px;
+  margin-block: -6px;
   visibility: hidden;
 }
 
 .ss-row:hover .ss-row-actions,
 .ss-row:focus-within .ss-row-actions {
   visibility: visible;
-}
-
-.ss-running {
-  display: inline-flex;
-  color: var(--v2-state-fg-warning);
 }
 
 .ss-state {
@@ -461,7 +502,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 8px 0 4px;
-  color: var(--v2-text-text-muted);
+  color: var(--v2-text-text-faint);
   font-size: 12px;
 }
 
@@ -492,5 +533,5 @@
 }
 
 .ss-scope-home {
-  color: var(--v2-text-text-muted);
+  color: var(--v2-text-text-faint);
 }

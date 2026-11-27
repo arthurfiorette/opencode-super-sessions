@@ -4,8 +4,10 @@ import type {
   ComposerPillView,
   Context,
   IconName,
-  PluginIconName
+  PluginIconName,
+  SessionRef
 } from '@opencode/plugin/gui';
+import { openWebLink } from '../../host/gui.js';
 import { checkMark, type LookIcon, pullTone, refUrl, type Tone } from '../../refs/look.js';
 import {
   type PullCheck,
@@ -18,7 +20,7 @@ import {
 import { rowRefs } from '../../refs/summary.js';
 import { checksPage } from '../../refs/work.js';
 import type { SessionRefView } from '../../rpc.js';
-import { webUrl } from '../ref-view.js';
+import { webUrl } from '../links.js';
 
 // The composer pill: the session's main open pull request and its checks, above the composer.
 
@@ -75,16 +77,18 @@ function pillToneOf(tone: Tone): ComposerPillTone | undefined {
  * order within each outcome, each opening its own page.
  */
 export function pillView(
-  ctx: Pick<Context, 't' | 'system'>,
+  ctx: Pick<Context, 't' | 'system' | 'links'>,
   icons: StatusIcons,
+  session: SessionRef,
   view: SessionRefView | undefined,
   details: (key: string) => PullDetails | undefined
 ): ComposerPillView | undefined {
   const pull = mainPull(view);
   if (pull === undefined) return undefined;
   const { ref, state } = pull;
+  // The menu's rows carry no click, so the app's link setting decides alone.
   const open = (url: string) => () => {
-    if (webUrl(url)) ctx.system.openExternal(url);
+    if (webUrl(url)) openWebLink(ctx, url, session);
   };
   const shared = pullTone(state.review);
   const tone = shared === undefined ? undefined : pillToneOf(shared);

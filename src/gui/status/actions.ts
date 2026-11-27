@@ -2,7 +2,7 @@ import type { Context } from '@opencode/plugin/gui';
 import { FORGE_NAMES, linkFailure } from '../../link-failure.js';
 import { type Ref, refKind, refNumber } from '../../refs/ref.js';
 import { linkLabel } from '../../refs/work-link.js';
-import { webUrl } from '../ref-view.js';
+import type { OpenUrl } from '../links.js';
 import type { RefsStore, SessionTarget } from '../refs-store.js';
 import { rpcAt, rpcOn, serverPluginMissing } from '../server.js';
 
@@ -59,17 +59,19 @@ export function linkError(ctx: Pick<Context, 't'>, error: unknown): string {
 
 /**
  * The actions on `target()`'s work. Each re-reads the session's refs through `refs` after a
- * change, so every surface that shows them follows at once.
+ * change, so every surface that shows them follows at once. `openUrl` opens a page where the
+ * surface's links open (`useOpenUrl`).
  */
 export function workActions(
   ctx: ActionContext,
   refs: RefsStore,
-  target: () => SessionTarget | undefined
+  target: () => SessionTarget | undefined,
+  openUrl: OpenUrl
 ): WorkActions {
   const error = (title: string) => void ctx.toast.show({ title, variant: 'error' });
   return {
     open(item) {
-      if (webUrl(item.url)) ctx.system.openExternal(item.url);
+      openUrl(item.url);
     },
     async copy(item) {
       try {

@@ -5,6 +5,7 @@ import { type Ref, refKey } from '../../refs/ref.js';
 import { checksPage, openReview, type WorkLine, workLines } from '../../refs/work.js';
 import { linkLabel } from '../../refs/work-link.js';
 import type { SessionRefView } from '../../rpc.js';
+import { useOpenUrl } from '../links.js';
 import { Octicon } from '../octicons.js';
 import { ExternalLink, octiconOf, RefLine, toneClass, WorkLinkLine } from '../ref-view.js';
 import type { RefsStore, SessionTarget } from '../refs-store.js';
@@ -54,7 +55,7 @@ export function WorkList(props: WorkListProps) {
         : []
     );
   const details = createPullDetails({ target, pulls: failing });
-  const actions = workActions(ctx, props.refs, target);
+  const actions = workActions(ctx, props.refs, target, useOpenUrl());
   const shown = () => (props.actions ?? false) && state() !== undefined;
 
   return (
@@ -120,7 +121,7 @@ function Line(props: LineProps): JSX.Element {
     };
     return (
       <li class="ss-work-item">
-        <WorkLinkLine link={line.link} />
+        <WorkLinkLine link={line.link} wrap />
         <Show when={props.actions}>
           {(actions) => <RowActions item={item} actions={actions()} />}
         </Show>
@@ -169,7 +170,7 @@ function Line(props: LineProps): JSX.Element {
   });
   return (
     <li class="ss-work-item">
-      <RefLine item={line.ref} state={state()} />
+      <RefLine item={line.ref} state={state()} wrap />
       <Show when={props.actions}>
         {(actions) => <RowActions item={item()} actions={actions()} />}
       </Show>

@@ -11,6 +11,7 @@ import {
   Style
 } from '@opencode/plugin/gui';
 import { HEADER_SLOT, PANEL_MENU, panelKey } from '../../host/gui.js';
+import { LinkScopeProvider } from '../links.js';
 import type { RefsStore, SessionTarget } from '../refs-store.js';
 import { createPullDetails } from './details.js';
 import { HeaderStatus } from './header.js';
@@ -38,15 +39,21 @@ function targetOf(
 export function addStatus(ctx: Context, refs: RefsStore, icons: StatusIcons): void {
   ctx.add(Style, css);
 
+  const key = panelKey(ctx.id, WORK);
   ctx.add(Slot, {
     at: HEADER_SLOT,
     render: (input) => (
-      <HeaderStatus
-        refs={refs}
-        // A hidden timeline stays mounted; it asks again once it shows.
-        target={input.active ? targetOf(input.session) : undefined}
-        compact={input.compact}
-      />
+      <LinkScopeProvider scope={{ session: () => input.session }}>
+        <HeaderStatus
+          refs={refs}
+          // A hidden timeline stays mounted; it asks again once it shows.
+          target={input.active ? targetOf(input.session) : undefined}
+          compact={input.compact}
+          workShown={ctx.layout.state(key, input.session) === 'visible'}
+          // `toggle` closes the tab when it shows, else opens it, as the panel menu's item does.
+          toggleWork={() => ctx.layout.toggle(key, input.session)}
+        />
+      </LinkScopeProvider>
     )
   });
 
@@ -63,13 +70,14 @@ export function addStatus(ctx: Context, refs: RefsStore, icons: StatusIcons): vo
     list: (input) => (input.open.includes(WORK) ? [tab] : []),
     closed: (): ClosedPanelTab => ({ icon: icons.pull }),
     render: (props) => (
-      <div class="ss-work-panel">
-        <WorkList refs={refs} target={targetOf(props.session)} actions />
-      </div>
+      <LinkScopeProvider scope={{ session: () => props.session }}>
+        <div class="ss-work-panel">
+          <WorkList refs={refs} target={targetOf(props.session)} actions />
+        </div>
+      </LinkScopeProvider>
     )
   });
 
-  const key = panelKey(ctx.id, WORK);
   /** Opens the routed session's Work tab and selects it. */
   const show = () => {
     const session = ctx.sessions.current();
@@ -117,7 +125,7 @@ export function addStatus(ctx: Context, refs: RefsStore, icons: StatusIcons): vo
       const current = routed();
       if (current === undefined || current.sessionID !== input.session.id) return undefined;
       if (current.server.id !== input.session.server.id) return undefined;
-      return pillView(ctx, icons, state()?.view, details);
+      return pillView(ctx, icons, input.session, state()?.view, details);
     }
   });
 }

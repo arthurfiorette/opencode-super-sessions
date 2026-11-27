@@ -12,7 +12,20 @@
 
 .ss-header-more {
   flex-shrink: 0;
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
   color: var(--v2-text-text-muted);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.ss-header-more:hover,
+.ss-header-more:focus-visible {
+  background: var(--v2-overlay-simple-overlay-hover);
+  color: var(--v2-text-text-base);
 }
 
 .ss-work-panel {
@@ -28,9 +41,16 @@
   margin-bottom: 8px;
 }
 
+/* The app's secondary text (12px on the compact 16px line), so a title that wraps stays a block
+   of short lines beside the glyph and number. */
+.ss-work {
+  font-size: 12px;
+  line-height: var(--line-height-compact, 16px);
+}
+
 .ss-work-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   min-width: 0;
 }
@@ -39,16 +59,20 @@
   flex: 1;
 }
 
-/* The row's buttons take no room until the row is hovered or one of them has focus. */
+/* The row's buttons sit at its end on the first line and keep their room, so a wrapped title
+   never runs under them and does not reflow when they show on hover or focus. They are taller
+   than a line, so they overhang it instead of pushing the next row down. */
 .ss-work-actions {
-  display: none;
+  display: inline-flex;
   flex-shrink: 0;
   align-items: center;
+  margin-block: -4px;
+  visibility: hidden;
 }
 
 .ss-work-item:hover .ss-work-actions,
 .ss-work-item:focus-within .ss-work-actions {
-  display: inline-flex;
+  visibility: visible;
 }
 
 .ss-work-checks ul {
@@ -60,9 +84,10 @@
   list-style: none;
 }
 
+/* A check's name wraps under itself like a ref's title. */
 .ss-check {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   min-width: 0;
   max-width: 100%;
@@ -71,10 +96,14 @@
   cursor: pointer;
 }
 
+.ss-check > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .ss-check-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .ss-check:hover .ss-check-name {
@@ -84,5 +113,5 @@
 .ss-work-label {
   margin-top: 6px;
   color: var(--v2-text-text-faint);
-  font-size: 12px;
+  font-weight: 500;
 }

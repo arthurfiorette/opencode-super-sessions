@@ -18,7 +18,6 @@
   flex-shrink: 0;
   align-items: center;
   gap: 4px;
-  color: var(--ss-state-color, inherit);
 }
 
 .ss-ref-icon {
@@ -50,6 +49,20 @@
   color: var(--v2-text-text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A wrapping line keeps the glyph, number and badges on the first line, and the title wraps
+   under its own first word, so every line of it starts at the same place. */
+.ss-ref-wrap {
+  align-items: flex-start;
+}
+
+.ss-ref-wrap .ss-ref-title {
+  flex: 1;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .ss-ref:hover .ss-ref-title {
