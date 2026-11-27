@@ -1,8 +1,10 @@
+import { sideEn } from './side/en.js';
 import { statusEn } from './status/en.js';
 
 // The GUI's English copy, the source and the fallback of every key `ctx.t` reads.
 export const en = {
   ...statusEn,
+  ...sideEn,
   'command.browse': 'Super Sessions: Browse sessions',
   'browser.title': 'Super Sessions',
   'refs.empty': 'This session tracks no pull requests, issues or links.',

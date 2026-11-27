@@ -19,8 +19,8 @@ import type { RefsStore, SessionTarget } from '../refs-store.js';
 import { refLabel, type WorkActions, type WorkItem, workActions } from './actions.js';
 import { createPullDetails } from './details.js';
 
-// A session's linked work as one list, like the TUI's Work rows: the Work side panel draws it with
-// its actions, and the session browser's preview can draw it without them.
+// A session's linked work as one list, like the TUI's Work rows: the side tab's Work section and
+// the session browser's preview draw it with its actions.
 
 /** Failed checks listed under a pull request before the rest fold into `+N more`, as in the TUI. */
 const FAILED_SHOWN = 5;

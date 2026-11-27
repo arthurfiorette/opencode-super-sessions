@@ -11,7 +11,7 @@ import {
 } from './harness.mjs';
 
 // The session's pull request status around its timeline, from the built bundle: the header slot,
-// the Work panel and its actions, and the composer pill.
+// the side tab's Work section and its actions, and the composer pill.
 
 const { sessionRefViewSchema } = await import('../../dist/rpc.js');
 
@@ -160,22 +160,35 @@ test('a header pull request opens where the app link setting says, for its sessi
   assert.deepEqual(gui.opened, [pageOf(top), pageOf(top)]);
 });
 
-test('+N in the header shows the Work panel, and hides it again', async () => {
-  const { session } = await start(() => full);
+test('+N in the header shows the side tab with its Work unfolded, and hides it again', async () => {
+  const side = 'opencode-super-sessions:sessions';
+  // The user folded the Work section earlier.
+  const { session } = await start(() => full, {}, { stores: { side: { workFolded: true } } });
   const [header] = gui.slot('session.header', {
     session,
     screen: {},
     active: true,
     compact: true
   });
+  const panel = gui.panel('sessions', session);
   const more = await until(() => header.container.querySelector('.ss-header-more'), '+N');
+  await until(() => panel.container.querySelector('.ss-side-fold'), 'the Work header');
+  assert.equal(panel.container.querySelector(`.ss-side-work [data-ref="${key(merged)}"]`), null);
 
   more.click();
-  assert.deepEqual(gui.toggles, [{ key: 'opencode-super-sessions:work', session: 'ses_1' }]);
-  assert.equal(gui.ctx.layout.state('opencode-super-sessions:work', session), 'visible');
+  // A pinned tab is opened in place, not stored again: no `select` placement.
+  assert.deepEqual(gui.layout, [{ key: side, session: 'ses_1' }]);
+  assert.equal(gui.ctx.layout.state(side, session), 'visible');
   assert.equal(more.getAttribute('aria-pressed'), 'true');
+  // The Work section unfolded with the session's pull requests.
+  await until(
+    () => panel.container.querySelector(`.ss-side-work [data-ref="${key(merged)}"]`),
+    'the unfolded Work list'
+  );
+
   more.click();
-  assert.equal(gui.ctx.layout.state('opencode-super-sessions:work', session), 'closed');
+  assert.deepEqual(gui.hides, [{ key: side, session: 'ses_1' }]);
+  assert.equal(gui.ctx.layout.state(side, session), 'closed');
   assert.equal(more.getAttribute('aria-pressed'), 'false');
 });
 
@@ -194,7 +207,7 @@ test('a Work title wraps on its own line, and only an open pull request gets a s
     }
   });
   const { session } = await start(() => view);
-  const panel = gui.panel('work', session);
+  const panel = gui.panel('sessions', session);
   gui.applyStyles();
 
   const title = await until(
@@ -249,9 +262,15 @@ test('surfaces of one session share one fetch, which stops once none shows it', 
       active: true,
       compact: false
     });
-    const panel = gui.panel('work', session);
+    // The same session's header in another tab group, which mounts its own slot.
+    const [panel] = gui.slot('session.header', {
+      session,
+      screen: {},
+      active: true,
+      compact: true
+    });
     await until(() => numbers(header.container).length > 0, 'the header refs');
-    await until(() => numbers(panel.container).length > 0, 'the panel refs');
+    await until(() => numbers(panel.container).length > 0, 'the other header refs');
     await until(() => client.calls.some((call) => call.name === 'rpc.refresh'), 'the refresh');
 
     assert.equal(client.calls.filter((call) => call.name === 'rpc.refs').length, 1);
@@ -269,9 +288,9 @@ test('surfaces of one session share one fetch, which stops once none shows it', 
   }
 });
 
-test('the Work panel lists the work and the checks that failed, each opening its page', async () => {
+test('the Work section lists the work and the checks that failed, each opening its page', async () => {
   const { session } = await start(() => full);
-  const panel = gui.panel('work', session);
+  const panel = gui.panel('sessions', session);
 
   const failed = await until(() => {
     const names = panel.container.querySelectorAll('.ss-work-checks .ss-check-name');
@@ -305,7 +324,7 @@ test('unlinking asks first, then unlinks on the server and the item leaves the l
       return {};
     }
   });
-  const panel = gui.panel('work', session);
+  const panel = gui.panel('sessions', session);
   const row = await until(
     () => panel.container.querySelector(`[data-ref="${key(merged)}"]`)?.closest('li'),
     'the merged pull request'
@@ -345,7 +364,7 @@ test('a link the server refuses becomes an error toast that says why', async () 
       throw Object.assign(new Error('refused'), refusal);
     }
   });
-  const panel = gui.panel('work', session);
+  const panel = gui.panel('sessions', session);
   const button = await until(
     () => [...panel.container.querySelectorAll('button')].find((b) => b.textContent === 'Link'),
     'the Link button'
@@ -420,7 +439,7 @@ test('without the server plugin the panel says so and the header and pill show n
     active: true,
     compact: false
   });
-  const panel = gui.panel('work', session);
+  const panel = gui.panel('sessions', session);
 
   await until(
     () => panel.container.textContent.includes('server plugin is not installed'),
@@ -429,5 +448,6 @@ test('without the server plugin the panel says so and the header and pill show n
   assert.equal(header.container.textContent, '');
   assert.equal(gui.pill('pull', session), undefined);
   // Nothing to link or refresh on a server that cannot answer.
-  assert.equal(panel.container.querySelector('button'), null);
+  assert.equal(panel.container.querySelector('.ss-work-toolbar'), null);
+  assert.equal(panel.container.querySelector('.ss-side-link'), null);
 });

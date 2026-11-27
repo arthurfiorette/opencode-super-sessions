@@ -256,7 +256,8 @@ function createUi() {
  * does: `added` (every `ctx.add`), `opened` (external URLs), `copied`, `tabs` (`ctx.tabs.open`
  * calls), `closed` (`ctx.tabs.close` keys), `toasts`, `dialogs` (each open dialog's `container`
  * in `document.body`), `asked` (each `confirm` and `prompt` with its options), `layout`
- * (`ctx.layout.open` calls), `toggles` (`ctx.layout.toggle` calls) and `linked` (each
+ * (`ctx.layout.open` calls), `toggles` (`ctx.layout.toggle` calls), `hides`
+ * (`ctx.layout.hide` calls) and `linked` (each
  * `ctx.links.open` link, with `handled`). `options.links(link)` decides what `ctx.links.open`
  * answers, as a matching `LinkHandler` would; without it no handler matches. `replies` answers
  * `confirm` and `prompt` in order; push to it before the GUI asks. An unanswered question
@@ -278,6 +279,7 @@ export function createContext(plugin, options = {}) {
   const replies = [];
   const layout = [];
   const toggles = [];
+  const hides = [];
   const linked = [];
   // Panel keys on screen, by session id: what `open` and `toggle` change and `state` reads.
   const shown = new Set();
@@ -377,6 +379,11 @@ export function createContext(plugin, options = {}) {
         toggles.push({ key, session: target.id });
         show(key, target.id, !shown.has(`${target.id}\n${key}`));
       },
+      // Takes the key off screen; the app's leaves its tab in the strip.
+      hide(key, target) {
+        hides.push({ key, session: target.id });
+        show(key, target.id, false);
+      },
       state(key, target) {
         layoutVersion();
         return shown.has(`${target.id}\n${key}`) ? 'visible' : 'closed';
@@ -416,6 +423,7 @@ export function createContext(plugin, options = {}) {
     replies,
     layout,
     toggles,
+    hides,
     linked,
     closed,
     setSession,
@@ -463,7 +471,7 @@ function read(entry) {
  * scripts/bench-gui.mjs, and runs its `setup` with a fake context (see {@link createContext}).
  * Returns the context's records, `items(registryId)` to read what the GUI contributed,
  * `command(id)` to read one command, `slot(at, input)` to render a `Slot`, `panel(id, session)` to
- * render a side `Panel`'s tab of the same id, `pill(id, session)` to read what a `ComposerPill`
+ * render a side `Panel`'s tab of the same id (`session` may be a getter, to route another later), `pill(id, session)` to read what a `ComposerPill`
  * shows (reactive, so read it again after a change), `applyStyles()` to add the GUI's
  * stylesheets to the document for computed styles, and `dispose` to tear the plugin and
  * everything it rendered down.
@@ -497,8 +505,18 @@ export async function startGui(options = {}) {
     },
     panel(id, session) {
       const panel = items('panel').find((item) => item.id === id);
-      const [tab] = panel.list({ session, screen: {}, open: [id] });
-      const shown = mount(fake.ctx, () => panel.render({ tab, session, screen: {} }));
+      // A function is the routed session's getter, as the host hands it: the render stays
+      // mounted and reads the next session from it.
+      const current = typeof session === 'function' ? session : () => session;
+      const [tab] = panel.list({ session: current(), screen: {}, open: [id] });
+      const props = {
+        tab,
+        screen: {},
+        get session() {
+          return current();
+        }
+      };
+      const shown = mount(fake.ctx, () => panel.render(props));
       rendered.push(shown);
       return shown;
     },

@@ -17,7 +17,7 @@ import { useOpenUrl, webUrl } from './links.js';
 import { Octicon, type OcticonName } from './octicons.js';
 
 // One ref or work link as every GUI surface draws it: the browser's rows, the session header, the
-// Work panel and the composer pill. The decisions (glyph, badges, their order and tones) come from
+// Work list and the composer pill. The decisions (glyph, badges, their order and tones) come from
 // `src/refs/look.ts`, the same ones the TUI draws with Nerd Font glyphs.
 
 /** The octicon for each glyph the shared look names. */

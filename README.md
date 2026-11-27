@@ -97,11 +97,21 @@ The same plugin adds to OpenCode Desktop 2.4:
 
 - the session browser as a dialog. Press `cmd+shift+s` (`ctrl+shift+s` on Windows and Linux) or run "Super Sessions: Browse sessions" from the command palette. It has the same views and search as the terminal browser, and shows the selected session's context usage, work and latest messages on the right. The `preview` and `previewWidth` options apply to it too.
 - a project rail down the browser's left edge. The top tile lists every project, and each project below it, in its sidebar icon, lists that project's sessions in all its worktrees and subfolders. Tiles show how many sessions run and a dot for unread ones. The browser opens on the open session's project, or on all projects when you last picked that tile or no session is open.
-- the session's pull requests and issues in the session header, with their state, review and CI. `+N` shows or hides the Work panel.
-- a Work side panel, from the side panel's `+` menu or "Super Sessions: Show work", with the failed checks of open pull requests. You can open, copy, link and unlink work there.
+- the session's pull requests and issues in the session header, with their state, review and CI. `+N` opens the Super Sessions side tab at the session's work, and hides it again.
+- a Super Sessions tab in the side panel of every session, described below
 - the session's open pull request above the message box, colored by its checks and review, with a menu of its checks
 
-Desktop's own session list in the sidebar stays as it is, since plugins cannot change it. Use the browser to list one project's sessions or to see their pull requests.
+### Super Sessions side tab
+
+The tab is pinned first in the side panel's tab strip of every session, so it stays there when you switch sessions. Open the side panel and pick it, choose Super Sessions from the side panel's `+` menu, or click `+N` in the session header. Drag the panel's edge to resize it, and Desktop remembers that width for this tab.
+
+At the top it shows the open session's work: its pull requests with review, CI, stack and failed checks, the issues they close, other issues, links and mentioned refs. You can open, copy, link and unlink work there, and refresh it from GitHub or GitLab. The header folds the section to one line with the pull request count and the main pull request's state, and the fold is remembered. A session that tracks nothing shows one "Nothing linked" line with a link action.
+
+Below that is the session list from the browser: the Active, Done, Archived and Pull requests views with their counts, a search field and the project rail down the left edge. The open session's row is marked. Click a row to open its session in its tab. The side tab stays open in that session when it was open here. Hover a row to archive it or mark it Done. With the list focused, `up` and `down` select and `enter` opens. The list keeps its selection, scroll and search while you switch sessions, so the tab can stand in for Desktop's sidebar while you work in a session.
+
+Home and new session drafts have no side panel, so the tab is only in sessions.
+
+Desktop's own session list in the sidebar stays as it is, since plugins cannot change it.
 
 Links follow Settings > Browser in Desktop: with "Open links in OpenCode" on, a pull request, issue, check or link opens in Desktop's browser beside its session, and otherwise in your default browser. Hold `shift` while clicking to use your default browser anyway.
 

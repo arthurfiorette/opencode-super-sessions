@@ -1,4 +1,4 @@
-/* The session header's refs, the Work panel and the Work list. Colors come from the app's CSS
+/* The session header's refs and the Work list. Colors come from the app's CSS
    variables, as in ../styles.css. */
 
 .ss-header {
@@ -26,12 +26,6 @@
 .ss-header-more:focus-visible {
   background: var(--v2-overlay-simple-overlay-hover);
   color: var(--v2-text-text-base);
-}
-
-.ss-work-panel {
-  height: 100%;
-  padding: 8px 12px;
-  overflow: auto;
 }
 
 .ss-work-toolbar {

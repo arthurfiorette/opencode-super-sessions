@@ -15,16 +15,16 @@ export interface HeaderStatusProps {
   readonly target: SessionTarget | undefined;
   /** The title needs the room: only the first ref's glyph and number, and `+N` for the rest. */
   readonly compact: boolean;
-  /** The session's Work tab is on screen. */
+  /** The session's Super Sessions side tab is on screen. */
   readonly workShown: boolean;
-  /** Shows the session's Work tab, or closes it while it shows. */
+  /** Shows the side tab at its Work section, or hides it while it shows. */
   readonly toggleWork: () => void;
 }
 
 /**
  * Up to three tracked pull requests with their stack place, review and CI badges, then the
- * tracked issues, then `+N` for the others and the mentions (`rowRefs`), which toggles the Work
- * panel that lists them all. Each ref opens its page.
+ * tracked issues, then `+N` for the others and the mentions (`rowRefs`), which shows or hides the
+ * side tab, whose Work section lists them all. Each ref opens its page.
  * Nothing while the refs load, when the session tracks nothing, or when its server runs no server
  * half of this plugin.
  */

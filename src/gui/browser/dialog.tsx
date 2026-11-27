@@ -8,36 +8,10 @@ import {
   type SessionRef,
   usePlugin
 } from '@opencode/plugin/gui';
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  type JSX,
-  Match,
-  onCleanup,
-  onMount,
-  Show,
-  Switch,
-  untrack
-} from 'solid-js';
-import {
-  closeSessionTab,
-  openSession,
-  openWebLink,
-  type ProjectLook,
-  RAIL_KEYS
-} from '../../host/gui.js';
-import { isBusy, isUnread, setArchived } from '../../host/session-info.js';
-import {
-  keepSelection,
-  moveSelection,
-  type PageScope,
-  type PageView,
-  type PullRow,
-  rowsOf,
-  VIEWS
-} from '../../page/state.js';
+import { createEffect, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js';
+import { openSession, openWebLink, type ProjectLook, RAIL_KEYS } from '../../host/gui.js';
+import { isUnread } from '../../host/session-info.js';
+import { type PageView, VIEWS } from '../../page/state.js';
 import { refUrl } from '../../refs/look.js';
 import { refKey } from '../../refs/ref.js';
 import { rowRefs, workLinks } from '../../refs/summary.js';
@@ -45,11 +19,12 @@ import { type LinkScope, LinkScopeProvider } from '../links.js';
 import { Octicon, type OcticonName } from '../octicons.js';
 import { sessionProjectLook } from '../project-avatar.js';
 import type { RefsStore } from '../refs-store.js';
-import { rpcOn, serverFor } from '../server.js';
+import { serverFor } from '../server.js';
+import { createListState, createRailPick, createRowActions, ListBody, RowButtons } from './list.js';
 import { type BrowserModel, type BrowserTarget, createBrowserView } from './model.js';
 import { type BrowserPrefs, opensOnAll } from './prefs.js';
 import { Preview } from './preview.js';
-import { ALL_KEY, createRail, type RailSelection, type RailTile, selectionKey } from './rail.js';
+import { createRail } from './rail.js';
 import { ProjectRail } from './rail-view.js';
 import { PullItem, SessionRow } from './row.js';
 
@@ -68,7 +43,7 @@ const KEYS = {
 } as const;
 
 /** The TUI's tab icons (`tabLabel` in src/page/view.ts); Active has none. */
-const TAB_ICONS: Record<PageView, OcticonName | undefined> = {
+export const TAB_ICONS: Record<PageView, OcticonName | undefined> = {
   active: undefined,
   done: 'check-circle',
   archived: 'archive',
@@ -131,9 +106,9 @@ function altChord(action: AltAction, layout: ReadonlyMap<string, string> | undef
 /**
  * Opens the browser over whatever the window shows. "This project" is the routed session's
  * project, so it is read once here; on Home the dialog lists every project. `refs` is the store
- * the Work panel reads too, so the preview shares its entries and refreshes. `models` gives the
- * server's browser model, which outlives the dialog. `closed` runs once the dialog closes, however
- * it closes.
+ * the side tab's Work section reads too, so the preview shares its entries and refreshes.
+ * `models` gives the server's browser model, which outlives the dialog. `closed` runs once the
+ * dialog closes, however it closes.
  */
 export function openBrowser(
   ctx: Context,
@@ -174,41 +149,6 @@ export function openBrowser(
   });
 }
 
-/**
- * A group of the list, the same object on every publish of its title, so the group's block and
- * the rows in it stay mounted. `title` is undefined for the untitled group of a plain list.
- */
-interface ListGroup {
-  readonly title: string | undefined;
-}
-
-/** Row height in px a skipped group is laid out with until it was drawn once (browser.css). */
-const ROW_ESTIMATE = 40;
-
-/** Whether two builds of a pull request row show the same thing. */
-function samePull(a: PullRow, b: PullRow): boolean {
-  return (
-    a.state === b.state &&
-    a.sessions.length === b.sessions.length &&
-    a.sessions.every((session, index) => session === b.sessions[index])
-  );
-}
-
-/** A row or pull request the user picked; `id` is a session id or a pull request's key. */
-interface Choice {
-  readonly id: string | undefined;
-}
-
-/** No pick yet: the list selects its first row. */
-const NO_PICK: Choice = { id: undefined };
-
-/** The selection derived from a list and the user's picks, with what it was derived from. */
-interface Selection<T> {
-  readonly list: readonly T[];
-  readonly pick: Choice;
-  readonly id: string | undefined;
-}
-
 /** Props of {@link SessionBrowser}. */
 interface SessionBrowserProps {
   readonly target: BrowserTarget;
@@ -224,9 +164,11 @@ function SessionBrowser(props: SessionBrowserProps) {
   const ctx = usePlugin();
   const target = untrack(() => props.target);
   const home = target.origin === undefined;
-  // The rail's pick: every project on Home, where no project is routed, else the user's last
-  // pick, read once per open. A pick of a project reopens on the routed session's project.
-  const [selection, setSelection] = createSignal<RailSelection>(
+  const model = untrack(() => props.model);
+  // The rail's pick, which every view of the model shares: every project on Home, where no
+  // project is routed, else the user's last pick, read once per open. A pick of a project
+  // reopens on the routed session's project.
+  model.select(
     home ||
       opensOnAll(
         untrack(() => props.prefs.value),
@@ -235,122 +177,22 @@ function SessionBrowser(props: SessionBrowserProps) {
       ? { type: 'all' }
       : { type: 'routed' }
   );
-  /** The controller's view of the pick, which tells only all projects from one. */
-  const scope = (): PageScope => (selection().type === 'all' ? 'all' : 'project');
+  /** Whether the rail lists every project now. */
+  const allProjects = () => model.selection().type === 'all';
   const [view, setView] = createSignal<PageView>('active');
   const [query, setQuery] = createSignal('');
-  // The user's last pick of a row and of a pull request. A new object per pick, so picking the
-  // same id again, or clearing an already clear one, still counts as a pick.
-  const [rowPick, setRowPick] = createSignal<Choice>(NO_PICK, { equals: false });
-  const [pullPick, setPullPick] = createSignal<Choice>(NO_PICK, { equals: false });
-  const setSelected = (id: string | undefined) => setRowPick({ id });
-  const setPull = (key: string | undefined) => setPullPick({ id: key });
-  const model = untrack(() => props.model);
   const browser = createBrowserView(model, {
-    target: () => ({ origin: target.origin, selection: selection() }),
+    target: () => ({ origin: target.origin, selection: model.selection() }),
     view,
     query
   });
   const store = model.data;
   const pullView = () => view() === 'pulls';
+  const list = createListState(browser, view);
+  const { selected, pull, selectedPull, setSelected, setPull, current } = list;
+  const row = createRowActions(ctx, model, target.server, browser.signal);
+  const { live, running, waiting, archive, toggleDone } = row;
 
-  const rows = createMemo(() => rowsOf(browser.groups()));
-  const pulls = createMemo(() => browser.pullGroups().flatMap((group) => group.pulls));
-  // The list as keyed groups of keyed rows. Rows are the store's own session objects and groups
-  // are kept by title, so a publish (refs arriving, a run ending, a project's full list after its
-  // cached share) only updates the rows that changed instead of building every row again.
-  const known = new Map<string, ListGroup>();
-  /** The group object of a title in a list (`sessions` or `pulls`), the same on every publish. */
-  const groupOf = (list: string, title: string | undefined): ListGroup => {
-    const key = `${list}\n${title ?? ''}`;
-    let found = known.get(key);
-    if (found === undefined) {
-      found = { title };
-      known.set(key, found);
-    }
-    return found;
-  };
-  const sessionGroups = createMemo(() =>
-    browser.groups().map((group) => groupOf('sessions', group.title))
-  );
-  const sessionsIn = createMemo(
-    () =>
-      new Map(browser.groups().map((group) => [groupOf('sessions', group.title), group.sessions]))
-  );
-  // Pull request rows are built anew on each publish; one whose fields are unchanged is kept.
-  const pullItems = createMemo(
-    (previous: ReadonlyMap<string, PullRow>): ReadonlyMap<string, PullRow> => {
-      const next = new Map<string, PullRow>();
-      for (const item of pulls()) {
-        const known = previous.get(item.key);
-        next.set(item.key, known !== undefined && samePull(known, item) ? known : item);
-      }
-      return next;
-    },
-    new Map()
-  );
-  const pullGroups = createMemo(() =>
-    browser.pullGroups().map((group) => groupOf('pulls', group.title))
-  );
-  const pullsIn = createMemo(
-    () =>
-      new Map(
-        browser
-          .pullGroups()
-          .map((group) => [
-            groupOf('pulls', group.title),
-            group.pulls.map((item) => pullItems().get(item.key) ?? item)
-          ])
-      )
-  );
-
-  // Rows change under the selection when sessions are archived, restored or become Done: the row
-  // that took the selected one's place is selected. Clearing the selection, as switching views
-  // and typing do, selects the first row. An empty list keeps the selection for the next one.
-  const rowSelection = createMemo<Selection<SessionInfo>>(
-    (previous) => {
-      const next = rows();
-      const picked = rowPick();
-      const id = picked === previous.pick ? previous.id : picked.id;
-      return {
-        list: next,
-        pick: picked,
-        id: next.length === 0 ? id : keepSelection(previous.list, next, id)
-      };
-    },
-    { list: [], pick: NO_PICK, id: undefined }
-  );
-  const pullSelection = createMemo<Selection<PullRow>>(
-    (previous) => {
-      const next = pulls();
-      const picked = pullPick();
-      const key = picked === previous.pick ? previous.id : picked.id;
-      if (next.length === 0 || next.some((item) => item.key === key)) {
-        return { list: next, pick: picked, id: key };
-      }
-      const index = previous.list.findIndex((item) => item.key === key);
-      const kept = next[index === -1 ? 0 : Math.min(index, next.length - 1)]?.key;
-      return { list: next, pick: picked, id: kept };
-    },
-    { list: [], pick: NO_PICK, id: undefined }
-  );
-  const selected = () => rowSelection().id;
-  const pull = () => pullSelection().id;
-  const selectedPull = () => pulls().find((item) => item.key === pull());
-  /** The session the keys act on: the selected row, or the selected pull request's newest one. */
-  const current = (): SessionInfo | undefined =>
-    pullView() ? selectedPull()?.sessions[0] : rows().find((row) => row.id === selected());
-  /** The session's latest copy the server synced, for a title renamed while the dialog is open. */
-  const live = (session: SessionInfo): SessionInfo =>
-    target.server.data.session.get(session.id) ?? session;
-  const running = (session: SessionInfo) => isBusy(live(session)) || model.isRunning(session.id);
-  /** What the session waits on the user for, as the app's own lists know it. */
-  const waiting = (id: string): 'permission' | 'question' | undefined => {
-    const sessions = target.server.data.session;
-    if ((sessions.permission.list(id)?.length ?? 0) > 0) return 'permission';
-    if ((sessions.form.list(id)?.length ?? 0) > 0) return 'question';
-    return undefined;
-  };
   /**
    * The open session a row's links belong to: the row's own when it is routed or open in a tab,
    * else the routed one, so the app's link setting can open them in that session's browser pane.
@@ -378,7 +220,7 @@ function SessionBrowser(props: SessionBrowserProps) {
    * lists do. The routed session's project carries the user's local name and icon.
    */
   const projectOf = (session: SessionInfo): ProjectLook | undefined => {
-    if (scope() !== 'all') return undefined;
+    if (!allProjects()) return undefined;
     const local = ctx.sessions.current()?.project;
     return sessionProjectLook(
       target.server,
@@ -392,18 +234,10 @@ function SessionBrowser(props: SessionBrowserProps) {
   const previewShare = previewShareOf(ctx.options.previewWidth);
   const titleEnd = () => TITLE_ORANGE[ctx.appearance.mode() === 'light' ? 'light' : 'dark'];
 
-  // The view syncs the model for every pick, starting over in a newly picked project. The Pull
-  // requests view filters its own rows; the session search stays off there. A new pick asks
-  // again, since starting over cleared the results.
-  createEffect(() => {
-    selection();
-    model.controller.search(pullView() ? '' : query(), view() === 'archived', scope());
-  });
-
   // The rail's tiles, from every project's active sessions.
   const rail = createRail({
     server: target.server,
-    origin: target.origin,
+    origin: () => target.origin,
     local: () => {
       const project = ctx.sessions.current()?.project;
       return project === undefined
@@ -412,38 +246,18 @@ function SessionBrowser(props: SessionBrowserProps) {
     },
     every: model.everyActive,
     want: model.wantEveryActive,
-    all: () => scope() === 'all',
+    all: allProjects,
     active: () => (store.status === 'ready' ? store.active : undefined),
     running: (session) => running(session),
     unread: (session) => isUnread(live(session)) || waiting(session.id) !== undefined
   });
-  /** The tile the rail shows as picked. */
-  const pickedTile = () => selectionKey(selection(), rail.routedKey());
-  /**
-   * Lists a tile's sessions, keeping the view and the search, and selects the first row, at the
-   * top of the list. The pick outlasts the open: `all`, or `project`, which the next open reads as
-   * the routed project. Only this pick writes, so the old `allProjects` is read once and dropped
-   * here.
-   */
-  const pickTile = (tile: RailTile) => {
-    if (tile.key === pickedTile()) return;
-    setSelection(tile.selection);
+  // A pick lists the tile's sessions, keeping the view and the search, and selects the first row,
+  // at the top of the list.
+  const { pickedTile, pickTile, moveTile } = createRailPick(model, rail, props.prefs, () => {
     setSelected(undefined);
     setPull(undefined);
-    list?.scrollTo?.({ top: 0 });
-    props.prefs.update((draft) => {
-      draft.rail = tile.key === ALL_KEY ? 'all' : 'project';
-      delete draft.allProjects;
-      return undefined;
-    });
-  };
-  /** Picks the tile `delta` places along the rail, stopping at its ends. */
-  const moveTile = (delta: number) => {
-    const tiles = rail.tiles();
-    const index = tiles.findIndex((tile) => tile.key === pickedTile());
-    const next = tiles[Math.min(tiles.length - 1, Math.max(0, (index === -1 ? 0 : index) + delta))];
-    if (next !== undefined) pickTile(next);
-  };
+    listElement?.scrollTo?.({ top: 0 });
+  });
 
   // The selected row scrolls into view as the keys move it.
   const elements = new Map<string, HTMLElement>();
@@ -471,7 +285,7 @@ function SessionBrowser(props: SessionBrowserProps) {
   const alt = (action: AltAction) => altChord(action, layout.latest);
 
   let root: HTMLDivElement | undefined;
-  let list: HTMLDivElement | undefined;
+  let listElement: HTMLDivElement | undefined;
   let search: HTMLElement | undefined;
   onMount(() => {
     search = root?.querySelector('input') ?? undefined;
@@ -489,50 +303,6 @@ function SessionBrowser(props: SessionBrowserProps) {
     if (session === undefined) return;
     openSession(ctx.tabs, { server: target.server.id, id: session.id }, !background);
     if (!background) props.close();
-  };
-  /**
-   * Archives the session, or restores it when it is archived. An archive closes the session's tab
-   * unless `closeTabOnArchive` is off; a restore keeps auto-archive from taking the session
-   * again, as the TUI's restores do.
-   */
-  const archive = async (session: SessionInfo | undefined) => {
-    if (session === undefined) return;
-    // The row's own copy: the controller moves it between the lists right after each update.
-    const archived = session.time.archived === undefined;
-    try {
-      await setArchived(target.server.client, session.id, archived);
-    } catch {
-      toast(ctx.t(archived ? 'browser.archive.failed' : 'browser.restore.failed'));
-      return;
-    }
-    model.controller.archived(session.id, archived, Date.now());
-    if (archived && ctx.options.closeTabOnArchive !== false) {
-      closeSessionTab(ctx.tabs, { server: target.server.id, id: session.id });
-    }
-    // Without the server plugin there is no auto-archive to stop.
-    if (!archived) {
-      void model
-        .rpcOptions()
-        .then((options) =>
-          rpcOn(target.server)['archive.exclude']({ sessionIDs: [session.id] }, options)
-        )
-        .catch(() => {});
-    }
-  };
-  /** Marks the session Done, or not Done when it is Done by any means. */
-  const toggleDone = async (session: SessionInfo | undefined) => {
-    if (session === undefined || model.missing()) return;
-    const done = !model.isDone(session.id);
-    try {
-      await rpcOn(target.server)['done.set'](
-        { sessionID: session.id, done },
-        await model.rpcOptions()
-      );
-    } catch {
-      toast(ctx.t(done ? 'browser.done.failed' : 'browser.notDone.failed'));
-      return;
-    }
-    void model.controller.refresh([session.id], browser.signal);
   };
   /**
    * Opens the selected pull request in the Pull requests view; otherwise the selected session's
@@ -571,13 +341,6 @@ function SessionBrowser(props: SessionBrowserProps) {
       toast(ctx.t('browser.reload.failed'));
     }
   };
-  /** Moves the selection by `delta` rows, clamped to the list. */
-  const move = (delta: number) => {
-    if (!pullView()) return setSelected(moveSelection(rows(), selected(), delta));
-    const list = pulls();
-    const index = list.findIndex((item) => item.key === pull());
-    setPull(list[Math.min(list.length - 1, Math.max(0, (index === -1 ? 0 : index) + delta))]?.key);
-  };
 
   /**
    * The dialog's keys. The app runs no command keybind while a dialog is open, so only the
@@ -601,8 +364,8 @@ function SessionBrowser(props: SessionBrowserProps) {
     let handled = true;
     if (event.key === 'ArrowDown' && onlyAlt) moveTile(1);
     else if (event.key === 'ArrowUp' && onlyAlt) moveTile(-1);
-    else if (event.key === 'ArrowDown' && plain) move(1);
-    else if (event.key === 'ArrowUp' && plain) move(-1);
+    else if (event.key === 'ArrowDown' && plain) list.move(1);
+    else if (event.key === 'ArrowUp' && plain) list.move(-1);
     else if (
       event.key === 'Tab' &&
       !mod &&
@@ -626,50 +389,6 @@ function SessionBrowser(props: SessionBrowserProps) {
     event.preventDefault();
     event.stopPropagation();
   };
-
-  /** The hover buttons of a session row. */
-  const actions = (session: SessionInfo) => (
-    <>
-      <ctx.ui.Tooltip
-        value={ctx.t(session.time.archived === undefined ? 'browser.archive' : 'browser.restore')}
-        keys={ctx.keybinds.keys(alt('archive'))}
-      >
-        <ctx.ui.IconButton
-          icon={session.time.archived === undefined ? 'archive' : 'outline-undo'}
-          size="small"
-          label={ctx.t(session.time.archived === undefined ? 'browser.archive' : 'browser.restore')}
-          onClick={(event) => {
-            event.stopPropagation();
-            void archive(session);
-          }}
-        />
-      </ctx.ui.Tooltip>
-      {/* Done is the server plugin's mark: without it there is nothing to set. */}
-      <Show when={session.time.archived === undefined && !model.missing()}>
-        <ctx.ui.Tooltip
-          value={ctx.t(model.isDone(session.id) ? 'browser.markNotDone' : 'browser.markDone')}
-          keys={ctx.keybinds.keys(alt('done'))}
-        >
-          <ctx.ui.IconButton
-            icon="circle-check"
-            size="small"
-            pressed={model.isDone(session.id)}
-            label={ctx.t(model.isDone(session.id) ? 'browser.markNotDone' : 'browser.markDone')}
-            onClick={(event) => {
-              event.stopPropagation();
-              void toggleDone(session);
-            }}
-          />
-        </ctx.ui.Tooltip>
-      </Show>
-    </>
-  );
-
-  /** The note of the view's empty list. */
-  const emptyNote = () =>
-    store.search !== undefined && !pullView()
-      ? ctx.t('browser.empty.search')
-      : ctx.t(`browser.empty.${view()}`);
 
   return (
     // The keys of the list and its search field bubble here. A native listener: Solid delegates
@@ -733,89 +452,48 @@ function SessionBrowser(props: SessionBrowserProps) {
           <Show when={store.search?.status === 'error' && !pullView()}>
             <p class="ss-note">{ctx.t('browser.search.failed')}</p>
           </Show>
-          {/* A load over rows already on screen draws a thin bar instead of the spinner. */}
           <div
-            ref={list}
+            ref={listElement}
             class="ss-list"
             role="listbox"
             aria-label={ctx.t(`browser.view.${view()}`)}
             aria-busy={model.loading()}
           >
-            <Show when={model.loading() && store.status === 'ready'}>
-              <div class="ss-progress" aria-hidden="true" />
-            </Show>
-            <Switch>
-              <Match when={store.status === 'loading'}>
-                <div class="ss-state">
-                  <ctx.ui.Loader size="large" />
-                </div>
-              </Match>
-              <Match when={store.status === 'error'}>
-                <div class="ss-state">
-                  <p class="ss-note">{ctx.t('browser.error')}</p>
-                  <ctx.ui.Button
-                    variant="neutral"
-                    size="small"
-                    onClick={() => void browser.load(true)}
-                  >
-                    {ctx.t('browser.retry')}
-                  </ctx.ui.Button>
-                </div>
-              </Match>
-              <Match when={pullView()}>
-                <Show when={pulls().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
-                  <For each={pullGroups()}>
-                    {(group) => (
-                      <GroupBlock group={group} rows={pullsIn().get(group)?.length ?? 0}>
-                        <For each={pullsIn().get(group) ?? []}>
-                          {(item) => (
-                            <LinkScopeProvider scope={linkScope(() => item.sessions[0]?.id)}>
-                              <PullItem
-                                pull={item}
-                                selected={pull() === item.key}
-                                ref={track(item.key)}
-                                onSelect={() => setPull(item.key)}
-                                onOpen={() => open(item.sessions[0])}
-                              />
-                            </LinkScopeProvider>
-                          )}
-                        </For>
-                      </GroupBlock>
-                    )}
-                  </For>
-                </Show>
-              </Match>
-              <Match when={true}>
-                <Show when={rows().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
-                  <For each={sessionGroups()}>
-                    {(group) => (
-                      <GroupBlock group={group} rows={sessionsIn().get(group)?.length ?? 0}>
-                        <For each={sessionsIn().get(group) ?? []}>
-                          {(item) => (
-                            <LinkScopeProvider scope={linkScope(() => item.id)}>
-                              <SessionRow
-                                session={live(item)}
-                                view={store.refs[item.id]}
-                                selected={selected() === item.id}
-                                running={running(item)}
-                                waiting={waiting(item.id)}
-                                now={model.now()}
-                                archivedAge={view() === 'archived' && store.search === undefined}
-                                actions={actions(item)}
-                                project={projectOf(live(item))}
-                                ref={track(item.id)}
-                                onSelect={() => setSelected(item.id)}
-                                onOpen={() => open(item)}
-                              />
-                            </LinkScopeProvider>
-                          )}
-                        </For>
-                      </GroupBlock>
-                    )}
-                  </For>
-                </Show>
-              </Match>
-            </Switch>
+            <ListBody
+              model={model}
+              browser={browser}
+              list={list}
+              view={view()}
+              pull={(item) => (
+                <LinkScopeProvider scope={linkScope(() => item.sessions[0]?.id)}>
+                  <PullItem
+                    pull={item}
+                    selected={pull() === item.key}
+                    ref={track(item.key)}
+                    onSelect={() => setPull(item.key)}
+                    onOpen={() => open(item.sessions[0])}
+                  />
+                </LinkScopeProvider>
+              )}
+              session={(item) => (
+                <LinkScopeProvider scope={linkScope(() => item.id)}>
+                  <SessionRow
+                    session={live(item)}
+                    view={store.refs[item.id]}
+                    selected={selected() === item.id}
+                    running={running(item)}
+                    waiting={waiting(item.id)}
+                    now={model.now()}
+                    archivedAge={view() === 'archived' && store.search === undefined}
+                    actions={<RowButtons session={item} model={model} actions={row} keys={alt} />}
+                    project={projectOf(live(item))}
+                    ref={track(item.id)}
+                    onSelect={() => setSelected(item.id)}
+                    onOpen={() => open(item)}
+                  />
+                </LinkScopeProvider>
+              )}
+            />
           </div>
         </div>
         {/* A full-height column beside the list, with `esc` on the line of the list's header. */}
@@ -897,35 +575,4 @@ function CloseHint(props: { close: () => void }) {
       esc
     </button>
   );
-}
-
-/**
- * A group's block: its header, then its rows. The block, not each row, skips layout off screen
- * (`content-visibility` in browser.css), laid out at `rows` times {@link ROW_ESTIMATE} until it
- * was drawn once and at its real height after, so no row is ever taller than its content.
- */
-function GroupBlock(props: { group: ListGroup; rows: number; children: JSX.Element }) {
-  return (
-    <div
-      class="ss-group"
-      style={{ 'contain-intrinsic-size': `auto ${props.rows * ROW_ESTIMATE + 32}px` }}
-    >
-      <Show when={props.group.title}>{(title) => <GroupTitle title={title()} />}</Show>
-      {props.children}
-    </div>
-  );
-}
-
-/**
- * A group header, such as a day or Running, drawn as the app sidebar's section headers are
- * (browser.css), with the group's name translated when the catalog has it.
- */
-function GroupTitle(props: { title: string }) {
-  const ctx = usePlugin();
-  const key = () => `browser.group.${props.title}`;
-  const text = () => {
-    const translated = ctx.t(key());
-    return translated === key() ? props.title : translated;
-  };
-  return <h3 class="ss-group-title">{text()}</h3>;
 }

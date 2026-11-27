@@ -72,11 +72,17 @@ export interface ListTarget {
 /**
  * Loads and groups the sessions of one server for every view of the window. Call it once per
  * server, under an owner that lives as long as the window: its event listeners keep the cached
- * lists current between opens, and end with it.
+ * lists current between opens, and end with it. `selection` is the rail's first pick.
  */
-export function createBrowserModel(server: ServerRef) {
+export function createBrowserModel(server: ServerRef, selection: RailSelection) {
   const client = () => server.client;
   const data = () => server.data;
+  // The rail's pick, one for every view: the lists hold one scope at a time, so the dialog and
+  // the side tab always list the same one.
+  const [picked, setPicked] = createSignal<RailSelection>(selection);
+  // Counts the views that went away. A view that stays syncs and searches again, since the one
+  // that left may have listed or searched for something else.
+  const [released, setReleased] = createSignal(0);
   // Set once a refs call answers that this server runs no server half; the rows then show no refs.
   const [missing, setMissing] = createSignal(false);
   const [now, setNow] = createSignal(Date.now());
@@ -433,8 +439,15 @@ export function createBrowserModel(server: ServerRef) {
         if (done) return;
         done = true;
         attached--;
+        setReleased((count) => count + 1);
       };
     },
+    /** The rail's pick every view lists. */
+    selection: picked,
+    /** Picks a rail tile for every view. */
+    select: (next: RailSelection) => setPicked(next),
+    /** Moves each time a view goes away; see {@link createBrowserView}. */
+    released,
     /** Moves the clock the rows' ages read. */
     tick: () => setNow(Date.now())
   };
@@ -448,21 +461,36 @@ export interface BrowserViewInput {
   readonly target: () => ListTarget;
   readonly view: () => PageView;
   readonly query: () => string;
+  /**
+   * Whether the view is on screen. A view that stays mounted while hidden, as the side tab does,
+   * syncs, searches and asks the forge only while it shows. Defaults to always.
+   */
+  readonly shown?: () => boolean;
 }
 
 /**
  * One view of the model: the groups of its view and search, and the forge calls it makes while
- * it shows. Call it under the view's owner. Its calls end with it: an open's `refresh` is aborted
- * when the dialog closes, so the request does not hold one of the app's four request slots for
- * the seconds the forge takes.
+ * it shows. Call it under the view's owner. Its calls end when it hides or goes: an open's
+ * `refresh` is aborted when the dialog closes, so the request does not hold one of the app's four
+ * request slots for the seconds the forge takes.
+ *
+ * The lists and the search are the model's, one for every view, so each view syncs and searches
+ * for itself when it shows and again when another view goes away (`released`).
  */
 export function createBrowserView(model: BrowserModel, input: BrowserViewInput) {
   const store = model.data;
-  onCleanup(model.attach());
-  // Cached rows show their ages as of now, not as of the last open.
-  model.tick();
-  const abort = new AbortController();
-  onCleanup(() => abort.abort());
+  const shown = input.shown ?? (() => true);
+  // The forge calls of the current showing, aborted when it hides or the view goes.
+  let abort = new AbortController();
+  createEffect(() => {
+    if (!shown()) return;
+    const current = new AbortController();
+    abort = current;
+    onCleanup(model.attach());
+    onCleanup(() => current.abort());
+    // Cached rows show their ages as of now, not as of the last time they showed.
+    untrack(model.tick);
+  });
 
   const pullGroups = createMemo((): PullGroup[] =>
     input.view() === 'pulls'
@@ -495,12 +523,30 @@ export function createBrowserView(model: BrowserModel, input: BrowserViewInput) 
     await model.sync(untrack(input.target), force);
     if (token === syncToken) setSettled(true);
   };
-  createEffect(on(input.target, () => void load()));
+  createEffect(
+    on([input.target, shown, model.released], () => {
+      if (untrack(shown)) void load();
+    })
+  );
+  // The search runs after the sync above, which shows a newly picked scope's lists first, so it
+  // searches those. The Pull requests view filters its own rows, so the session search is off
+  // there.
+  createEffect(() => {
+    if (!shown()) return;
+    model.released();
+    const all = input.target().selection.type === 'all';
+    const pulls = input.view() === 'pulls';
+    model.controller.search(
+      pulls ? '' : input.query(),
+      input.view() === 'archived',
+      all ? 'all' : 'project'
+    );
+  });
 
-  // Sessions this open already asked the forge about; the server refetches only stale refs, so
+  // Sessions this view already asked the forge about; the server refetches only stale refs, so
   // asking once per newly shown row, then every minute, keeps the rows current.
   const requested = new Set<string>();
-  /** Asks the forge about the first rows of `ids` this open has not asked about yet. */
+  /** Asks the forge about the first rows of `ids` this view has not asked about yet. */
   const refreshNew = (ids: readonly string[]) => {
     const fresh = ids.slice(0, REFRESH_ROWS).filter((id) => !requested.has(id));
     for (const id of fresh) requested.add(id);
@@ -510,13 +556,14 @@ export function createBrowserView(model: BrowserModel, input: BrowserViewInput) 
   // reads the rows wait for. Switching views and searching show rows the load never asked about;
   // a listed row waits for its cached read, while search hits outside the lists go at once.
   createEffect(() => {
-    if (!settled() || store.status !== 'ready') return;
+    if (!shown() || !settled() || store.status !== 'ready') return;
     const listed = new Set([...store.active, ...store.archived].map((session) => session.id));
     const ids = visibleIDs().filter((id) => store.refs[id] !== undefined || !listed.has(id));
     untrack(() => refreshNew(ids));
   });
 
   const ticker = setInterval(() => {
+    if (!untrack(shown)) return;
     model.tick();
     void model.controller.refresh(visibleIDs().slice(0, REFRESH_ROWS), abort.signal);
   }, REFRESH_INTERVAL);
@@ -526,7 +573,7 @@ export function createBrowserView(model: BrowserModel, input: BrowserViewInput) 
     groups,
     pullGroups,
     load,
-    /** This open's signal, for the forge calls its actions make. */
-    signal: abort.signal
+    /** The current showing's signal, for the forge calls the view's actions make. */
+    signal: () => abort.signal
   };
 }

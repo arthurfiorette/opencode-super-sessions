@@ -1,6 +1,6 @@
 // The window's calls that wait on a forge (`refresh`, `pull.details`) outside the browser. The
 // app lets four requests per server run at once (packages/app/src/runtime/server/request-queue-
-// machine.ts:4 at v2.4.2), and a `pull.details` can take 15 s, so the Work panels, headers and the
+// machine.ts:4 at v2.4.2), and a `pull.details` can take 15 s, so the Work lists, headers and the
 // pill of every open tab together held all four slots and the browser's own reads waited behind
 // them. They run one at a time here instead, which leaves the other slots to everything else.
 

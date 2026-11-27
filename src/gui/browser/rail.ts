@@ -61,8 +61,8 @@ export function selectionKey(
 /** What {@link createRail} reads. */
 export interface RailInput {
   readonly server: ServerRef;
-  /** The routed session; undefined on Home. */
-  readonly origin: { readonly id: string; readonly directory: string } | undefined;
+  /** The routed session; undefined on Home. The side tab's follows the route. */
+  readonly origin: () => { readonly id: string; readonly directory: string } | undefined;
   /** The routed session's project with the user's local name and icon, when the app has it. */
   readonly local: () => LocalProject | undefined;
   /** Every project's active sessions once known (`everyActive` of the browser model). */
@@ -80,7 +80,7 @@ export interface RailInput {
 
 /**
  * The rail's tiles: All first, then a tile for every project with an active session and for the
- * routed session's project, newest activity first. Call it under the dialog's owner.
+ * routed session's project, newest activity first. Call it under the view's owner.
  */
 export function createRail(input: RailInput) {
   // Every project's active sessions from the model, which keeps them across opens and rail picks,
@@ -96,8 +96,9 @@ export function createRail(input: RailInput) {
 
   /** The routed session's tile, once its project is known. */
   const routedKey = createMemo(() => {
-    if (input.origin === undefined) return undefined;
-    const id = input.origin.id;
+    const origin = input.origin();
+    if (origin === undefined) return undefined;
+    const id = origin.id;
     const info =
       input.server.data.session.get(id) ??
       sessions().find((session) => session.id === id) ??
@@ -150,7 +151,7 @@ export function createRail(input: RailInput) {
           look: sessionProjectLook(
             input.server,
             project,
-            directory ?? group.sample?.location.directory ?? input.origin?.directory ?? '',
+            directory ?? group.sample?.location.directory ?? input.origin()?.directory ?? '',
             local
           ),
           running: group.running,

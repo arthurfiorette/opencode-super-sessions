@@ -1,9 +1,11 @@
 import type { PluginInfo } from '@opencode/client';
 import type {
+  Layout,
   Links,
   ServerRef,
   Servers,
   SessionRef,
+  Sessions,
   SlotMap,
   System,
   Tabs
@@ -144,6 +146,53 @@ export const RAIL_KEYS = { previous: 'alt+arrowup', next: 'alt+arrowdown' } as c
 
 /** The `+` menu before the side panel's tabs, where `MenuItem` adds entries (registries.ts:105). */
 export const PANEL_MENU = 'session.panel';
+
+/**
+ * Shows a pinned side tab of the plugin in a session, or hides the side region while the tab
+ * shows there, for a toggle such as the session header's `+N`. A pinned tab is listed in every
+ * strip and never closed, so `layout.toggle`, which closes a visible tab, does not apply.
+ * `layout.open` without a placement only selects a pinned tab, without storing it, and opens the
+ * side region (packages/app/src/runtime/plugin/host-apis.tsx:910-917 at v2.4.2); a `select`
+ * placement would store it in the strip (:889). `layout.hide` closes the region while the tab is
+ * visible (:978).
+ */
+export function togglePinnedTab(
+  layout: Pick<Layout, 'open' | 'hide' | 'state'>,
+  key: string,
+  session: SessionRef
+): void {
+  if (layout.state(key, session) === 'visible') layout.hide(key, session);
+  else layout.open(key, session);
+}
+
+/**
+ * Opens a session in a focused tab from a side tab of the plugin, keeping that tab on screen
+ * there when it was visible. The side region's open state belongs to each session tab
+ * (`region` in packages/app/src/shell/tabs/tabs.tsx:878 at v2.4.2), unless Settings > General >
+ * "Keep side panel open across sessions" is on, when one value holds for every tab (tabs.tsx:124
+ * and :881; `sharedSidePanel`, off by default, packages/app/src/settings/model.tsx:475). So a
+ * session that never showed its side region opens without it. `layout.open` on the session's own
+ * `SessionRef`, which `sessions.list()` holds for every session tab (host-apis.tsx:605), selects
+ * the pinned tab there and opens its region (see {@link togglePinnedTab}); `background` keeps a
+ * narrow window on the conversation. With the shared setting on, the open only selects the tab.
+ */
+export function openSessionKeepingTab(
+  app: {
+    readonly tabs: Pick<Tabs, 'open'>;
+    readonly sessions: Pick<Sessions, 'list'>;
+    readonly layout: Pick<Layout, 'open'>;
+  },
+  key: string,
+  session: { server: string; id: string },
+  keep: boolean
+): void {
+  openSession(app.tabs, session, true);
+  if (!keep) return;
+  const ref = app.sessions
+    .list()
+    .find((open) => open.server.id === session.server && open.id === session.id);
+  if (ref !== undefined) app.layout.open(key, ref, { background: true });
+}
 
 /**
  * The layout key of one of the plugin's side panel tabs, which `ctx.layout.open` and `state` take:

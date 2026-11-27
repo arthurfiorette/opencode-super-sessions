@@ -12,7 +12,7 @@ import { ProjectAvatar } from '../project-avatar.js';
 import { RefLine, WorkLinkLine } from '../ref-view.js';
 
 // The browser's rows: a session with its pull request, issue and link lines, and a pull request
-// of the Pull requests view. The preview's Work list is the Work panel's (src/gui/status).
+// of the Pull requests view. The preview's Work list is the side tab's (src/gui/status).
 
 /**
  * Issue and link lines a row lists before the rest fold into `+N more`, as the TUI's rows do
@@ -127,6 +127,8 @@ export interface SessionRowProps {
    * sidebar's flat lists do. Undefined in a one-project list.
    */
   readonly project?: ProjectLook | undefined;
+  /** The session the window routes, which the side tab's list marks. Defaults to false. */
+  readonly current?: boolean;
   readonly onSelect: () => void;
   readonly onOpen: () => void;
   readonly ref: (element: HTMLElement) => void;
@@ -155,10 +157,15 @@ export function SessionRow(props: SessionRowProps) {
     <div
       ref={props.ref}
       class="ss-row"
-      classList={{ 'ss-row-selected': props.selected, 'ss-row-avatared': !!props.project }}
+      classList={{
+        'ss-row-selected': props.selected,
+        'ss-row-avatared': !!props.project,
+        'ss-row-current': props.current === true
+      }}
       role="option"
       tabIndex={-1}
       aria-selected={props.selected}
+      aria-current={props.current === true ? 'page' : undefined}
       data-session={props.session.id}
       onClick={(event) => {
         if (!onControl(event)) props.onSelect();

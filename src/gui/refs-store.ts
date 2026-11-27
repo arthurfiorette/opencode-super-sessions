@@ -6,7 +6,7 @@ import { createSidebarState, type SidebarController } from '../sidebar-state.js'
 import type { ForgeQueue } from './forge-queue.js';
 import { rpcAt, rpcOn, serverPluginMissing } from './server.js';
 
-// One fetcher per session for every GUI surface that shows its refs (the header, the Work panel,
+// One fetcher per session for every GUI surface that shows its refs (the header, the Work lists,
 // the composer pill), so they agree and ask the server once. It lives in setup, not in module
 // state, and an entry lives only while something reads it.
 
