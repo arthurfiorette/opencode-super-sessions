@@ -697,9 +697,10 @@ export function createPageController(
      * Loads both session lists for a scope. Earlier loads still in flight are ignored. A load
      * from empty data holds the lists back until their refs and Done lookups are in, for at most
      * the `hold` option's ms, so rows do not grow PR lines and then leave for Done right after
-     * they appear. A reload, and every load without a hold, publishes the lists at once.
+     * they appear. A reload, and every load without a hold, publishes the lists at once. With
+     * `refs: 'missing'` only sessions without refs yet have theirs read.
      */
-    async load(scope: PageScope): Promise<void> {
+    async load(scope: PageScope, options: { refs?: 'all' | 'missing' } = {}): Promise<void> {
       const token = ++loadToken;
       const cold = data.status === 'loading' && hold > 0;
       try {
@@ -708,7 +709,11 @@ export function createPageController(
           deps.list({ archived: true, scope })
         ]);
         if (token !== loadToken) return;
-        const ids = [...active, ...archived].map((session) => session.id);
+        // `missing` reads refs only for sessions shown without any, as after a switch to lists
+        // whose sessions another scope already read.
+        const ids = [...active, ...archived]
+          .map((session) => session.id)
+          .filter((id) => options.refs !== 'missing' || data.refs[id] === undefined);
         let shown = !cold;
         if (shown) publish({ status: 'ready', active, archived });
         const found: Found = {};
@@ -735,6 +740,20 @@ export function createPageController(
       } catch {
         if (token === loadToken) publish({ status: 'error' });
       }
+    },
+
+    /**
+     * Shows other lists at once, such as another scope's cached or derived sessions, and drops
+     * loads in flight, whose answers belong to the lists shown before. Refs and Done lookups are
+     * per session and stay. Without lists the page shows as loading until the next load.
+     */
+    show(lists: { active: SessionInfo[]; archived: SessionInfo[] } | undefined): void {
+      loadToken++;
+      publish(
+        lists === undefined
+          ? { status: 'loading', active: [], archived: [] }
+          : { status: 'ready', active: lists.active, archived: lists.archived }
+      );
     },
 
     /** Clears the lists and lookups, for a scope or project whose cache does not apply. */

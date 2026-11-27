@@ -1,6 +1,6 @@
 import type { SessionInfo } from '@opencode/client';
 import type { ServerRef } from '@opencode/plugin/gui';
-import { createEffect, createMemo, createSignal, untrack } from 'solid-js';
+import { createEffect, createMemo, untrack } from 'solid-js';
 import type { ProjectLook } from '../../host/gui.js';
 import { activityTime } from '../../host/session-info.js';
 import type { SearchScope } from '../../rpc.js';
@@ -8,8 +8,8 @@ import { type LocalProject, sessionProjectLook } from '../project-avatar.js';
 
 // The browser's project rail: a tile for every project, then one for all of them, with each
 // project's running and unread sessions. The tiles come from one list of every project's active
-// sessions, which the browser already holds while it shows all projects and otherwise asks for
-// once per open, beside its own load.
+// sessions, which the browser model holds while it shows all projects and otherwise asks for at
+// most once per open, beside its own load.
 
 /**
  * What the rail selects: every project, the routed session's project (resolved from the session
@@ -35,9 +35,6 @@ export interface RailTile {
 
 /** The All tile's key. */
 export const ALL_KEY = 'all';
-
-/** Sessions asked for the rail when the browser lists one project: the list's own page size. */
-const RAIL_LIMIT = 200;
 
 /**
  * The tile a session belongs to: its project, or its directory for a session outside one, which
@@ -68,9 +65,13 @@ export interface RailInput {
   readonly origin: { readonly id: string; readonly directory: string } | undefined;
   /** The routed session's project with the user's local name and icon, when the app has it. */
   readonly local: () => LocalProject | undefined;
-  /** Whether the browser lists every project now. */
+  /** Every project's active sessions once known (`everyActive` of the browser model). */
+  readonly every: () => readonly SessionInfo[] | undefined;
+  /** Asks for {@link every} unless a fresh list is in (`wantEveryActive`). */
+  readonly want: () => void;
+  /** Whether the browser lists every project now, whose list is then {@link every} too. */
   readonly all: () => boolean;
-  /** The browser's active sessions once loaded, every project's while `all()` holds. */
+  /** The browser's active sessions once loaded. */
   readonly active: () => readonly SessionInfo[] | undefined;
   readonly running: (session: SessionInfo) => boolean;
   /** Whether the session is unread or waits on the user. */
@@ -82,27 +83,16 @@ export interface RailInput {
  * routed session's project, newest activity first. Call it under the dialog's owner.
  */
 export function createRail(input: RailInput) {
-  // Every project's active sessions: the browser's own list while it shows all projects, which
-  // stays current, else one list asked for once and kept for the rest of the open.
-  const [fetched, setFetched] = createSignal<readonly SessionInfo[]>();
-  const [shownAll, setShownAll] = createSignal<readonly SessionInfo[]>();
+  // Every project's active sessions from the model, which keeps them across opens and rail picks,
+  // so a pick never reloads the tiles. While All shows, its own list is that list; otherwise it
+  // is asked for once per view, unless the model's is fresh.
   let asked = false;
   createEffect(() => {
-    const active = input.active();
-    if (input.all()) {
-      if (active !== undefined) setShownAll(active);
-      return;
-    }
-    if (asked || untrack(shownAll) !== undefined) return;
+    if (asked || input.all()) return;
     asked = true;
-    untrack(() => input.server.client)
-      .session.list({ limit: RAIL_LIMIT, order: 'desc', parentID: null, archived: false })
-      .then((page) => setFetched(page.data))
-      .catch(() => {
-        // The tiles keep to the routed project; the next open asks again.
-      });
+    untrack(input.want);
   });
-  const sessions = (): readonly SessionInfo[] => shownAll() ?? fetched() ?? [];
+  const sessions = (): readonly SessionInfo[] => input.every() ?? [];
 
   /** The routed session's tile, once its project is known. */
   const routedKey = createMemo(() => {

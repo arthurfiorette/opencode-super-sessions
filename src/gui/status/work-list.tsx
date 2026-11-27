@@ -1,13 +1,20 @@
 import { usePlugin } from '@opencode/plugin/gui';
 import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from 'solid-js';
-import { checkMark, hasListedChecks, listedChecks, refUrl } from '../../refs/look.js';
+import { checkMark, hasListedChecks, listedChecks, openBadges, refUrl } from '../../refs/look.js';
 import { type Ref, refKey } from '../../refs/ref.js';
 import { checksPage, openReview, type WorkLine, workLines } from '../../refs/work.js';
 import { linkLabel } from '../../refs/work-link.js';
 import type { SessionRefView } from '../../rpc.js';
 import { useOpenUrl } from '../links.js';
 import { Octicon } from '../octicons.js';
-import { ExternalLink, octiconOf, RefLine, toneClass, WorkLinkLine } from '../ref-view.js';
+import {
+  ExternalLink,
+  octiconOf,
+  RefBadges,
+  RefLine,
+  toneClass,
+  WorkLinkLine
+} from '../ref-view.js';
 import type { RefsStore, SessionTarget } from '../refs-store.js';
 import { refLabel, type WorkActions, type WorkItem, workActions } from './actions.js';
 import { createPullDetails } from './details.js';
@@ -106,7 +113,10 @@ interface LineProps {
   readonly actions: WorkActions | undefined;
 }
 
-/** One line of the list: a ref or work link with its actions, the failed checks, or a label. */
+/**
+ * One line of the list: a ref with its status line and failed checks, a work link, or a label,
+ * each with its actions.
+ */
 function Line(props: LineProps): JSX.Element {
   const ctx = usePlugin();
   const line = props.line;
@@ -128,49 +138,57 @@ function Line(props: LineProps): JSX.Element {
       </li>
     );
   }
-  const state = () => props.view?.states[refKey(line.ref)];
-  if (line.kind === 'status') {
-    const failed = () =>
-      hasListedChecks(openReview(state()))
-        ? listedChecks(props.details(refKey(line.ref))?.checks)
-        : [];
-    return (
-      <Show when={failed().length > 0}>
-        <li class="ss-work-checks">
-          <ul>
-            <For each={failed().slice(0, FAILED_SHOWN)}>
-              {(check) => {
-                const mark = checkMark(check.status);
-                return (
-                  <li>
-                    <ExternalLink class="ss-check" url={check.url ?? checksPage(line.ref, state())}>
-                      <Octicon name={octiconOf(mark.icon)} size={12} class={toneClass(mark.tone)} />
-                      <span class="ss-check-name">{check.name}</span>
-                    </ExternalLink>
-                  </li>
-                );
-              }}
-            </For>
-            <Show when={failed().length > FAILED_SHOWN}>
-              <li>
-                <ExternalLink class="ss-check ss-tone-muted" url={checksPage(line.ref, state())}>
-                  {ctx.t('work.more', { count: failed().length - FAILED_SHOWN })}
-                </ExternalLink>
-              </li>
-            </Show>
-          </ul>
-        </li>
-      </Show>
-    );
-  }
+  // A pull request's status and failed checks draw under its own line, in its block, below.
+  if (line.kind === 'status') return null;
+  const ref = line.ref;
+  const state = () => props.view?.states[refKey(ref)];
+  /** Whether the line has its second, status line: an open or draft one with any to show. */
+  const status = () => {
+    const current = state();
+    if (current?.status !== 'open' && current?.status !== 'draft') return false;
+    return current.stack !== undefined || openBadges(current, true).length > 0;
+  };
+  const failed = () =>
+    hasListedChecks(openReview(state())) ? listedChecks(props.details(refKey(ref))?.checks) : [];
   const item = (): WorkItem => ({
-    key: refKey(line.ref),
-    url: refUrl(line.ref, state()),
-    label: refLabel(line.ref)
+    key: refKey(ref),
+    url: refUrl(ref, state()),
+    label: refLabel(ref)
   });
+  // The glyph and number take the first column; the title, the status line and the failed checks
+  // share the second, so each starts where the title does (status.css).
   return (
-    <li class="ss-work-item">
-      <RefLine item={line.ref} state={state()} wrap />
+    <li class="ss-work-item ss-work-ref">
+      <RefLine item={ref} state={state()} wrap badged={false} stacked={false} />
+      <Show when={status()}>
+        <div class="ss-work-status" data-work-status={refKey(ref)}>
+          <RefBadges state={state()} stacked badged counts />
+        </div>
+      </Show>
+      <Show when={failed().length > 0}>
+        <ul class="ss-work-checks">
+          <For each={failed().slice(0, FAILED_SHOWN)}>
+            {(check) => {
+              const mark = checkMark(check.status);
+              return (
+                <li>
+                  <ExternalLink class="ss-check" url={check.url ?? checksPage(ref, state())}>
+                    <Octicon name={octiconOf(mark.icon)} size={12} class={toneClass(mark.tone)} />
+                    <span class="ss-check-name">{check.name}</span>
+                  </ExternalLink>
+                </li>
+              );
+            }}
+          </For>
+          <Show when={failed().length > FAILED_SHOWN}>
+            <li>
+              <ExternalLink class="ss-check ss-tone-muted" url={checksPage(ref, state())}>
+                {ctx.t('work.more', { count: failed().length - FAILED_SHOWN })}
+              </ExternalLink>
+            </li>
+          </Show>
+        </ul>
+      </Show>
       <Show when={props.actions}>
         {(actions) => <RowActions item={item()} actions={actions()} />}
       </Show>

@@ -2,7 +2,12 @@ import type { SessionInfo } from '@opencode/client';
 import { createKeyed, type ServerRef } from '@opencode/plugin/gui';
 import { createEffect, createMemo, createSignal, on, onCleanup, untrack } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
-import { projectListFilters, sessionScope, wholeProject } from '../../host/session-info.js';
+import {
+  inScope,
+  projectListFilters,
+  sessionScope,
+  wholeProject
+} from '../../host/session-info.js';
 import {
   createPageController,
   filterPulls,
@@ -39,6 +44,17 @@ const REFRESH_INTERVAL = 60_000;
 // the dialog shows. The `refs` read has the server refresh every stale row in the background
 // anyway, so the rest of the list stays current without a call of the window's own.
 const REFRESH_ROWS = 30;
+// Every project's active sessions asked for the rail and the instant switch: the list's own page.
+const EVERY_LIMIT = 200;
+// The All scope's key among the cached scopes.
+const ALL_SCOPE = JSON.stringify({ type: 'all' } satisfies SearchScope);
+
+/** A scope's lists as last shown, with when they loaded and whether a session event came since. */
+interface ScopeLists {
+  readonly lists: { readonly active: SessionInfo[]; readonly archived: SessionInfo[] };
+  readonly at: number;
+  dirty: boolean;
+}
 
 /** Where the dialog lists from, decided when it opens. */
 export interface BrowserTarget {
@@ -188,38 +204,124 @@ export function createBrowserModel(server: ServerRef) {
   const isDone = (sessionID: string) =>
     rowsOf(doneGroups()).some((session) => session.id === sessionID);
 
-  // The resolved scope the cached lists were loaded for, and when. Keyed by what the lists hold
-  // rather than by the pick: every worktree of a project lists the same sessions.
+  // Every project's active sessions: the All lists while they show, else one list asked for the
+  // rail, at most once per FRESH_FOR. The rail's tiles count from it, and a switch to a project
+  // shows that project's share of it at once.
+  const [everyActive, setEveryActive] = createSignal<readonly SessionInfo[]>();
+  let everyAt = 0;
+  let everyAsking = false;
+  /** Asks for every project's active sessions unless a fresh list is in. */
+  const wantEveryActive = () => {
+    if (everyAsking || Date.now() - everyAt <= FRESH_FOR) return;
+    everyAsking = true;
+    client()
+      .session.list({ limit: EVERY_LIMIT, order: 'desc', parentID: null, archived: false })
+      .then((page) => {
+        setEveryActive(page.data);
+        everyAt = Date.now();
+      })
+      .catch(() => {
+        // The tiles keep what they had; the next open asks again.
+      })
+      .finally(() => {
+        everyAsking = false;
+      });
+  };
+
+  // The resolved scope the shown lists belong to, and when they loaded. Keyed by what the lists
+  // hold rather than by the pick: every worktree of a project lists the same sessions.
   let loadedFor: string | undefined;
   let loadedAt = 0;
   let dirty = false;
   let syncToken = 0;
   // Views on screen. Session events only mark the lists dirty while there is none.
   let attached = 0;
+  // The lists of the other scopes shown before, by resolved scope, each with its own age, so
+  // switching back to one draws at once and asks again only past FRESH_FOR or a session event.
+  const scopes = new Map<string, ScopeLists>();
+  const [showsAll, setShowsAll] = createSignal(false);
+  // Set while a load runs, for the views' progress hint over the rows already on screen.
+  const [loading, setLoading] = createSignal(false);
+  let loads = 0;
+
+  // While All shows, its active list is every project's.
+  createEffect(() => {
+    if (!showsAll() || store.status !== 'ready') return;
+    setEveryActive([...store.active]);
+    everyAt = loadedAt;
+  });
 
   /**
-   * Brings the lists up to date for `next`. Cached lists for the same resolved scope stay on
-   * screen and reload in the background when older than {@link FRESH_FOR}, dirty or failed; a
-   * different scope starts over. Resolves once the lists and their refs are settled, or at once
-   * when the cache is fresh. `force` reloads even fresh lists, as Retry does.
+   * What a scope shows before its own list answers: its lists from an earlier visit, else its
+   * share of every project's active sessions and of the All archived list. Undefined when nothing
+   * in memory has any of its sessions, so the view shows as loading.
+   */
+  const seedFor = (key: string, scope: SearchScope) => {
+    const cached = scopes.get(key);
+    if (cached !== undefined) return cached;
+    const all = scopes.get(ALL_SCOPE)?.lists;
+    const active = (everyActive() ?? all?.active ?? []).filter((item) => inScope(item, scope));
+    const archived = (all?.archived ?? []).filter((item) => inScope(item, scope));
+    if (active.length === 0 && archived.length === 0) return undefined;
+    // Age 0 and dirty: shown at once, loaded in the background right after.
+    return { lists: { active, archived }, at: 0, dirty: true };
+  };
+
+  /** Shows the lists of `key` in place of the current ones, keeping those for a later visit. */
+  const enter = (key: string, scope: SearchScope) => {
+    if (key === loadedFor) return;
+    const shown = untrack(() => controller.snapshot());
+    if (loadedFor !== undefined && shown.status === 'ready') {
+      scopes.set(loadedFor, {
+        lists: { active: [...shown.active], archived: [...shown.archived] },
+        at: loadedAt,
+        dirty
+      });
+    }
+    const seed = seedFor(key, scope);
+    controller.show(seed?.lists);
+    loadedFor = key;
+    loadedAt = seed?.at ?? 0;
+    dirty = seed?.dirty ?? true;
+    setShowsAll(scope.type === 'all');
+  };
+
+  /**
+   * The rail's pick resolved without a request, when it can be: the routed project needs the
+   * routed session, which the server may not have synced yet.
+   */
+  const knownScope = (): SearchScope | undefined => {
+    const { selection, origin } = target;
+    if (selection.type === 'all') return { type: 'all' };
+    if (selection.type !== 'routed') return selection;
+    if (origin === undefined) return { type: 'all' };
+    const info =
+      data().session.get(origin.id) ??
+      [...store.active, ...store.archived].find((item) => item.id === origin.id);
+    return info === undefined ? undefined : wholeProject(sessionScope(info));
+  };
+
+  /**
+   * Brings the lists up to date for `next`. Lists of the same resolved scope stay on screen and
+   * reload in the background when older than {@link FRESH_FOR}, dirty or failed. Another scope
+   * shows at once from what the model holds (see `seedFor`) and loads in the background, with
+   * only its sessions without refs asking for theirs. Resolves once the lists and their refs are
+   * settled, or at once when the lists are fresh. `force` reloads even fresh lists, as Retry does.
    */
   const sync = async (next: ListTarget, force = false): Promise<void> => {
-    // A new rail pick starts over at once, before the view's search runs for it; a new routed
-    // session waits for its scope below, so another worktree of the project keeps the lists.
-    if (JSON.stringify(next.selection) !== JSON.stringify(target.selection)) {
-      if (loadedFor !== undefined) controller.reset();
-      loadedFor = undefined;
-    }
     target = next;
     const token = ++syncToken;
     // The lists' first RPC waits on these; started now, they run beside the lists.
     warmRpc(server, next.origin?.directory);
+    const previous = loadedFor;
+    // Before the view's search runs for the new pick, so it searches the new lists.
+    const known = untrack(knownScope);
+    if (known !== undefined) enter(JSON.stringify(known), known);
     // An unresolved scope matches nothing, so the load runs and reports the failure.
-    const key = await searchScope().then(
-      (resolved) => JSON.stringify(resolved),
-      () => undefined
-    );
+    const resolved = await searchScope().catch(() => undefined);
     if (token !== syncToken) return;
+    const key = resolved === undefined ? undefined : JSON.stringify(resolved);
+    if (resolved !== undefined && key !== undefined) enter(key, resolved);
     const stale =
       force ||
       dirty ||
@@ -228,16 +330,22 @@ export function createBrowserModel(server: ServerRef) {
       untrack(() => store.status) !== 'ready' ||
       Date.now() - loadedAt > FRESH_FOR;
     if (!stale) return;
-    if (key !== loadedFor && loadedFor !== undefined) controller.reset();
-    loadedFor = key;
     loadedAt = Date.now();
     dirty = false;
-    await controller.load(pageScope());
+    loads++;
+    setLoading(true);
+    try {
+      await controller.load(pageScope(), previous !== loadedFor ? { refs: 'missing' } : {});
+    } finally {
+      loads--;
+      if (loads === 0) setLoading(false);
+    }
   };
 
   let reloadTimer: ReturnType<typeof setTimeout> | undefined;
   /** Reloads once a burst of session changes settles while a view shows; else marks dirty. */
   const changed = () => {
+    for (const cached of scopes.values()) cached.dirty = true;
     dirty = true;
     if (attached === 0) return;
     clearTimeout(reloadTimer);
@@ -247,7 +355,10 @@ export function createBrowserModel(server: ServerRef) {
   // follow it as the refs store's do.
   createKeyed(data, (events) => {
     const offs = [
-      events.on('session.deleted', (event) => controller.removed(event.data.sessionID)),
+      events.on('session.deleted', (event) => {
+        controller.removed(event.data.sessionID);
+        for (const cached of scopes.values()) cached.dirty = true;
+      }),
       // A link or unlink, here or in a TUI, writes the session's metadata: read its refs again,
       // or on the next open when nothing shows them.
       events.on('session.metadata.updated', (event) => {
@@ -303,6 +414,11 @@ export function createBrowserModel(server: ServerRef) {
     /** Whether the session or one of its subagents runs, by the server's live status. */
     isRunning: running,
     sync,
+    /** A load runs, over the rows on screen when there are any. */
+    loading,
+    /** Every project's active sessions, once known; see `wantEveryActive`. */
+    everyActive,
+    wantEveryActive,
     rpcOptions,
     /** The scope the controller's search takes for the latest sync. */
     pageScope,

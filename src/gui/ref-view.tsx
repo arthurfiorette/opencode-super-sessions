@@ -148,7 +148,39 @@ export function RefLine(props: RefLineProps) {
         <Octicon name={OCTICONS[refGlyph(props.item.kind, status())]} class="ss-ref-icon" />
         <span class="ss-ref-number">{refNumber(props.item)}</span>
       </span>
-      <Show when={(props.stacked ?? true) && props.state?.stack}>
+      <RefBadges
+        state={props.state}
+        stacked={props.stacked ?? true}
+        badged={props.badged ?? true}
+        counts={props.counts ?? true}
+      />
+      <Show when={(props.titled ?? true) && props.state?.title}>
+        {(title) => <span class="ss-ref-title">{title()}</span>}
+      </Show>
+    </ExternalLink>
+  );
+}
+
+/** Props of {@link RefBadges}. */
+export interface RefBadgesProps {
+  readonly state: RefState | undefined;
+  /** Draws a stacked pull request's place in its stack. */
+  readonly stacked: boolean;
+  /** Draws the review and CI badges of an open pull request. */
+  readonly badged: boolean;
+  /** Draws `passed/total` among the badges. */
+  readonly counts: boolean;
+}
+
+/**
+ * A pull request's stack place, then the review and CI badges of an open one, in the shared
+ * order (`openBadges`). Nothing for an issue or a pull request without either.
+ */
+export function RefBadges(props: RefBadgesProps) {
+  const ctx = usePlugin();
+  return (
+    <>
+      <Show when={props.stacked && props.state?.stack}>
         {(stack) => (
           <span class="ss-ref-stack" title={ctx.t('ref.stack')}>
             <Octicon name="stack" size={12} />
@@ -156,8 +188,8 @@ export function RefLine(props: RefLineProps) {
           </span>
         )}
       </Show>
-      <Show when={props.badged ?? true}>
-        <For each={openBadges(props.state, props.counts ?? true)}>
+      <Show when={props.badged}>
+        <For each={openBadges(props.state, props.counts)}>
           {(badge) => (
             <span
               class={`ss-badge ss-badge-${badge.kind} ${toneClass(badge.tone)}`}
@@ -171,10 +203,7 @@ export function RefLine(props: RefLineProps) {
           )}
         </For>
       </Show>
-      <Show when={(props.titled ?? true) && props.state?.title}>
-        {(title) => <span class="ss-ref-title">{title()}</span>}
-      </Show>
-    </ExternalLink>
+    </>
   );
 }
 

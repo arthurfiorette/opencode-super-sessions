@@ -179,11 +179,19 @@ test('+N in the header shows the Work panel, and hides it again', async () => {
   assert.equal(more.getAttribute('aria-pressed'), 'false');
 });
 
-test('a long Work title wraps under itself instead of being cut', async () => {
+test('a Work title wraps on its own line, and only an open pull request gets a status line', async () => {
   const long = 'Make the session browser follow the sidebar spacing and type '.repeat(4).trim();
   const view = viewOf({
-    links: [{ ref: bug, source: 'manual', linkedAt: 1 }],
-    states: { [key(bug)]: state(bug, { status: 'open', title: long }) }
+    links: [
+      { ref: top, source: 'agent', linkedAt: 3 },
+      { ref: closed, source: 'manual', linkedAt: 2 },
+      { ref: bug, source: 'manual', linkedAt: 1 }
+    ],
+    states: {
+      [key(top)]: state(top, { status: 'open', title: long, review: failing }),
+      [key(closed)]: state(closed, { status: 'closed' }),
+      [key(bug)]: state(bug, { status: 'open' })
+    }
   });
   const { session } = await start(() => view);
   const panel = gui.panel('work', session);
@@ -199,6 +207,16 @@ test('a long Work title wraps under itself instead of being cut', async () => {
   const style = getComputedStyle(title);
   assert.equal(style.whiteSpace, 'normal');
   assert.notEqual(style.textOverflow, 'ellipsis');
+  // The badges left the title's line for a line of their own under it.
+  const block = title.closest('li');
+  assert.equal(title.closest('a').querySelector('.ss-badge'), null);
+  const status = block.querySelector(`[data-work-status="${key(top)}"]`);
+  assert.ok(status.querySelector('.ss-badge'));
+  assert.ok(!status.contains(title));
+  // A closed pull request and an issue have none.
+  assert.equal(panel.container.querySelector(`[data-work-status="${key(closed)}"]`), null);
+  assert.equal(panel.container.querySelector(`[data-work-status="${key(bug)}"]`), null);
+  assert.equal(panel.container.querySelectorAll('[data-work-status]').length, 1);
 });
 
 test('surfaces of one session share one fetch, which stops once none shows it', async () => {

@@ -95,6 +95,22 @@ export function projectListFilters(
 }
 
 /**
+ * Whether `session.list` with {@link projectListFilters} of `scope` lists the session: the
+ * project id, the exact subpath when one is given, or the exact directory, as the host matches
+ * them (packages/core/src/session/store.ts:159-162 at v2.4.2). The Desktop browser filters lists it
+ * holds with it, to show a scope at once before the server answers for it.
+ */
+export function inScope(
+  session: Pick<SessionInfo, 'projectID' | 'subpath' | 'location'>,
+  scope: SearchScope
+): boolean {
+  if (scope.type === 'all') return true;
+  if (scope.type === 'directory') return session.location.directory === scope.directory;
+  if (session.projectID !== scope.project) return false;
+  return scope.subpath === '' || (session.subpath ?? '') === scope.subpath;
+}
+
+/**
  * Whether a session finished a run the user has not looked at since: the host's own unread rule
  * for tabs (packages/tui/src/context/session-tabs.tsx:125). `time.viewed` has no doc comment in
  * the schema, so this follows the host's reading of it.

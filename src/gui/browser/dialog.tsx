@@ -13,6 +13,7 @@ import {
   createMemo,
   createSignal,
   For,
+  type JSX,
   Match,
   onCleanup,
   onMount,
@@ -173,15 +174,16 @@ export function openBrowser(
   });
 }
 
-/** A group's header in the list's single keyed run of items. */
-interface ListHeader {
-  readonly header: string;
+/**
+ * A group of the list, the same object on every publish of its title, so the group's block and
+ * the rows in it stay mounted. `title` is undefined for the untitled group of a plain list.
+ */
+interface ListGroup {
+  readonly title: string | undefined;
 }
 
-/** Whether a list item is a group header rather than a row. */
-function isHeader(item: object): item is ListHeader {
-  return 'header' in item;
-}
+/** Row height in px a skipped group is laid out with until it was drawn once (browser.css). */
+const ROW_ESTIMATE = 40;
 
 /** Whether two builds of a pull request row show the same thing. */
 function samePull(a: PullRow, b: PullRow): boolean {
@@ -254,26 +256,26 @@ function SessionBrowser(props: SessionBrowserProps) {
 
   const rows = createMemo(() => rowsOf(browser.groups()));
   const pulls = createMemo(() => browser.pullGroups().flatMap((group) => group.pulls));
-  // The list as one keyed run of headers and rows. Rows are the store's own session objects and
-  // headers are kept by title, so a publish (refs arriving, a run ending) only updates the rows
-  // that changed instead of building every row of a group again.
-  const headers = new Map<string, ListHeader>();
-  /** The header object of a group title, the same one on every publish. */
-  const header = (title: string): ListHeader => {
-    let known = headers.get(title);
-    if (known === undefined) {
-      known = { header: title };
-      headers.set(title, known);
+  // The list as keyed groups of keyed rows. Rows are the store's own session objects and groups
+  // are kept by title, so a publish (refs arriving, a run ending, a project's full list after its
+  // cached share) only updates the rows that changed instead of building every row again.
+  const known = new Map<string, ListGroup>();
+  /** The group object of a title in a list (`sessions` or `pulls`), the same on every publish. */
+  const groupOf = (list: string, title: string | undefined): ListGroup => {
+    const key = `${list}\n${title ?? ''}`;
+    let found = known.get(key);
+    if (found === undefined) {
+      found = { title };
+      known.set(key, found);
     }
-    return known;
+    return found;
   };
-  const items = createMemo(
-    (): Array<ListHeader | SessionInfo> =>
-      browser
-        .groups()
-        .flatMap((group) =>
-          group.title === undefined ? group.sessions : [header(group.title), ...group.sessions]
-        )
+  const sessionGroups = createMemo(() =>
+    browser.groups().map((group) => groupOf('sessions', group.title))
+  );
+  const sessionsIn = createMemo(
+    () =>
+      new Map(browser.groups().map((group) => [groupOf('sessions', group.title), group.sessions]))
   );
   // Pull request rows are built anew on each publish; one whose fields are unchanged is kept.
   const pullItems = createMemo(
@@ -287,14 +289,19 @@ function SessionBrowser(props: SessionBrowserProps) {
     },
     new Map()
   );
-  const pullList = createMemo(
-    (): Array<ListHeader | PullRow> =>
-      browser
-        .pullGroups()
-        .flatMap((group) => [
-          header(group.title),
-          ...group.pulls.map((item) => pullItems().get(item.key) ?? item)
-        ])
+  const pullGroups = createMemo(() =>
+    browser.pullGroups().map((group) => groupOf('pulls', group.title))
+  );
+  const pullsIn = createMemo(
+    () =>
+      new Map(
+        browser
+          .pullGroups()
+          .map((group) => [
+            groupOf('pulls', group.title),
+            group.pulls.map((item) => pullItems().get(item.key) ?? item)
+          ])
+      )
   );
 
   // Rows change under the selection when sessions are archived, restored or become Done: the row
@@ -403,6 +410,8 @@ function SessionBrowser(props: SessionBrowserProps) {
         ? undefined
         : { id: project.id, name: project.name, icon: project.icon };
     },
+    every: model.everyActive,
+    want: model.wantEveryActive,
     all: () => scope() === 'all',
     active: () => (store.status === 'ready' ? store.active : undefined),
     running: (session) => running(session),
@@ -411,15 +420,17 @@ function SessionBrowser(props: SessionBrowserProps) {
   /** The tile the rail shows as picked. */
   const pickedTile = () => selectionKey(selection(), rail.routedKey());
   /**
-   * Lists a tile's sessions, keeping the view and the search, and selects the first row. The pick
-   * outlasts the open: `all`, or `project`, which the next open reads as the routed project. Only
-   * this pick writes, so the old `allProjects` is read once and dropped here.
+   * Lists a tile's sessions, keeping the view and the search, and selects the first row, at the
+   * top of the list. The pick outlasts the open: `all`, or `project`, which the next open reads as
+   * the routed project. Only this pick writes, so the old `allProjects` is read once and dropped
+   * here.
    */
   const pickTile = (tile: RailTile) => {
     if (tile.key === pickedTile()) return;
     setSelection(tile.selection);
     setSelected(undefined);
     setPull(undefined);
+    list?.scrollTo?.({ top: 0 });
     props.prefs.update((draft) => {
       draft.rail = tile.key === ALL_KEY ? 'all' : 'project';
       delete draft.allProjects;
@@ -460,6 +471,7 @@ function SessionBrowser(props: SessionBrowserProps) {
   const alt = (action: AltAction) => altChord(action, layout.latest);
 
   let root: HTMLDivElement | undefined;
+  let list: HTMLDivElement | undefined;
   let search: HTMLElement | undefined;
   onMount(() => {
     search = root?.querySelector('input') ?? undefined;
@@ -721,7 +733,17 @@ function SessionBrowser(props: SessionBrowserProps) {
           <Show when={store.search?.status === 'error' && !pullView()}>
             <p class="ss-note">{ctx.t('browser.search.failed')}</p>
           </Show>
-          <div class="ss-list" role="listbox" aria-label={ctx.t(`browser.view.${view()}`)}>
+          {/* A load over rows already on screen draws a thin bar instead of the spinner. */}
+          <div
+            ref={list}
+            class="ss-list"
+            role="listbox"
+            aria-label={ctx.t(`browser.view.${view()}`)}
+            aria-busy={model.loading()}
+          >
+            <Show when={model.loading() && store.status === 'ready'}>
+              <div class="ss-progress" aria-hidden="true" />
+            </Show>
             <Switch>
               <Match when={store.status === 'loading'}>
                 <div class="ss-state">
@@ -742,50 +764,54 @@ function SessionBrowser(props: SessionBrowserProps) {
               </Match>
               <Match when={pullView()}>
                 <Show when={pulls().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
-                  <For each={pullList()}>
-                    {(item) =>
-                      isHeader(item) ? (
-                        <GroupTitle title={item.header} />
-                      ) : (
-                        <LinkScopeProvider scope={linkScope(() => item.sessions[0]?.id)}>
-                          <PullItem
-                            pull={item}
-                            selected={pull() === item.key}
-                            ref={track(item.key)}
-                            onSelect={() => setPull(item.key)}
-                            onOpen={() => open(item.sessions[0])}
-                          />
-                        </LinkScopeProvider>
-                      )
-                    }
+                  <For each={pullGroups()}>
+                    {(group) => (
+                      <GroupBlock group={group} rows={pullsIn().get(group)?.length ?? 0}>
+                        <For each={pullsIn().get(group) ?? []}>
+                          {(item) => (
+                            <LinkScopeProvider scope={linkScope(() => item.sessions[0]?.id)}>
+                              <PullItem
+                                pull={item}
+                                selected={pull() === item.key}
+                                ref={track(item.key)}
+                                onSelect={() => setPull(item.key)}
+                                onOpen={() => open(item.sessions[0])}
+                              />
+                            </LinkScopeProvider>
+                          )}
+                        </For>
+                      </GroupBlock>
+                    )}
                   </For>
                 </Show>
               </Match>
               <Match when={true}>
                 <Show when={rows().length > 0} fallback={<p class="ss-note">{emptyNote()}</p>}>
-                  <For each={items()}>
-                    {(item) =>
-                      isHeader(item) ? (
-                        <GroupTitle title={item.header} />
-                      ) : (
-                        <LinkScopeProvider scope={linkScope(() => item.id)}>
-                          <SessionRow
-                            session={live(item)}
-                            view={store.refs[item.id]}
-                            selected={selected() === item.id}
-                            running={running(item)}
-                            waiting={waiting(item.id)}
-                            now={model.now()}
-                            archivedAge={view() === 'archived' && store.search === undefined}
-                            actions={actions(item)}
-                            project={projectOf(live(item))}
-                            ref={track(item.id)}
-                            onSelect={() => setSelected(item.id)}
-                            onOpen={() => open(item)}
-                          />
-                        </LinkScopeProvider>
-                      )
-                    }
+                  <For each={sessionGroups()}>
+                    {(group) => (
+                      <GroupBlock group={group} rows={sessionsIn().get(group)?.length ?? 0}>
+                        <For each={sessionsIn().get(group) ?? []}>
+                          {(item) => (
+                            <LinkScopeProvider scope={linkScope(() => item.id)}>
+                              <SessionRow
+                                session={live(item)}
+                                view={store.refs[item.id]}
+                                selected={selected() === item.id}
+                                running={running(item)}
+                                waiting={waiting(item.id)}
+                                now={model.now()}
+                                archivedAge={view() === 'archived' && store.search === undefined}
+                                actions={actions(item)}
+                                project={projectOf(live(item))}
+                                ref={track(item.id)}
+                                onSelect={() => setSelected(item.id)}
+                                onOpen={() => open(item)}
+                              />
+                            </LinkScopeProvider>
+                          )}
+                        </For>
+                      </GroupBlock>
+                    )}
                   </For>
                 </Show>
               </Match>
@@ -870,6 +896,23 @@ function CloseHint(props: { close: () => void }) {
     <button type="button" class="ss-esc" aria-label={ctx.t('browser.close')} onClick={props.close}>
       esc
     </button>
+  );
+}
+
+/**
+ * A group's block: its header, then its rows. The block, not each row, skips layout off screen
+ * (`content-visibility` in browser.css), laid out at `rows` times {@link ROW_ESTIMATE} until it
+ * was drawn once and at its real height after, so no row is ever taller than its content.
+ */
+function GroupBlock(props: { group: ListGroup; rows: number; children: JSX.Element }) {
+  return (
+    <div
+      class="ss-group"
+      style={{ 'contain-intrinsic-size': `auto ${props.rows * ROW_ESTIMATE + 32}px` }}
+    >
+      <Show when={props.group.title}>{(title) => <GroupTitle title={title()} />}</Show>
+      {props.children}
+    </div>
   );
 }
 

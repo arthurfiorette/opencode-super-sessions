@@ -51,6 +51,27 @@ export const HEADER_SLOT = 'session.header' satisfies keyof SlotMap;
 export const DIALOG_FRAME = '[data-component="dialog-v2"][data-size="x-large"]';
 
 /**
+ * The horizontal padding of a plugin dialog's content: the `px-4` of its `[data-scrollable]`
+ * wrapper (packages/app/src/runtime/plugin/ui.tsx:156 at v2.4.2). The browser's rail starts at it
+ * and its preview ends at it, so both sides of the dialog match (src/gui/browser/browser.css).
+ */
+export const DIALOG_PADDING = 16;
+
+/**
+ * The surface the browser's project rail and preview column take: the one the composer takes
+ * in dark mode, `--v2-background-bg-layer-01` (packages/app/src/composer/editor/editor.css:87-95
+ * at v2.4.2), a step off the x-large dialog's `--v2-background-bg-base`
+ * (packages/ui/src/overlays/dialog/dialog.css:175). In light mode the composer stays on
+ * `--v2-background-bg-base` (editor.tsx:260). Layer-01 is grey-100 over the dialog's grey-50 in
+ * light mode and grey-1000 over its grey-1100 in dark mode
+ * (packages/ui/src/styles/tokens/theme.css:6-8, 151-153), so the columns are set off in both.
+ * It is the preview's surface from before the browser followed the sidebar's look. CSS cannot
+ * import this constant; it records the assumption. When the variable goes, the columns take the
+ * dialog's background.
+ */
+export const COMPOSER_SURFACE = '--v2-background-bg-layer-01';
+
+/**
  * The markup of the app's text input, which `ui.TextInput` renders and whose stylesheet fixes its
  * width at 280px inside the `components` cascade layer
  * (packages/ui/src/forms/text-input/text-input.css:5 at v2.4.2). `ui.TextInput` takes no class,

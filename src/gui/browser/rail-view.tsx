@@ -42,7 +42,14 @@ export function ProjectRail(props: ProjectRailProps) {
               data-tile={tile.key}
               onClick={() => props.onPick(tile)}
             >
-              <Show when={tile.look} fallback={<ctx.ui.Icon name="workspace" />}>
+              <Show
+                when={tile.look}
+                fallback={
+                  <span class="ss-rail-face">
+                    <ctx.ui.Icon name="workspace" />
+                  </span>
+                }
+              >
                 {(look) => <ProjectAvatar look={look()} />}
               </Show>
               <Show when={tile.running > 0}>

@@ -48,25 +48,63 @@
   line-height: var(--line-height-compact, 16px);
 }
 
+/* A Work line is a two-column grid: the glyph and number, then the title, which wraps under
+   itself and so keeps nearly the whole width. The link's own box drops out of the layout
+   (`display: contents`) so its two parts become the grid's cells; the status line and the failed
+   checks go in the title's column, so they start where it does. */
 .ss-work-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
+  position: relative;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 4px;
+  row-gap: 2px;
   min-width: 0;
 }
 
 .ss-work-item > .ss-ref {
-  flex: 1;
+  display: contents;
 }
 
-/* The row's buttons sit at its end on the first line and keep their room, so a wrapped title
-   never runs under them and does not reflow when they show on hover or focus. They are taller
-   than a line, so they overhang it instead of pushing the next row down. */
-.ss-work-actions {
-  display: inline-flex;
-  flex-shrink: 0;
+.ss-work-item > .ss-ref > .ss-ref-mark {
+  grid-column: 1;
+  align-self: start;
+}
+
+.ss-work-item > .ss-ref > .ss-ref-title {
+  grid-column: 2;
+  color: var(--v2-text-text-base);
+}
+
+/* The second line of an open or draft pull request, and its failed checks: the app's 11px
+   secondary text, muted, in the title's column. */
+.ss-work-status,
+.ss-work-checks {
+  grid-column: 2;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.ss-work-status {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  margin-block: -4px;
+  gap: 2px 8px;
+  color: var(--v2-text-text-muted);
+}
+
+/* The row's buttons float over the block's top right on a small patch of the surface the list
+   sits on (`--ss-work-bg`, set by the preview and the side tab), so the title's end under them
+   does not show through the icons, and showing them on hover or focus never reflows the text.
+   Reserving their width on hover instead would rewrap the title on every hover. */
+.ss-work-actions {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  padding-left: 4px;
+  border-radius: 6px;
+  background: var(--ss-work-bg, var(--v2-background-bg-base));
   visibility: hidden;
 }
 
@@ -75,12 +113,12 @@
   visibility: visible;
 }
 
-.ss-work-checks ul {
+.ss-work-checks {
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin: 0;
-  padding: 0 0 0 20px;
+  padding: 0;
   list-style: none;
 }
 

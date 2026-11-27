@@ -368,8 +368,27 @@ test('without the server plugin, sessions still list, with a note', async () => 
 const tile = (key) => document.querySelector(`[data-tile="${key}"]`);
 const runningBadge = (key) => tile(key)?.querySelector('.ss-rail-running')?.textContent;
 
-test('the rail lists the picked project whole, and All lists every project', async () => {
-  const client = await openBrowser(undefined, { running: ['ses_other'] });
+test('a picked project shows at once from memory, then its whole list merges in', async () => {
+  // An older session of the other project, past what the rail's list of every project holds.
+  const older = { ...OTHER, id: 'ses_other_old', title: 'Older other work' };
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  const client = await openBrowser(
+    {
+      'session.list': async ({ archived, project }) => {
+        if (archived) return { data: project === undefined ? ARCHIVED : [] };
+        if (project === 'other') return held.then(() => ({ data: [OTHER, older] }));
+        return {
+          data: [...SESSIONS, OTHER].filter(
+            (item) => project === undefined || item.projectID === project
+          )
+        };
+      }
+    },
+    { running: ['ses_other'] }
+  );
   const filters = () =>
     client.calls
       .filter((call) => call.name === 'session.list')
@@ -381,21 +400,47 @@ test('the rail lists the picked project whole, and All lists every project', asy
   assert.equal(tile('project:proj').getAttribute('aria-pressed'), 'true');
   assert.ok(filters().some((item) => item.join() === [false, 'proj', undefined].join()));
 
-  const before = filters().length;
-  tile('project:other').click();
-  await until(() => listed().join() === 'ses_other', 'the other project');
-  assert.deepEqual(filters().slice(before), [
-    [false, 'other', undefined],
-    [true, 'other', undefined]
-  ]);
+  // Records every list loader drawn from the click on; the list must never fall back to it.
+  const loaders = [];
+  const observer = new MutationObserver(() => {
+    if (document.querySelector('[role="listbox"] [role="progressbar"]')) loaders.push(true);
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  try {
+    tile('project:other').click();
+    // On screen before the project's own list answers.
+    await until(() => listed().join() === 'ses_other', 'the other project from memory');
+    await until(
+      () => filters().some((item) => item.join() === [false, 'other', undefined].join()),
+      "the project's own list"
+    );
+    const kept = row('ses_other');
+    release();
+    await until(() => listed().join() === 'ses_other,ses_other_old', 'the whole project');
+    // The row that stayed is the same element, not drawn again.
+    assert.equal(row('ses_other'), kept);
+    assert.deepEqual(loaders, []);
+  } finally {
+    observer.disconnect();
+  }
 
   tile('all').click();
-  await until(() => listed().length === 3, 'every project');
+  await until(() => listed().length >= 3, 'every project');
   assert.deepEqual(listed().sort(), ['ses_busy', 'ses_other', 'ses_plain']);
+  await until(
+    () => filters().at(-1)?.join() === [true, undefined, undefined].join(),
+    'the All list'
+  );
   assert.deepEqual(filters().slice(-2), [
     [false, undefined, undefined],
     [true, undefined, undefined]
   ]);
+
+  // A project visited a moment ago comes back from its cache, without a request.
+  const asked = filters().length;
+  tile('project:other').click();
+  await until(() => listed().join() === 'ses_other,ses_other_old', 'the cached project');
+  assert.equal(filters().length, asked);
 });
 
 test('a project tile counts its running sessions, and All counts them all', async () => {
