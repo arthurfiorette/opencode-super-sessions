@@ -1,5 +1,5 @@
 import { usePlugin } from '@opencode/plugin/gui';
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from 'solid-js';
 import { activitySpinner } from '../../host/gui.js';
 import { ProjectAvatar } from '../project-avatar.js';
 import { ALL_KEY, type ProjectEntry } from './projects.js';
@@ -40,7 +40,17 @@ export function ProjectPicker(props: ProjectPickerProps) {
     ...props.projects.map((project) => ({ key: project.key, project }))
   ]);
   const current = () => options().find((option) => option.key === props.picked)?.project;
+  // The keys' highlight. The pointer's is CSS `:hover` (browser.css): an attribute written on
+  // every pointer move restyled the whole dialog, about 14,000 elements and 100 ms a move, while
+  // the menu was open in the trace of a 400-session list.
   const [active, setActive] = createSignal<string | undefined>();
+  /** The row the pointer is over, where the keys start from after it moved. */
+  let hovered: string | undefined;
+  /** The pointer took over: the keys' highlight goes, once, and the keys start from its row. */
+  const hover = (key: string) => {
+    hovered = key;
+    if (untrack(active) !== undefined) setActive(undefined);
+  };
   let root: HTMLDivElement | undefined;
   let menu: HTMLDivElement | undefined;
   let trigger: HTMLButtonElement | undefined;
@@ -49,6 +59,7 @@ export function ProjectPicker(props: ProjectPickerProps) {
   // only when the menu had it, so a pick by mouse leaves the focus where the dialog keeps it.
   createEffect(() => {
     if (!props.open) return;
+    hovered = undefined;
     setActive(props.picked ?? ALL_KEY);
     queueMicrotask(() => {
       menu?.focus();
@@ -70,7 +81,8 @@ export function ProjectPicker(props: ProjectPickerProps) {
   /** Moves the highlight by `delta` rows, or to an end. */
   const move = (to: number | 'first' | 'last') => {
     const list = options();
-    const index = list.findIndex((option) => option.key === active());
+    const from = active() ?? hovered;
+    const index = list.findIndex((option) => option.key === from);
     const next =
       to === 'first'
         ? 0
@@ -87,8 +99,10 @@ export function ProjectPicker(props: ProjectPickerProps) {
     else if (event.key === 'ArrowUp') move(-1);
     else if (event.key === 'Home') move('first');
     else if (event.key === 'End') move('last');
-    else if (event.key === 'Enter') choose(options().find((option) => option.key === active()));
-    else if (event.key === 'Escape' || event.key === 'Tab') {
+    else if (event.key === 'Enter') {
+      const key = active() ?? hovered;
+      choose(options().find((option) => option.key === key));
+    } else if (event.key === 'Escape' || event.key === 'Tab') {
       props.setOpen(false);
       trigger?.focus();
     } else handled = false;
@@ -137,7 +151,7 @@ export function ProjectPicker(props: ProjectPickerProps) {
             option={{ key: ALL_KEY, project: undefined }}
             active={active() === ALL_KEY}
             checked={props.picked === ALL_KEY}
-            onHover={setActive}
+            onHover={hover}
             onChoose={choose}
           />
           <Show when={props.projects.length > 0}>
@@ -149,7 +163,7 @@ export function ProjectPicker(props: ProjectPickerProps) {
                 option={{ key: project.key, project }}
                 active={active() === project.key}
                 checked={props.picked === project.key}
-                onHover={setActive}
+                onHover={hover}
                 onChoose={choose}
               />
             )}

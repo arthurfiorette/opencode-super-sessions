@@ -749,6 +749,12 @@
   padding-inline-start: 8px;
 }
 
+/* The pointer's highlight, the app's highlighted item (menu.css:144). The keys' highlight is the
+   app's own `data-highlighted`, which the picker never writes on pointer moves (picker.tsx). */
+.ss-picker-item[data-component="menu-v2-item"]:hover {
+  background: var(--menu-v2-hover);
+}
+
 .ss-picker-item-name {
   flex-shrink: 0;
   max-width: 55%;
