@@ -1,7 +1,9 @@
 // Times the Desktop browser's opens in the GUI test harness (test/gui/harness.mjs) against a fake
 // server with the latencies measured on a real one, behind the app's four request slots per
-// server: when the first rows show, when their ref lines do, and what the window asked for. Not
-// part of `pnpm check`.
+// server: when the first rows show, when their ref lines do, and what the window asked for. The
+// warm open times the synchronous mount of the dialog over cached lists, the task the window
+// spends before it can paint, and counts the elements it adds, which the window then styles and
+// lays out in that same task. Not part of `pnpm check`.
 //
 // Usage: bun --conditions=browser scripts/bench-gui.mjs [--bundle <dist/gui-experimental.cjs>]
 // `--bundle` defaults to this checkout's build. Pass another checkout's to compare.
@@ -15,7 +17,7 @@ const { values } = parseArgs({ options: { bundle: { type: 'string' } } });
 
 const NOW = Date.now();
 const HOUR = 3_600_000;
-const SESSIONS = 300;
+const SESSIONS = 400;
 // Milliseconds per call, from the DevTools trace of an open on a real server.
 const LATENCY = {
   'session.list': 30,
@@ -163,6 +165,34 @@ async function open(name) {
   document.querySelector('[role="dialog"] .ss-esc').click();
 }
 
+/**
+ * Opens the browser over lists the model already holds, as a second open within 30 seconds
+ * does, and prints the median synchronous mount time over `count` opens, the rows and elements
+ * it mounted, and the rows mounted once the window was idle for a second.
+ */
+async function warm(count) {
+  const dialog = () => document.querySelector('[role="dialog"]');
+  const times = [];
+  let rows = 0;
+  let elements = 0;
+  for (let index = 0; index < count; index++) {
+    const start = performance.now();
+    gui.command('browse').run();
+    times.push(performance.now() - start);
+    rows = document.querySelectorAll('[role="listbox"] [data-session]').length;
+    elements = dialog()?.querySelectorAll('*').length ?? 0;
+    await sleep(index === count - 1 ? 1000 : 200);
+    if (index < count - 1) dialog().querySelector('.ss-esc').click();
+  }
+  const idle = document.querySelectorAll('[role="listbox"] [data-session]').length;
+  dialog().querySelector('.ss-esc').click();
+  times.sort((a, b) => a - b);
+  const median = times[Math.floor(times.length / 2)];
+  console.log(
+    `warm     open ${median.toFixed(1).padStart(6)} ms  rows ${rows}  elements ${elements}  rows after 1 s idle ${idle}  (${count} opens, ${SESSIONS} sessions)`
+  );
+}
+
 /** The routed session, settable for the side tab's route switches. */
 function routeRef(id) {
   return { server, id, key: `${server.id}\n${id}`, directory: '/work/widgets' };
@@ -204,6 +234,8 @@ async function switches(count) {
 await open('cold');
 await sleep(500);
 await open('reopen');
+await sleep(500);
+await warm(10);
 await switches(20);
 gui.dispose();
 process.exit(0);
