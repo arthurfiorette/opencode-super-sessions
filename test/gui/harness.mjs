@@ -123,24 +123,38 @@ export function rpcUnavailable() {
 /**
  * A fake `Data` event feed: `on` as the app's, and `emit(event)` to deliver an event to the
  * listeners of its `type`. `session` answers like a server that synced none of the sessions,
- * with every session idle, except the ids in `running`, and no cost. `models` is the model list
- * of every Location. `synced` records each permission and form sync, which asks the session's
- * Location over HTTP, as `['permission' | 'form', sessionID]`.
+ * with every session idle, except the ids in `running`, and no cost. `permissions` holds the
+ * pending permission requests by session id, which `permission.asked` and `permission.replied`
+ * events change as the app's data does. `models` is the model list of every Location. `synced`
+ * records each session, permission and form sync, which asks the server over HTTP, as
+ * `['session' | 'permission' | 'form', sessionID]`.
  */
-export function createData({ running = [], models = [] } = {}) {
+export function createData({ running = [], models = [], permissions = {} } = {}) {
   const listeners = new Map();
   const synced = [];
+  const [requests, setRequests] = solid.createSignal(structuredClone(permissions));
   return {
     synced,
     session: {
       get: () => undefined,
+      sync: async (id) => void synced.push(['session', id]),
       status: (id) => (running.includes(id) ? 'running' : 'idle'),
+      active: () => running,
+      root: (id) => id,
       family: () => [],
       cost: () => 0,
-      permission: { list: () => [], sync: async (id) => void synced.push(['permission', id]) },
-      form: { list: () => [], sync: async (id) => void synced.push(['form', id]) }
+      permission: {
+        list: (id) => requests()[id] ?? [],
+        sessions: () => Object.keys(requests()).filter((id) => requests()[id].length > 0),
+        sync: async (id) => void synced.push(['permission', id])
+      },
+      form: {
+        list: () => [],
+        sessions: () => [],
+        sync: async (id) => void synced.push(['form', id])
+      }
     },
-    location: { model: { list: () => models } },
+    location: { model: { list: () => models }, vcs: { info: () => undefined } },
     on(type, handler) {
       const set = listeners.get(type) ?? new Set();
       listeners.set(type, set);
@@ -148,6 +162,17 @@ export function createData({ running = [], models = [] } = {}) {
       return () => set.delete(handler);
     },
     emit(event) {
+      // The app's data applies permission events to its store before any listener runs
+      // (packages/client/src/solid/data.ts:1451-1460 at v2.4.2).
+      const id = event.data?.sessionID;
+      if (event.type === 'permission.asked') {
+        setRequests((all) => ({ ...all, [id]: [...(all[id] ?? []), event.data] }));
+      } else if (event.type === 'permission.replied') {
+        setRequests((all) => ({
+          ...all,
+          [id]: (all[id] ?? []).filter((request) => request.id !== event.data.requestID)
+        }));
+      }
       for (const handler of listeners.get(event.type) ?? []) handler(event);
     },
     listeners: (type) => listeners.get(type)?.size ?? 0
@@ -250,7 +275,8 @@ function createUi() {
 
 /**
  * A fake window context for `setup(ctx)`. `options.session` is the routed session
- * (`ctx.sessions.current()`), settable later with `setSession`; `options.servers` the listed
+ * (`ctx.sessions.current()`), settable later with `setSession`; `options.openSessions` the other
+ * session tabs' refs, which `ctx.sessions.list()` lists after it; `options.servers` the listed
  * servers; `options.stores` the stored values of declared stores; `options.tabs` the open tabs
  * (`ctx.tabs.list()`, `{ key, session }`), settable later with `setTabs`. Records what the GUI
  * does: `added` (every `ctx.add`), `opened` (external URLs), `copied`, `tabs` (`ctx.tabs.open`
@@ -321,7 +347,11 @@ export function createContext(plugin, options = {}) {
     ),
     appearance: { mode: () => options.mode ?? 'dark', font: () => 'monospace' },
     locale: { locale: () => 'en-US', direction: () => 'ltr' },
-    sessions: { current: session, list: () => (session() ? [session()] : []) },
+    // The routed session, then `options.openSessions`: the other session tabs' `SessionRef`s.
+    sessions: {
+      current: session,
+      list: () => [...(session() ? [session()] : []), ...(options.openSessions ?? [])]
+    },
     screen: { current: () => undefined },
     servers: {
       list: () => servers.map((server) => server.id),

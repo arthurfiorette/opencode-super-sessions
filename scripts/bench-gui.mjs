@@ -39,12 +39,18 @@ const ref = (number) => ({
   number
 });
 const key = (item) => `github:github.com/acme/widgets/pr/${item.number}`;
+// Each finished an hour after the next one and is unread, so the side tab's Working section
+// lists the ones of the last 24 hours.
 const sessions = Array.from({ length: SESSIONS }, (_, index) => ({
   id: `ses_${String(index).padStart(4, '0')}`,
   title: `Session ${index}`,
   projectID: 'proj',
   location: { directory: '/work/widgets' },
-  time: { created: NOW - (index + 2) * HOUR, updated: NOW - (index + 1) * HOUR }
+  time: {
+    created: NOW - (index + 2) * HOUR,
+    updated: NOW - (index + 1) * HOUR,
+    idle: NOW - (index + 1) * HOUR
+  }
 }));
 /** Every other session tracks a pull request; every eighth one is merged, so Done asks about it. */
 const viewOf = (index) => {
@@ -209,7 +215,10 @@ async function switches(count) {
   const SIDE = `${gui.ctx.id}:sessions`;
   gui.ctx.layout.open(SIDE, routed());
   gui.panel('sessions', routed);
-  await until(() => document.querySelectorAll('.ss-side [data-session]').length > 20, 'side rows');
+  await until(
+    () => document.querySelectorAll('.ss-working [data-session]').length > 20,
+    'Working rows'
+  );
   await sleep(1000);
   counted.clear();
   const times = [];

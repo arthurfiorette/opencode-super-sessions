@@ -1,8 +1,7 @@
-/* The Super Sessions side tab: the routed session's work at the top, then the active sessions
-   of the routed project or of every project in the Desktop sidebar's style (SIDEBAR_ROW in
-   src/host/gui.ts). The Work list and the detail lines take the status and browser rules
-   (../status/status.css, ../browser/browser.css). Folded, the Work line is one fixed line, so a session switch changes
-   only what sits inside it. Unfolded, Work takes its list's height up to half the tab. */
+/* The Super Sessions side tab: the routed session's work, filling the tab and scrolling on its
+   own, over the Working section pinned to the bottom in the app sidebar's Working shelf style
+   (WORKING_SHELF in src/host/gui.ts). The Work list takes the status rules (../status/status.css)
+   and the status markers the browser's (../browser/browser.css). */
 
 .ss-side {
   --ss-line: var(--line-height-compact, 16px);
@@ -24,17 +23,13 @@
   gap: 6px;
 }
 
-/* Work: one 28px line folded. Unfolded, the height of its content, which the browser lays out
-   with no script measuring it, up to half the tab; past that the body shrinks and scrolls, and
-   its bottom padding keeps the last line clear of the edge. */
+/* Work: every px the Working section leaves, with the body scrolling past its height. */
 .ss-side-work {
   display: flex;
-  flex: 0 0 auto;
+  flex: 1 1 0;
   flex-direction: column;
   min-height: 0;
-  max-height: 50%;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--v2-border-border-base);
+  padding: 4px 8px 0;
 }
 
 .ss-side-work-head {
@@ -46,39 +41,17 @@
   height: 28px;
 }
 
-/* The fold line reads as the sidebar's section header: 13px medium muted, base on hover. */
-.ss-side-fold {
+/* The summary reads as the sidebar's section header: 13px medium muted. */
+.ss-side-work-summary {
   display: inline-flex;
   flex: 1;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 28px;
   padding: 0 4px;
-  border: none;
-  border-radius: 6px;
-  background: none;
   color: var(--v2-text-text-muted);
-  font: inherit;
   font-size: 13px;
   font-weight: 500;
-  text-align: start;
-  cursor: pointer;
-}
-
-.ss-side-fold:hover {
-  background: var(--v2-overlay-simple-overlay-hover);
-  color: var(--v2-text-text-base);
-}
-
-.ss-side-fold:focus-visible {
-  outline: 2px solid var(--v2-border-border-focus);
-  outline-offset: -2px;
-}
-
-.ss-side-fold-icon {
-  flex-shrink: 0;
-  color: var(--v2-icon-icon-muted);
 }
 
 .ss-side-work-title {
@@ -113,166 +86,242 @@
 }
 
 .ss-side-work-body {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
-  padding: 4px 4px 4px 26px;
+  padding: 4px 4px 8px;
   overflow-y: auto;
 }
 
-/* The active sessions under the sidebar's "Sessions" header: a 28px line of 13px medium muted
-   text 8px in, the scope switch and the browser action at its end, both small ghost buttons. */
-.ss-side-sessions {
+/* Working: its rows' height up to 40% of the tab, 7px under a muted line across the whole tab,
+   8px between the header and the rows. It never shrinks below that, so Work gives way. */
+.ss-working {
+  position: relative;
   display: flex;
-  flex: 1;
+  flex: 0 0 auto;
   flex-direction: column;
+  gap: 8px;
+  max-height: 40%;
   min-height: 0;
-  padding-top: 8px;
+  padding-top: 7px;
 }
 
-.ss-side-header {
+.ss-working-rule {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 1px;
+  background: var(--v2-border-border-muted);
+  pointer-events: none;
+}
+
+.ss-working-header {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 12px 0 16px;
+  padding: 0 8px;
 }
 
-.ss-side-header-title {
+/* The sidebar's section header: 24px, 13px medium muted, base on hover, the triangle after the
+   label, turned a quarter while collapsed. */
+.ss-working-toggle {
+  display: inline-flex;
   flex: 1;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  overflow: hidden;
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
   color: var(--v2-text-text-muted);
+  font: inherit;
   font-size: 13px;
   font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 16px;
+  text-align: start;
+  cursor: pointer;
 }
 
-.ss-side-sessions > [data-note] {
-  padding: 4px 16px;
-}
-
-.ss-side-list {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 1px;
-  min-height: 0;
-  padding: 0 8px 8px;
-  overflow-y: auto;
-  outline: none;
-}
-
-.ss-side-list:focus-visible {
-  outline: 2px solid var(--v2-border-border-focus);
-  outline-offset: -2px;
-  border-radius: 6px;
-}
-
-.ss-side-empty {
-  padding: 4px 8px;
-}
-
-/* The sidebar's session row: 28px, 6px corners, 13px medium titles faint until current, the
-   current one in base text on the pressed overlay, hover on the hover overlay. The keyboard's
-   selection takes the hover overlay too. */
-.ss-side-row {
-  display: flex;
-  flex-shrink: 0;
-  flex-direction: column;
-  padding: 0 8px;
-  border-radius: 6px;
-  color: var(--v2-text-text-faint);
-  font-weight: 500;
-  cursor: default;
-  user-select: none;
-}
-
-.ss-side-row:hover,
-.ss-side-row[data-selected] {
-  background: var(--v2-overlay-simple-overlay-hover);
-}
-
-.ss-side-row[data-state="pressed"] {
-  background: var(--v2-overlay-simple-overlay-pressed);
+.ss-working-toggle:hover {
   color: var(--v2-text-text-base);
 }
 
-.ss-side-row:focus-visible {
+.ss-working-toggle:focus-visible,
+.ss-working-row:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: -2px;
 }
 
-.ss-side-row-head {
+.ss-working-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-working-count {
+  flex-shrink: 0;
+  color: var(--v2-text-text-faint);
+  font-variant-numeric: tabular-nums;
+  font-weight: 440;
+}
+
+.ss-working-caret {
+  display: inline-flex;
+  flex-shrink: 0;
+  transition: transform 150ms;
+}
+
+.ss-working-caret[data-collapsed] {
+  transform: rotate(-90deg);
+}
+
+.ss-working-caret[data-collapsed]:dir(rtl) {
+  transform: rotate(90deg);
+}
+
+.ss-working-none {
+  margin: 0;
+  padding: 0 16px 8px;
+  color: var(--v2-text-text-faint);
+  font-size: 13px;
+}
+
+.ss-working-rows {
   display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 0 8px 8px;
+  overflow-y: auto;
+}
+
+/* The shelf's row: 54px, 8px padding, 6px corners, two 16px lines 6px apart, the hover overlay
+   under the pointer and the pressed one when current. */
+.ss-working-row {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  height: 54px;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: default;
+}
+
+.ss-working-row:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+}
+
+.ss-working-row[data-state="active"] {
+  background: var(--v2-overlay-simple-overlay-pressed);
+}
+
+.ss-working-line {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 16px;
+  font-size: 13px;
+  line-height: 16px;
+  letter-spacing: -0.04px;
+}
+
+.ss-working-avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.ss-working-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-base);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-working-detail {
+  position: relative;
+  padding-inline-start: 24px;
+  color: var(--v2-text-text-muted);
+}
+
+/* Another machine's server icon sits in the inset under the avatar. */
+.ss-working-machine {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  display: flex;
+  width: 16px;
+  height: 16px;
+  color: var(--v2-icon-icon-muted);
+}
+
+.ss-working-place {
+  display: flex;
+  flex: 1;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  height: 28px;
+  overflow: hidden;
+  color: var(--v2-icon-icon-muted);
 }
 
-.ss-side-row-text {
+.ss-working-project {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-working-end {
   display: flex;
-  flex: 1;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  min-width: 0;
-}
-
-.ss-side-row-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Across every project the title keeps most of the row, and the project and machine after it
-   take the browser rows' faint regular text (.ss-row-description in ../browser/browser.css). */
-.ss-side-row-text:has(.ss-side-row-description) > .ss-side-row-title {
-  flex: 0 1 auto;
-  max-width: 60%;
-}
-
-.ss-side-row-description {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--v2-text-text-faint);
-  font-weight: 440;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The sidebar's trailing label: 11px, regular, faint, at most 40% of the row. */
-.ss-side-row-age {
-  flex-shrink: 0;
-  max-width: 40%;
-  overflow: hidden;
-  color: var(--v2-text-text-faint);
-  font-size: 11px;
+  margin-inline-start: auto;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.ss-side-row .ss-row-lines {
-  margin-top: -4px;
-  padding: 0 0 6px;
+.ss-working-age {
+  color: var(--v2-text-text-faint);
 }
 
-.ss-side-row:hover .ss-row-actions,
-.ss-side-row:focus-within .ss-row-actions {
-  visibility: visible;
+/* The shelf's markers: a 7px dot in the warning color while it waits, in the accent color when
+   unread, and the activity ring while it runs. */
+.ss-working .ss-row-status {
+  flex-basis: auto;
 }
 
-.ss-visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+.ss-working .ss-row-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.ss-working .ss-row-dot[data-marker="waiting"] {
+  background: var(--v2-state-fg-warning);
+}
+
+.ss-working .ss-row-dot[data-marker="unread"] {
+  background: var(--v2-background-bg-accent);
 }

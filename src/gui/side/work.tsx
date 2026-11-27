@@ -9,27 +9,22 @@ import { workActions } from '../status/actions.js';
 import { mainPull } from '../status/pill.js';
 import { WorkList } from '../status/work-list.js';
 
-// The top of the side tab: the routed session's work, folded by default into one summary line of
-// one height, so switching sessions never moves the session list under it. Unfolded, the Work
-// list takes its own height up to half the tab, and scrolls only past that.
+// The side tab's main content: the routed session's work, always listed, filling the tab above
+// the Working section and scrolling on its own. A session switch changes only what it lists.
 
 /** Props of {@link WorkSection}. */
 export interface WorkSectionProps {
   readonly refs: RefsStore;
   /** The routed session. */
   readonly target: SessionTarget | undefined;
-  readonly folded: boolean;
-  readonly setFolded: (folded: boolean) => void;
-  /** Receives the section's element, which the header's `+N` scrolls into view. */
-  readonly ref: (element: HTMLElement) => void;
 }
 
 /**
- * The routed session's work. The summary line names what it tracks (`Work · 1 PR · 1 link`) with
- * the main pull request's state, and folds the list away; a session that tracks nothing reads
- * "Nothing linked" with a link action. Until the first answer for a session with nothing cached
- * the line reads only "Work" over a placeholder of the same height, so the previous session's
- * work never shows under the new one and "Nothing linked" never flashes.
+ * The routed session's work under a summary line that names what it tracks
+ * (`Work · 1 PR · 1 link`) with the main pull request's state; a session that tracks nothing
+ * reads "Nothing linked" with a link action. Until the first answer for a session with nothing
+ * cached the line reads only "Work" over a placeholder of the same height, so the previous
+ * session's work never shows under the new one and "Nothing linked" never flashes.
  */
 export function WorkSection(props: WorkSectionProps) {
   const ctx = usePlugin();
@@ -62,25 +57,9 @@ export function WorkSection(props: WorkSectionProps) {
   const main = () => mainPull(view());
   const actions = workActions(ctx, props.refs, target, useOpenUrl());
   return (
-    <section
-      ref={props.ref}
-      class="ss-side-work"
-      data-folded={props.folded ? 'true' : 'false'}
-      aria-label={ctx.t('side.work')}
-    >
+    <section class="ss-side-work" aria-label={ctx.t('side.work')}>
       <div class="ss-side-work-head" data-state={state()?.status ?? 'loading'}>
-        <button
-          type="button"
-          class="ss-side-fold"
-          aria-expanded={!props.folded}
-          aria-label={ctx.t(props.folded ? 'side.work.unfold' : 'side.work.fold')}
-          onClick={() => props.setFolded(!props.folded)}
-        >
-          <ctx.ui.Icon
-            name={props.folded ? 'chevron-right' : 'chevron-down'}
-            size="small"
-            class="ss-side-fold-icon"
-          />
+        <span class="ss-side-work-summary">
           <Switch>
             <Match when={empty()}>
               <span class="ss-side-work-title">{ctx.t('side.work.none')}</span>
@@ -99,7 +78,7 @@ export function WorkSection(props: WorkSectionProps) {
               </Show>
             </Match>
           </Switch>
-        </button>
+        </span>
         <Show when={main()}>
           {(pull) => (
             <span class="ss-side-work-main">
@@ -119,7 +98,7 @@ export function WorkSection(props: WorkSectionProps) {
         </Show>
       </div>
       {/* No body while there is nothing to list, so its padding leaves no empty band. */}
-      <Show when={!props.folded && (state()?.status ?? 'loading') !== 'loading' && !empty()}>
+      <Show when={(state()?.status ?? 'loading') !== 'loading' && !empty()}>
         <div class="ss-side-work-body">
           <WorkList refs={props.refs} target={props.target} actions />
         </div>

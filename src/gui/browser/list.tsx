@@ -348,12 +348,7 @@ export function createRowActions(ctx: Context, browser: BrowserView, fallback: (
   /** Whether the session or one of its subagents runs. */
   const running = (session: SessionInfo) => isBusy(live(session)) || browser.isRunning(session.id);
   /** What the session waits on the user for, as the app's own lists know it. */
-  const waiting = (id: string): 'permission' | 'question' | undefined => {
-    const sessions = serverOf(id).data.session;
-    if ((sessions.permission.list(id)?.length ?? 0) > 0) return 'permission';
-    if ((sessions.form.list(id)?.length ?? 0) > 0) return 'question';
-    return undefined;
-  };
+  const waiting = (id: string) => waitingFor(serverOf(id).data.session, id);
   /**
    * Archives the session, or restores it when it is archived. An archive closes the session's tab
    * unless `closeTabOnArchive` is off; a restore keeps auto-archive from taking the session
@@ -462,18 +457,27 @@ export function RowButtons(props: RowButtonsProps) {
 }
 
 /**
+ * What the session waits on the user for, by its server's synced permission requests and
+ * questions, which the app's data keeps current from `permission.asked`, `permission.replied`,
+ * `form.created`, `form.replied` and `form.cancelled` (packages/client/src/solid/data.ts:1451-1463
+ * and :1523 at v2.4.2). The browser's waiting marker and the side tab's Working section read it.
+ */
+export function waitingFor(
+  sessions: ServerRef['data']['session'],
+  id: string
+): 'permission' | 'question' | undefined {
+  if ((sessions.permission.list(id)?.length ?? 0) > 0) return 'permission';
+  if ((sessions.form.list(id)?.length ?? 0) > 0) return 'question';
+  return undefined;
+}
+
+/**
  * What a session shows at its end by its own server's live data: waiting on a permission or a
  * question, running, unread, or nothing.
  */
 export function sessionStatus(machines: Machines, server: ServerRef, session: SessionInfo) {
   const live = server.data.session.get(session.id) ?? session;
-  const sessions = server.data.session;
-  if (
-    (sessions.permission.list(session.id)?.length ?? 0) > 0 ||
-    (sessions.form.list(session.id)?.length ?? 0) > 0
-  ) {
-    return 'waiting' as const;
-  }
+  if (waitingFor(server.data.session, session.id) !== undefined) return 'waiting' as const;
   if (isBusy(live) || (machines.model(server.id)?.isRunning(session.id) ?? false)) {
     return 'running' as const;
   }

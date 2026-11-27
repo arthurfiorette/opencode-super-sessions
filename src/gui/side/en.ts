@@ -2,8 +2,6 @@
 export const sideEn = {
   'side.title': 'Super Sessions',
   'side.work': 'Work',
-  'side.work.fold': 'Fold Work',
-  'side.work.unfold': 'Show Work',
   'side.work.pulls.one': '{{count}} PR',
   'side.work.pulls.other': '{{count}} PRs',
   'side.work.issues.one': '{{count}} issue',
@@ -12,12 +10,12 @@ export const sideEn = {
   'side.work.links.other': '{{count}} links',
   'side.work.none': 'Nothing linked',
   'side.work.link': 'Link…',
-  'side.sessions': 'Sessions',
-  'side.sessions.all': 'All sessions…',
-  'side.sessions.empty': 'No active sessions in this project',
-  'side.sessions.emptyAll': 'No active sessions',
-  'side.scope.project': 'This project',
-  'side.scope.all': 'All projects',
-  'side.scope.toAll': 'Show the sessions of every project',
-  'side.scope.toProject': 'Show the sessions of this project'
+  // The app sidebar's own words (packages/app/src/runtime/i18n/en.ts:845 and :860-868 at v2.4.2).
+  'side.working': 'Working',
+  'side.working.none': 'Nothing running',
+  'side.working.all': 'All sessions…',
+  'side.age.now': 'now',
+  'side.age.minutes': '{{count}}m',
+  'side.age.hours': '{{count}}h',
+  'side.age.days': '{{count}}d'
 } as const;

@@ -88,7 +88,7 @@ export function createMachines(ctx: Pick<Context, 'servers'>, pick: MachinePick)
    */
   const all = () => servers().map(modelFor);
 
-  // The dialog's project pick. The side tab always lists the routed project.
+  // The dialog's project pick.
   const [picked, setPicked] = createSignal<MachinePick>(pick);
   // Counts the views that went away. A view that stays syncs and searches again, since the one
   // that left may have listed or searched for something else.

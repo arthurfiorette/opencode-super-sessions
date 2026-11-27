@@ -21,8 +21,8 @@ import { createStable } from '../stable.js';
 import type { Machines, MachinesTarget } from './machines.js';
 import type { BrowserModel } from './model.js';
 
-// One view of the browser, the dialog's or the side tab's list: the lists of every server its
-// rail pick covers, merged into one list, grouped as the TUI groups one server's, and the forge
+// One view of the browser, the dialog's: the lists of every server its rail pick covers, merged
+// into one list, grouped as the TUI groups one server's, and the forge
 // calls it makes while it shows. Each server's model loads, searches and asks its forge on its
 // own, so a slow or failing server never holds the others back.
 
@@ -41,8 +41,8 @@ export interface BrowserViewInput {
   readonly view: () => PageView;
   readonly query: () => string;
   /**
-   * Whether the view is on screen. A view that stays mounted while hidden, as the side tab does,
-   * syncs, searches and asks the forge only while it shows. Defaults to always.
+   * Whether the view is on screen. A view that stays mounted while hidden syncs, searches and
+   * asks the forge only while it shows. Defaults to always.
    */
   readonly shown?: () => boolean;
 }
@@ -85,7 +85,7 @@ function sameModels(a: readonly BrowserModel[], b: readonly BrowserModel[]): boo
  * and searches for itself when it shows and again when another view goes away (`released`).
  */
 export function createBrowserView(machines: Machines, input: BrowserViewInput) {
-  // A memo: the side tab's visibility is read from the layout, which moves on every route change
+  // A memo: a side tab's visibility is read from the layout, which moves on every route change
   // while the tab stays visible, and each change would end this showing and start another.
   const shown = createMemo(input.shown ?? (() => true));
   // The pick and the routed server, cut from the target where they hold still, so a route

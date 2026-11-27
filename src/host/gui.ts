@@ -563,14 +563,62 @@ export const PROJECT_AVATAR = '[data-component="project-avatar-v2"]';
 export const PALETTE_ROW = '.command-palette-row';
 
 /**
- * The rows of the app's sidebar, which the side tab's list follows: the "Sessions" header, a 28px
- * line of 13px medium muted text 8px in with its actions at the end
- * (packages/app/src/shell/titlebar/sidebar-customized.tsx:675-678 at v2.4.2), and session rows
- * of 28px with 6px corners, 13px medium titles faint until current, the current one on the
- * pressed overlay with `aria-current="page"`, an 11px faint label, and a 16px status slot with the
- * 14px activity ring or the 6px unread dot, which the current row does not show
- * (packages/app/src/shell/titlebar/project-session-row.tsx:134-187, tab-nav.css:146-160). Those
- * rules are Tailwind classes in the app's markup, so side.css states them. CSS cannot import this
- * constant; it records the assumption.
+ * The sidebar's "Working" shelf, which the side tab's bottom section reproduces
+ * (`InboxSessionList` in packages/app/src/shell/titlebar/inbox.tsx:681-711 at v2.4.2): a group
+ * pinned under the list, at most 40% of the sidebar's height, 7px under a 1px
+ * `--v2-border-border-muted` line across the whole width, with 8px between its header and its
+ * rows and 2px between rows. Its header (`SectionHeader`, inbox.tsx:727-776) is a 24px button of
+ * 13px medium muted text 8px in, base on hover, with `aria-expanded` and the `fill-triangle-down`
+ * icon after the label, turned a quarter while collapsed. The label is
+ * `sidebar.inbox.section.working`, "Working" (packages/app/src/runtime/i18n/en.ts:845), and the
+ * app keeps its expanded state in its own global store (inbox.tsx:72-73), which plugins cannot read.
+ *
+ * Each row (`InboxSessionCard`, inbox.tsx:831-985) is a 54px button with 8px padding, 6px
+ * corners and 6px between its two 16px lines, on the hover overlay under the pointer and the
+ * pressed overlay with `data-state="active"` and `aria-current="page"` when current. The first
+ * line is the 16px project avatar and the 13px medium base title (tracking -0.04px). The second,
+ * 24px in, is 13px muted: the `server` icon in the inset for a session of another machine, the
+ * project name, the `outline-worktree` icon when the session's directory is not the project's
+ * root (`inboxInWorktree`, inbox-model.ts:535-539) and the `branch` icon with the branch as its
+ * tooltip once the location's VCS info is synced (inbox-model.ts:455-456), then at the end, in
+ * 12px tabular figures 6px apart, a 7px dot in `--v2-state-fg-warning` while it waits on a
+ * permission or question, the activity ring while it runs, a 7px dot in
+ * `--v2-background-bg-accent` when done and unread, and the faint age (`compact`, inbox.tsx:857-875,
+ * with the `sidebar.inbox.elapsed.*` and `sidebar.inbox.time.now` strings, en.ts:860-868).
+ * Those rules are Tailwind classes in the app's markup, so side.css states them. CSS cannot import
+ * this constant; it records the assumption.
  */
-export const SIDEBAR_ROW = '[data-titlebar-tab-action]';
+export const WORKING_SHELF = '[data-slot="sidebar-inbox-working"]';
+
+/** The copy {@link shelfAge} reads, in the app's words (packages/app/src/runtime/i18n/en.ts:860-868). */
+export interface ShelfAgeCopy {
+  readonly now: string;
+  readonly minutes: (count: number) => string;
+  readonly hours: (count: number) => string;
+  readonly days: (count: number) => string;
+}
+
+/**
+ * A row's age as the sidebar's Working shelf writes it (`compact` and `age` in
+ * packages/app/src/shell/titlebar/inbox.tsx:857-875 at v2.4.2): "now" under a minute, then `5m`,
+ * `3h` and `2d`. The app counts a running row's first minute in seconds; the side tab ticks by
+ * the minute, so it writes "now" there.
+ */
+export function shelfAge(then: number, now: number, copy: ShelfAgeCopy): string {
+  const seconds = Math.max(0, Math.floor((now - then) / 1000));
+  if (seconds < 60) return copy.now;
+  if (seconds < 3600) return copy.minutes(Math.floor(seconds / 60));
+  if (seconds < 86_400) return copy.hours(Math.floor(seconds / 3600));
+  return copy.days(Math.floor(seconds / 86_400));
+}
+
+/**
+ * Whether a session runs in a worktree of its project, by the sidebar's rule: its directory is
+ * not the project's root (`inboxInWorktree` in packages/app/src/shell/titlebar/inbox-model.ts:535
+ * at v2.4.2, where the root is the project's `canonical`, global-sync/utils.ts:162). The app
+ * compares paths with `comparablePath`; this drops trailing separators and unifies them.
+ */
+export function inWorktree(root: string, directory: string): boolean {
+  const comparable = (path: string) => path.replaceAll('\\', '/').replace(/\/+$/, '');
+  return comparable(root) !== comparable(directory);
+}

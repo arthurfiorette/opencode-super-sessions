@@ -23,8 +23,9 @@ import type { ProjectSelection } from './projects.js';
 // window's `ServerRef`, as `src/page/model.ts` binds it to the TUI's client and `data`. The model
 // lives as long as the window, from the first open on, so reopening draws the cached lists at
 // once and reloads them in the background when they are old or a session event changed them. A
-// view (the dialog, and the side tab's list) attaches to the model of every server it lists while
-// it shows, and merges their data (`createBrowserView` in ./view.ts).
+// view (the dialog) attaches to the model of every server it lists while it shows, and merges
+// their data (`createBrowserView` in ./view.ts). The side tab's Working section reads only
+// `everyActive`.
 
 // A reload waits for a burst of session events to settle, like the TUI's.
 const RELOAD_DELAY = 500;
@@ -187,8 +188,9 @@ export function createBrowserModel(server: ServerRef) {
   const [store, setStore] = createStore<PageData>(structuredClone(controller.snapshot()));
 
   // Every project's active sessions: the All lists while they show, else one list asked for the
-  // project picker, at most once per FRESH_FOR. The picker's projects count from it, and a switch
-  // to a project shows that project's share of it at once.
+  // project picker, at most once per FRESH_FOR. The picker's projects count from it, a switch
+  // to a project shows that project's share of it at once, and the side tab's Working section
+  // lists from it.
   const [everyActive, setEveryActive] = createSignal<readonly SessionInfo[]>();
   let everyAt = 0;
   let everyAsking = false;

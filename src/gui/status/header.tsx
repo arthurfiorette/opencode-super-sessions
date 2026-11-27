@@ -17,7 +17,7 @@ export interface HeaderStatusProps {
   readonly compact: boolean;
   /** The session's Super Sessions side tab is on screen. */
   readonly workShown: boolean;
-  /** Shows the side tab at its Work section, or hides it while it shows. */
+  /** Shows the side tab, which always lists the session's work, or hides it while it shows. */
   readonly toggleWork: () => void;
 }
 

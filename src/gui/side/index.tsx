@@ -9,20 +9,20 @@ import {
   Style,
   usePlugin
 } from '@opencode/plugin/gui';
-import { createEffect, createMemo, createSignal, on, untrack } from 'solid-js';
+import { createMemo, untrack } from 'solid-js';
 import { PANEL_MENU, panelKey, togglePinnedTab } from '../../host/gui.js';
 import type { Machines } from '../browser/machines.js';
 import { LinkScopeProvider } from '../links.js';
 import { Octicon } from '../octicons.js';
 import type { RefsStore, SessionTarget } from '../refs-store.js';
 import type { StatusIcons } from '../status/pill.js';
-import { listsAllProjects, type SidePrefs, workFolded } from './prefs.js';
-import { SideSessions } from './sessions.js';
+import { type SidePrefs, workingCollapsed } from './prefs.js';
 import css from './side.css?inline';
 import { WorkSection } from './work.js';
+import { WorkingSection } from './working-section.js';
 
-// The Super Sessions side tab: the routed session's work above the active sessions of its project
-// or of every project, in a tab pinned to every session's strip. It can stand in for the app's sidebar while in a session.
+// The Super Sessions side tab: the routed session's work, and under it the sessions that need the
+// user on every machine, in a tab pinned to every session's strip.
 
 /** The panel's id, and its one tab's. */
 const SIDE = 'sessions';
@@ -34,10 +34,7 @@ const WIDTH = 360;
 export interface SideControls {
   /** Whether the tab is on screen in the session. */
   shown(session: SessionRef): boolean;
-  /**
-   * Shows the tab in the session with its Work section unfolded and scrolled into view, or hides
-   * the side region while the tab shows there.
-   */
+  /** Shows the tab in the session, whose Work is always listed, or hides the side region while it shows. */
   toggleWork(session: SessionRef): void;
 }
 
@@ -61,16 +58,6 @@ function targetOf(session: SessionRef & { directory: string }): SessionTarget {
 export function addSidePanel(ctx: Context, deps: SideDeps): SideControls {
   ctx.add(Style, css);
   const key = panelKey(ctx.id, SIDE);
-  // Moves each time the header asks for the Work section; the render scrolls to it.
-  const [revealed, setRevealed] = createSignal(0);
-  const folded = () => workFolded(deps.sidePrefs.value);
-  /** Folds or unfolds the Work section in every session. */
-  const setFolded = (next: boolean) =>
-    deps.sidePrefs.update((draft) => {
-      if (next) delete draft.workFolded;
-      else draft.workFolded = false;
-      return undefined;
-    });
 
   // One tab object for every session, so a session switch does not render its trigger again.
   // Pinned, the host lists it in every strip without storing it, and keeps it across switches.
@@ -95,16 +82,7 @@ export function addSidePanel(ctx: Context, deps: SideDeps): SideControls {
     width: WIDTH,
     mobile: { title: ctx.t('side.title'), order: 50, kind: 'menu', icon: deps.icons.pull },
     list: () => [tab],
-    render: (props) => (
-      <SidePanel
-        {...props}
-        deps={deps}
-        panelKey={key}
-        folded={folded()}
-        setFolded={setFolded}
-        revealed={revealed()}
-      />
-    )
+    render: (props) => <SidePanel {...props} deps={deps} panelKey={key} />
   });
 
   // The `+` menu opens the tab in the routed session; launchers that skip open tabs leave it out.
@@ -123,13 +101,7 @@ export function addSidePanel(ctx: Context, deps: SideDeps): SideControls {
 
   return {
     shown: (session) => ctx.layout.state(key, session) === 'visible',
-    toggleWork(session) {
-      if (ctx.layout.state(key, session) !== 'visible') {
-        setFolded(false);
-        setRevealed((count) => count + 1);
-      }
-      togglePinnedTab(ctx.layout, key, session);
-    }
+    toggleWork: (session) => togglePinnedTab(ctx.layout, key, session)
   };
 }
 
@@ -137,55 +109,35 @@ export function addSidePanel(ctx: Context, deps: SideDeps): SideControls {
 interface SidePanelProps extends PanelProps {
   readonly deps: SideDeps;
   readonly panelKey: string;
-  readonly folded: boolean;
-  readonly setFolded: (folded: boolean) => void;
-  /** Moves each time the header asks for the Work section. */
-  readonly revealed: number;
 }
 
 /**
  * The tab's content. It renders once and follows the routed session through `props.session`,
- * across servers too, since its list covers every machine.
+ * across servers too, since the Working section covers every machine.
  */
 function SidePanel(props: SidePanelProps) {
   const ctx = usePlugin();
   const deps = untrack(() => props.deps);
-  let work: HTMLElement | undefined;
-  createEffect(
-    on(
-      () => props.revealed,
-      () => work?.scrollIntoView?.({ block: 'start' }),
-      { defer: true }
-    )
-  );
   // A memo, so a route change that keeps the tab visible changes nothing that reads it.
   const shown = createMemo(() => ctx.layout.state(props.panelKey, props.session) === 'visible');
-  /** Lists every project's sessions, or the routed project's again, and keeps the choice. */
-  const setAllProjects = (all: boolean) =>
+  /** Collapses or expands the Working section in every session, and keeps the choice. */
+  const setCollapsed = (collapsed: boolean) =>
     deps.sidePrefs.update((draft) => {
-      if (all) draft.scope = 'all';
-      else delete draft.scope;
+      if (collapsed) draft.workingCollapsed = true;
+      else delete draft.workingCollapsed;
       return undefined;
     });
   return (
     <LinkScopeProvider scope={{ session: () => props.session }}>
       <div class="ss-side">
-        <WorkSection
-          refs={deps.refs}
-          target={targetOf(props.session)}
-          folded={props.folded}
-          setFolded={props.setFolded}
-          ref={(element) => {
-            work = element;
-          }}
-        />
-        <SideSessions
+        <WorkSection refs={deps.refs} target={targetOf(props.session)} />
+        <WorkingSection
           machines={deps.machines}
           session={props.session}
           panelKey={props.panelKey}
           shown={shown()}
-          allProjects={listsAllProjects(deps.sidePrefs.value)}
-          setAllProjects={setAllProjects}
+          collapsed={workingCollapsed(deps.sidePrefs.value)}
+          setCollapsed={setCollapsed}
           browse={deps.browse}
         />
       </div>
