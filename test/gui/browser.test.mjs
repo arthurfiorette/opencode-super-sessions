@@ -768,9 +768,9 @@ async function openOnBoth(windowsHandlers) {
 test('All lists every machine, and a remote row opens and archives on its own server', async () => {
   const { local, windows } = await openOnBoth();
 
-  // The picker lists both machines' projects in one list by latest activity, after All, and
-  // marks only the remote one with its machine; the remote session row names its machine and
-  // the local one does not, as the app's sidebar labels them.
+  // The picker lists both machines' projects in one list by latest activity, after All and
+  // before Add project, and marks only the remote one with its machine; the remote session row
+  // names its machine and the local one does not, as the app's sidebar labels them.
   openPicker();
   await until(() => option('project:winproj'), 'the Windows project');
   assert.deepEqual(
@@ -782,7 +782,8 @@ test('All lists every machine, and a remote row opens and archives on its own se
       ['all', undefined],
       ['project:proj', undefined],
       ['project:winproj', 'Windows'],
-      ['project:other', undefined]
+      ['project:other', undefined],
+      ['add', undefined]
     ]
   );
   document.querySelector('.ss-picker-trigger').click();
@@ -841,6 +842,118 @@ test("the Projects view lists every machine's projects, and enter lists one in A
       ),
     "the project's own list"
   );
+});
+
+/** The picker's search field, while the picker is open. */
+const pickerField = () => document.querySelector('.ss-project-search input');
+/** The picker's rows, by their key on their server, `all`, `other` or `add`. */
+const pickerRows = () =>
+  [...document.querySelectorAll('.ss-project-search [data-option]')].map((node) =>
+    node.dataset.option.split('\n').at(-1)
+  );
+/** Types `text` into the picker's field. */
+const typeInPicker = (text) => {
+  pickerField().value = text;
+  pickerField().dispatchEvent(new Event('input', { bubbles: true }));
+};
+const pressInPicker = (init) =>
+  pickerField().dispatchEvent(
+    new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+  );
+/** Whether `server` was asked for the sessions of project `id`. */
+const listedProject = (server, id) =>
+  server.client.calls.some((call) => call.name === 'session.list' && call.input.project === id);
+
+test('typing in the picker filters by name and by machine, and enter picks the first match', async () => {
+  const { local, windows } = await openOnBoth();
+
+  press({ key: 'π', code: 'KeyP', altKey: true });
+  await until(() => pickerField(), 'the picker');
+  assert.equal(document.activeElement, pickerField());
+
+  // `/work/other` holds "oth" too; the widgets project holds it nowhere.
+  typeInPicker('oth');
+  assert.deepEqual(pickerRows(), ['project:other', 'add']);
+  pressInPicker({ key: 'Enter' });
+  await until(() => pickerField() === null, 'the picker to close');
+  await until(() => listedProject(local, 'other'), "the other project's list");
+  await until(() => listed().join() === 'ses_other', "the other project's sessions");
+
+  // The Windows project is named "installer"; only its machine's name holds the query.
+  press({ key: 'π', code: 'KeyP', altKey: true });
+  await until(() => pickerField(), 'the picker again');
+  typeInPicker('windows');
+  assert.deepEqual(pickerRows(), ['project:winproj', 'add']);
+  pressInPicker({ key: 'Enter' });
+  await until(() => listedProject(windows, 'winproj'), "the Windows project's list");
+  await until(() => listed().join() === 'ses_win', "the Windows project's sessions");
+  assert.equal(listedProject(local, 'winproj'), false);
+});
+
+/** Starts the GUI on Home with one session in each of fifteen projects, and opens the browser. */
+async function openOnManyProjects() {
+  // Newest first: twelve recent ones, then three older ones out of name order.
+  const names = [
+    ...Array.from({ length: 12 }, (_, index) => `p${String(index + 1).padStart(2, '0')}`),
+    'zeta',
+    'alpha',
+    'mid'
+  ];
+  const sessions = names.map((name, index) => ({
+    ...session(`ses_${name}`, `Work in ${name}`, { created: NOW - (index + 1) * HOUR }),
+    projectID: name,
+    location: { directory: `/work/${name}` }
+  }));
+  const server = createServer({
+    client: createClient({
+      'session.get': ({ sessionID }) => sessions.find((item) => item.id === sessionID),
+      'session.list': ({ archived, project }) => ({
+        data: archived
+          ? []
+          : sessions.filter((item) => project === undefined || item.projectID === project)
+      }),
+      'message.list': () => ({ data: [], cursor: {} }),
+      'rpc.done.facts': () => ({}),
+      'rpc.refs': () => ({}),
+      'rpc.refresh': () => ({}),
+      'rpc.search': () => []
+    })
+  });
+  gui = await startGui({ servers: [server] });
+  await gui.command('browse').run();
+  await until(() => row('ses_p01'), 'the first row');
+  return { server, names };
+}
+
+test('without a query the picker lists the recent projects, then Other projects reveals the rest by name', async () => {
+  const { names } = await openOnManyProjects();
+
+  openPicker();
+  await until(() => pickerRows().includes('other'), 'the Other projects row');
+  assert.deepEqual(pickerRows(), [
+    'all',
+    ...names.slice(0, 12).map((name) => `project:${name}`),
+    'other',
+    'add'
+  ]);
+  assert.equal(option('other').querySelector('.ss-picker-count').textContent, '3');
+
+  option('other').click();
+  assert.deepEqual(pickerRows().slice(13), ['project:alpha', 'project:mid', 'project:zeta', 'add']);
+  // The keys go on from the first of them.
+  pressInPicker({ key: 'Enter' });
+  await until(() => listed().join() === 'ses_alpha', "alpha's sessions");
+});
+
+test("Add project closes the browser and opens the app's folder picker on the machine", async () => {
+  const { server } = await openOnManyProjects();
+
+  openPicker();
+  await until(() => option('add'), 'the Add project row');
+  // `mod+o`, as in the app's own dialog.
+  pressInPicker({ key: 'o', metaKey: true });
+  assert.deepEqual(gui.projects, [{ server: server.id, title: 'Open project' }]);
+  assert.ok(gui.dialogs.every((dialog) => !dialog.container.isConnected));
 });
 
 test('a machine without the server plugin lists its sessions bare, the others keep theirs', async () => {

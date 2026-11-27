@@ -99,16 +99,56 @@ export const TEXT_INPUT = '[data-component="text-input-v2"]';
 export const BUTTON = '[data-component="button-v2"]';
 
 /**
- * The app's menu markup, which packages/ui/src/navigation/menu/menu.css:6-210 at v2.4.2 draws: a
- * `[data-component="menu-v2-content"]` surface of layer-01 with 6px corners and the floating
- * elevation (select.css:9-19 for the select's list), `[data-component="menu-v2-item"]` rows of
- * 28px that take `data-highlighted` and `data-checked`, `menu-v2-item-content` and
- * `menu-v2-item-indicator` inside, `[data-slot="menu-v2-group-label"]` headings and
- * `[data-slot="menu-v2-separator"]` lines. `ui.Menu` lists text and icons only, so the project
- * picker's list, with avatars, folders and counts, renders this markup itself in the dialog. When
- * it changes, the list draws unstyled.
+ * The app's "Search projects" dialog, which the browser's project picker follows
+ * (`NewSessionLocationDialog` in packages/app/src/new-session/location/dialog.tsx:371-565 at
+ * v2.4.2, opened by `project.select`, packages/app/src/shell/titlebar/titlebar.tsx:63). It is a
+ * dialog of its own over the screen (`size="large" fit`, dialog.tsx:371, so 680px wide and as tall
+ * as its rows up to 600px, packages/ui/src/overlays/dialog/dialog.css:163-193), without a header:
+ * the search field with the magnifying glass on top (28px, no fill, 6px insets,
+ * new-session-location/dialog.css:1-41), a 0.5px line under it (dialog.css:43-49), then 32px rows
+ * with 8px and 6px insets (dialog.css:83-86) of the avatar, the 13px name at weight 440 taking at
+ * most 55% (dialog.css:139-147), the server chip ({@link SERVER_CHIP}) and the project's full
+ * worktree path in the faint description (dialog.tsx:575-613), the active row on the overlay
+ * hover color (palette-menu.css:58-61). Without a query it ends with an "Other projects" row with
+ * the menu icon and a faint count (dialog.tsx:487-500, dialog.css:115-125), then a line and the
+ * "Add project" row with the plus icon and its keybind (dialog.tsx:501-519). It matches a project
+ * by name, worktree path or server name, each holding the query (dialog.tsx:155-159 and 185).
+ * Those stylesheets load with that dialog, so browser.css states the values. CSS cannot import
+ * this constant; it records the assumption. `ui.Dialog` has no `fit`, so browser.css also lets the
+ * picker's frame grow with its rows, and hides its header as the browser's.
  */
-export const MENU = '[data-component="menu-v2-content"]';
+export const PROJECT_SEARCH = '.ss-project-search';
+
+/**
+ * The chip the app's "Search projects" rows show after the name of a project on another server
+ * (`ServerTag` in packages/app/src/new-session/location/dialog.tsx:632-645 at v2.4.2): the app's
+ * `Badge` (`span[data-component="tag"]` with `data-appearance="compact"` and
+ * `data-variant="subtle"`, packages/ui/src/data-display/badge/badge.tsx:9-25), a 16px pill of
+ * layer-03 with 2px corners and 11px muted text at weight 530 (badge.css:1-45), at most 160px
+ * with 3px gaps and a 12px icon (new-session-location/dialog.css:165-186). The icon is `globe`
+ * for a remote server and `terminal` for one a plugin connects, such as SSH (`serverIcon`,
+ * dialog.tsx:673-677). `ServerRef` does not say how a server is connected, so every other machine
+ * gets the globe. The project's own server gets no chip (`tagged`, dialog.tsx:669-671), which
+ * {@link machineTag} decides here as the session rows do.
+ */
+export const SERVER_CHIP = { icon: 'globe' } as const satisfies { icon: AppIconName };
+
+/**
+ * The app's "Add project" row and its keybind. In the app it runs `project.open` (`mod+o`), which
+ * the "Search projects" dialog registers only while it is mounted
+ * (packages/app/src/new-session/location/dialog.tsx:254-272 at v2.4.2), so `ctx.commands.run`
+ * cannot reach it from the browser and answers false (packages/app/src/runtime/plugin/
+ * host-apis.tsx:1120-1129). Its flow is the app's directory picker titled "Open project"
+ * (`command.project.open`, packages/app/src/runtime/i18n/en.ts:54), then the folder is added as
+ * a project and a new session opens there (`addProject` in
+ * packages/app/src/new-session/project/controller.ts:82-99). `ctx.layout.project(server, title)`
+ * runs the same picker, adds the project and opens a new draft
+ * (host-apis.tsx:487, 993-1022 and 1190), so the browser's row calls that. With more than one
+ * ready server the app asks for the server first (packages/app/src/new-session/location/
+ * machine.ts:122-131), and so does the browser. The app's keymap runs no command while a dialog
+ * is open (packages/app/src/shell/commands/command.tsx:437), so the picker takes `mod+o` itself.
+ */
+export const ADD_PROJECT = { chord: 'mod+o' } as const;
 
 /**
  * The look of the app's segmented control (packages/ui/src/navigation/segmented-control/

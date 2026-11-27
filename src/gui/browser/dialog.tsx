@@ -34,8 +34,9 @@ import type { Machines, Origin } from './machines.js';
 import { ProjectPicker } from './picker.js';
 import { type BrowserPrefs, opensOnAll } from './prefs.js';
 import { Preview } from './preview.js';
+import { searchProjects } from './project-search.js';
 import { createProjects, type ProjectEntry } from './projects.js';
-import { ProjectList, ProjectPreview, projectMatches } from './projects-view.js';
+import { ProjectList, ProjectPreview } from './projects-view.js';
 import { PullItem, SessionRow } from './row.js';
 import { createBrowserView } from './view.js';
 
@@ -297,9 +298,8 @@ function SessionBrowser(props: SessionBrowserProps) {
   // The Projects view: every machine's projects the search matches, and the selected one, the
   // first until the user picks another.
   const headed = () => machines.servers().length > 1;
-  const projectRows = createMemo(() =>
-    projects.entries().filter((project) => projectMatches(project, query()))
-  );
+  // The picker's ranking (project-search.ts), so both find a project the same way.
+  const projectRows = createMemo(() => searchProjects(projects.entries(), query()));
   const [projectPick, setProjectPick] = createSignal<string>();
   const selectedProject = () => {
     const rows = projectRows();
@@ -391,6 +391,19 @@ function SessionBrowser(props: SessionBrowserProps) {
     setQuery('');
     switchView('active');
   };
+  /**
+   * The picker's "Add project": the app's folder picker, which adds the folder as a project on the
+   * machine and opens a new session there (ADD_PROJECT in src/host/gui.ts). That draft is where
+   * the user goes next, so the browser closes first.
+   */
+  const addProject = (server: ServerRef) => {
+    props.close();
+    ctx.layout.project(server.id, ctx.t('browser.picker.openTitle'));
+  };
+  /** Gives the search field the focus back after the picker closed, unless something took it. */
+  const refocus = () => {
+    if (root?.isConnected && !root.contains(document.activeElement)) search?.focus();
+  };
   /** Opens a session the Projects view lists, on its project's own machine. */
   const openListed = (project: ProjectEntry, session: SessionInfo) => {
     openSession(ctx.tabs, { server: project.server.id, id: session.id }, true);
@@ -440,8 +453,8 @@ function SessionBrowser(props: SessionBrowserProps) {
    * search field and the dialog itself can clash: arrows and tab do nothing useful in a one-line
    * field, enter has no submit there, the `alt` letters only type symbols on macOS and nothing
    * elsewhere, and f5 is the browser panel's reload, a command the dialog already suspends.
-   * `alt+p` opens the project picker (PICKER_KEY in src/host/gui.ts), whose menu then takes the
-   * keys until it closes. Enter on a focused button or link stays that control's. Tab switches
+   * `alt+p` opens the project picker (PICKER_KEY in src/host/gui.ts), a dialog above this one
+   * that takes the keys until it closes. Enter on a focused button or link stays that control's. Tab switches
    * views only from the search field or the dialog itself; on a button or link it moves the focus
    * as usual, so the keyboard reaches the picker, Retry and the preview's buttons. Without the
    * server plugin on the selected row's
@@ -534,8 +547,11 @@ function SessionBrowser(props: SessionBrowserProps) {
           projects={projects.entries()}
           picked={pickedKey()}
           onPick={pick}
+          servers={machines.servers().filter((machine) => machine.connected)}
+          onAdd={addProject}
           open={picking()}
           setOpen={setPicking}
+          onClosed={refocus}
         />
         <CloseHint close={props.close} />
       </div>

@@ -12,20 +12,6 @@ import { useAge } from './row.js';
 // list their pull requests, and the selected project's preview.
 
 /**
- * Whether a project matches the search: its name, its path or the machine name it shows holds
- * the query.
- */
-export function projectMatches(project: ProjectEntry, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (needle.length === 0) return true;
-  return (
-    project.look.name.toLowerCase().includes(needle) ||
-    project.look.root.toLowerCase().includes(needle) ||
-    (project.machine?.toLowerCase().includes(needle) ?? false)
-  );
-}
-
-/**
  * A project's machine after its folder: the sidebar's server icon and the machine's name, muted
  * like the machine a session row names. Only a project of another machine carries one.
  */

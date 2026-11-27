@@ -283,7 +283,7 @@ function createUi() {
  * calls), `closed` (`ctx.tabs.close` keys), `toasts`, `dialogs` (each open dialog's `container`
  * in `document.body`), `asked` (each `confirm` and `prompt` with its options), `layout`
  * (`ctx.layout.open` calls), `toggles` (`ctx.layout.toggle` calls), `hides`
- * (`ctx.layout.hide` calls) and `linked` (each
+ * (`ctx.layout.hide` calls), `projects` (`ctx.layout.project` calls) and `linked` (each
  * `ctx.links.open` link, with `handled`). `options.links(link)` decides what `ctx.links.open`
  * answers, as a matching `LinkHandler` would; without it no handler matches. `replies` answers
  * `confirm` and `prompt` in order; push to it before the GUI asks. An unanswered question
@@ -306,6 +306,7 @@ export function createContext(plugin, options = {}) {
   const layout = [];
   const toggles = [];
   const hides = [];
+  const projects = [];
   const linked = [];
   // Panel keys selected in their pane, by session id, and whether that pane is on screen: what
   // `open`, `toggle` and `hide` change and `state` reads.
@@ -425,7 +426,9 @@ export function createContext(plugin, options = {}) {
       state(key, target) {
         layoutVersion();
         return shown.get(`${target.id}\n${key}`) ?? 'closed';
-      }
+      },
+      // The app's folder picker for a new project on a server; nothing opens here.
+      project: (server, title) => void projects.push({ server, title })
     },
     keybinds: {
       keybind: () => [],
@@ -462,6 +465,7 @@ export function createContext(plugin, options = {}) {
     layout,
     toggles,
     hides,
+    projects,
     linked,
     closed,
     setSession,

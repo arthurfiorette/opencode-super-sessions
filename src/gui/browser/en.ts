@@ -12,6 +12,14 @@ export const browserEn = {
   'browser.location': '{{project}} · {{machine}}',
   'browser.picker': 'Project',
   'browser.picker.all': 'All projects',
+  // The app's own words (packages/app/src/runtime/i18n/en.ts:54, 136, 746, 748, 1425 and 1429 at
+  // v2.4.2).
+  'browser.picker.search': 'Search projects',
+  'browser.picker.other': 'Other projects',
+  'browser.picker.add': 'Add project',
+  'browser.picker.openTitle': 'Open project',
+  'browser.picker.servers': 'Search servers',
+  'browser.picker.empty': 'No results found',
   'browser.projects.running': '{{count}} running',
   'browser.projects.active.one': '{{count}} active',
   'browser.projects.active.other': '{{count}} active',
