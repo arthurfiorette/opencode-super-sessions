@@ -99,7 +99,9 @@ export function createRefsStore(queue: ForgeQueue): RefsStore {
               { sessionIDs: [target.sessionID] },
               { ...options, signal: abort.signal }
             );
-          const answer = await (method === 'refresh' ? queue.run(ask, abort.signal) : ask());
+          const answer = await (method === 'refresh'
+            ? queue.run(target.server.id, ask, abort.signal)
+            : ask());
           return answer[target.sessionID];
         } catch (error) {
           if (!closed && serverPluginMissing(error)) {

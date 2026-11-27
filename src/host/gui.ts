@@ -1,5 +1,6 @@
 import type { PluginInfo } from '@opencode/client';
 import type {
+  AppIconName,
   Layout,
   Links,
   ServerRef,
@@ -256,6 +257,57 @@ export function builtinServer(servers: Pick<Servers, 'list' | 'get'>): ServerRef
   return undefined;
 }
 
+/**
+ * The app icon the Desktop sidebar draws before a machine's name when it groups sessions by
+ * server (`GroupHeaderView` in packages/app/src/shell/titlebar/sidebar-customized.tsx:616 at
+ * v2.4.2). The name beside it is `servers.label(conn)` (sidebar-customized.tsx:560), which is what
+ * `ServerRef.name` returns (packages/app/src/runtime/plugin/host-apis.tsx:571): the user's name
+ * for the server, else the hostname of the app's own one (or "This computer"), else the server's
+ * address without its scheme (`serverLabel`, packages/app/src/runtime/server/registry.tsx:34).
+ */
+export const MACHINE_ICON = 'server' satisfies AppIconName;
+
+/**
+ * The machine name a session row shows at its end, as the sidebar's rows do: none while the app
+ * lists one server, and none for the app's own server (`servers.tag` in
+ * packages/app/src/runtime/server/registry.tsx:346 at v2.4.2, drawn by
+ * packages/app/src/shell/titlebar/project-session-row.tsx:164). The sidebar leaves out only the
+ * current server; a loopback connection to the app's own port (`ServerRef.local`) runs on this
+ * machine too, so its rows go unlabeled here as well.
+ */
+export function machineTag(
+  server: Pick<ServerRef, 'name' | 'local' | 'builtin'>,
+  machines: number
+): string | undefined {
+  return machines < 2 || server.builtin || server.local ? undefined : server.name;
+}
+
+/**
+ * A server's home directory, read from a path on it the way the app infers it: the API names no
+ * home, so the app takes a `/Users/<name>`, `/home/<name>`, `/root` or `C:\Users\<name>` prefix
+ * (`inferHomeDirectory` in packages/app/src/runtime/server/global-sync/bootstrap.ts:76 at v2.4.2).
+ * Undefined when the path starts with none of them.
+ */
+export function inferHome(path: string): string | undefined {
+  const normalized = path.replaceAll('\\', '/');
+  const match = /^(\/Users\/[^/]+|\/home\/[^/]+|\/root|[A-Za-z]:\/Users\/[^/]+)(?=\/|$)/.exec(
+    normalized
+  )?.[1];
+  if (match === undefined) return undefined;
+  return path.includes('\\') ? match.replaceAll('/', '\\') : match;
+}
+
+/**
+ * A path as the app's tab preview writes it: `~` for the home directory when the path is in it,
+ * else the full path (`previewPath` in packages/app/src/shell/titlebar/tab-nav.tsx:191-201 at
+ * v2.4.2), with the home from {@link inferHome}.
+ */
+export function homePath(path: string): string {
+  const home = inferHome(path);
+  if (home === undefined || !/^([/\\]|$)/.test(path.slice(home.length))) return path;
+  return `~${path.slice(home.length)}`;
+}
+
 /** The modifier keys of a click, which send a link past the app's link handlers. */
 export interface LinkModifiers {
   readonly shiftKey: boolean;
@@ -325,6 +377,8 @@ export interface ProjectIconInfo {
 export interface ProjectLook {
   /** The name the sidebar shows, also the avatar's tooltip. */
   readonly name: string;
+  /** The project's root directory, or the directory of a session outside a project. */
+  readonly root: string;
   /** The letter of the letter avatar. */
   readonly initial: string;
   /** The image the avatar shows instead of the letter. */
@@ -390,6 +444,7 @@ export function projectLook(project: {
   const color = icon?.color === 'mint' ? 'cyan' : icon?.color === 'lime' ? 'green' : icon?.color;
   return {
     name,
+    root: project.root,
     initial: firstGrapheme(name),
     src,
     variant: color !== undefined && AVATAR_VARIANTS.has(color) ? color : 'gray'

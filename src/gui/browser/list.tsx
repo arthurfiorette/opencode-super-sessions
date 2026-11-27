@@ -2,7 +2,7 @@ import type { SessionInfo } from '@opencode/client';
 import { type Context, type Persisted, type ServerRef, usePlugin } from '@opencode/plugin/gui';
 import { createMemo, createSignal, For, type JSX, Match, Show, Switch } from 'solid-js';
 import { closeSessionTab } from '../../host/gui.js';
-import { isBusy, setArchived } from '../../host/session-info.js';
+import { isBusy, isUnread, setArchived } from '../../host/session-info.js';
 import {
   keepSelection,
   moveSelection,
@@ -11,15 +11,15 @@ import {
   rowsOf
 } from '../../page/state.js';
 import { rpcOn } from '../server.js';
-import type { BrowserModel, createBrowserView } from './model.js';
+import type { Machines } from './machines.js';
 import type { BrowserPrefs } from './prefs.js';
-import { ALL_KEY, type Rail, type RailTile, selectionKey } from './rail.js';
+import { ALL_KEY, type Rail, type RailMachine, type RailTile, selectionKey } from './rail.js';
+import type { BrowserView } from './view.js';
 
 // The session list both browser views draw, the dialog and the side tab: its keyed groups, the
-// selection, the rail pick and the row actions, over the shared model.
+// selection, the rail pick and the row actions, over the machines' shared models.
 
-/** A view of the model, as `createBrowserView` returns it. */
-export type BrowserView = ReturnType<typeof createBrowserView>;
+export type { BrowserView };
 
 /**
  * A group of the list, the same object on every publish of its title, so the group's block and
@@ -180,25 +180,23 @@ export function createListState(browser: BrowserView, view: () => PageView) {
 export type ListState = ReturnType<typeof createListState>;
 
 /**
- * What a row shows about a session and what its buttons do, over the server's live data: its
- * latest synced copy, running and waiting state, archive and Done. `signal` gives the view's
- * current signal, for the refresh after a Done mark.
+ * What a row shows about a session and what its buttons do, over its own server's live data:
+ * its latest synced copy, running and waiting state, archive and Done, each through the client
+ * and RPC of the server the row came from. `fallback` is the server of a row the view no longer
+ * lists, such as one that just left the list.
  */
-export function createRowActions(
-  ctx: Context,
-  model: BrowserModel,
-  server: ServerRef,
-  signal: () => AbortSignal
-) {
+export function createRowActions(ctx: Context, browser: BrowserView, fallback: () => ServerRef) {
   const toast = (title: string) => ctx.toast.show({ title, variant: 'error' });
-  /** The session's latest copy the server synced, for a title renamed while the list shows. */
+  /** The server a session's row came from. */
+  const serverOf = (id: string): ServerRef => browser.serverOf(id) ?? fallback();
+  /** The session's latest copy its server synced, for a title renamed while the list shows. */
   const live = (session: SessionInfo): SessionInfo =>
-    server.data.session.get(session.id) ?? session;
+    serverOf(session.id).data.session.get(session.id) ?? session;
   /** Whether the session or one of its subagents runs. */
-  const running = (session: SessionInfo) => isBusy(live(session)) || model.isRunning(session.id);
+  const running = (session: SessionInfo) => isBusy(live(session)) || browser.isRunning(session.id);
   /** What the session waits on the user for, as the app's own lists know it. */
   const waiting = (id: string): 'permission' | 'question' | undefined => {
-    const sessions = server.data.session;
+    const sessions = serverOf(id).data.session;
     if ((sessions.permission.list(id)?.length ?? 0) > 0) return 'permission';
     if ((sessions.form.list(id)?.length ?? 0) > 0) return 'question';
     return undefined;
@@ -210,6 +208,8 @@ export function createRowActions(
    */
   const archive = async (session: SessionInfo | undefined) => {
     if (session === undefined) return;
+    const model = browser.modelOf(session.id);
+    const server = model?.server ?? fallback();
     // The row's own copy: the controller moves it between the lists right after each update.
     const archived = session.time.archived === undefined;
     try {
@@ -218,12 +218,12 @@ export function createRowActions(
       toast(ctx.t(archived ? 'browser.archive.failed' : 'browser.restore.failed'));
       return;
     }
-    model.controller.archived(session.id, archived, Date.now());
+    model?.controller.archived(session.id, archived, Date.now());
     if (archived && ctx.options.closeTabOnArchive !== false) {
       closeSessionTab(ctx.tabs, { server: server.id, id: session.id });
     }
     // Without the server plugin there is no auto-archive to stop.
-    if (!archived) {
+    if (!archived && model !== undefined) {
       void model
         .rpcOptions()
         .then((options) => rpcOn(server)['archive.exclude']({ sessionIDs: [session.id] }, options))
@@ -232,17 +232,22 @@ export function createRowActions(
   };
   /** Marks the session Done, or not Done when it is Done by any means. */
   const toggleDone = async (session: SessionInfo | undefined) => {
-    if (session === undefined || model.missing()) return;
-    const done = !model.isDone(session.id);
+    if (session === undefined) return;
+    const model = browser.modelOf(session.id);
+    if (model === undefined || model.missing()) return;
+    const done = !browser.isDone(session.id);
     try {
-      await rpcOn(server)['done.set']({ sessionID: session.id, done }, await model.rpcOptions());
+      await rpcOn(model.server)['done.set'](
+        { sessionID: session.id, done },
+        await model.rpcOptions()
+      );
     } catch {
       toast(ctx.t(done ? 'browser.done.failed' : 'browser.notDone.failed'));
       return;
     }
-    void model.controller.refresh([session.id], signal());
+    void model.controller.refresh([session.id], browser.signal());
   };
-  return { live, running, waiting, archive, toggleDone };
+  return { serverOf, live, running, waiting, archive, toggleDone };
 }
 
 export type RowActions = ReturnType<typeof createRowActions>;
@@ -250,7 +255,7 @@ export type RowActions = ReturnType<typeof createRowActions>;
 /** Props of {@link RowButtons}. */
 export interface RowButtonsProps {
   readonly session: SessionInfo;
-  readonly model: BrowserModel;
+  readonly browser: BrowserView;
   readonly actions: RowActions;
   /** The chord each button's tooltip shows, if the view has one. */
   readonly keys?: (action: 'archive' | 'done') => string | undefined;
@@ -264,7 +269,7 @@ export function RowButtons(props: RowButtonsProps) {
     return chord === undefined ? [] : ctx.keybinds.keys(chord);
   };
   const archived = () => props.session.time.archived !== undefined;
-  const done = () => props.model.isDone(props.session.id);
+  const done = () => props.browser.isDone(props.session.id);
   return (
     <>
       <ctx.ui.Tooltip
@@ -281,8 +286,8 @@ export function RowButtons(props: RowButtonsProps) {
           }}
         />
       </ctx.ui.Tooltip>
-      {/* Done is the server plugin's mark: without it there is nothing to set. */}
-      <Show when={!archived() && !props.model.missing()}>
+      {/* Done is the server plugin's mark: without it on the row's server there is nothing to set. */}
+      <Show when={!archived() && !props.browser.missing(props.session.id)}>
         <ctx.ui.Tooltip
           value={ctx.t(done() ? 'browser.markNotDone' : 'browser.markDone')}
           keys={keys('done')}
@@ -304,21 +309,51 @@ export function RowButtons(props: RowButtonsProps) {
 }
 
 /**
- * The rail pick of a view: the tile shown as picked, and picking one, which every view of the
- * model follows. A pick outlasts the window's views: `all`, or `project`, which the next open
- * reads as the routed project. Only a pick writes, so the old `allProjects` is read once and
- * dropped here. `picked` runs after each new pick, for the view to reset its selection.
+ * What the rail reads of the machines: every listed server's model, and the running and unread
+ * state of a session by its own server's live data.
+ */
+export function railSources(machines: Machines) {
+  const live = (server: ServerRef, session: SessionInfo): SessionInfo =>
+    server.data.session.get(session.id) ?? session;
+  return {
+    machines: () =>
+      machines.models().map(
+        (model): RailMachine => ({
+          server: model.server,
+          every: model.everyActive,
+          want: model.wantEveryActive,
+          active: () => (model.data.status === 'ready' ? model.data.active : undefined)
+        })
+      ),
+    running: (server: ServerRef, session: SessionInfo) =>
+      isBusy(live(server, session)) || (machines.model(server.id)?.isRunning(session.id) ?? false),
+    unread: (server: ServerRef, session: SessionInfo) => {
+      const sessions = server.data.session;
+      return (
+        isUnread(live(server, session)) ||
+        (sessions.permission.list(session.id)?.length ?? 0) > 0 ||
+        (sessions.form.list(session.id)?.length ?? 0) > 0
+      );
+    }
+  };
+}
+
+/**
+ * The rail pick of a view: the tile shown as picked, and picking one, which every view follows.
+ * A pick outlasts the window's views: `all`, or `project`, which the next open reads as the
+ * routed project. Only a pick writes, so the old `allProjects` is read once and dropped here.
+ * `picked` runs after each new pick, for the view to reset its selection.
  */
 export function createRailPick(
-  model: BrowserModel,
+  machines: Machines,
   rail: Rail,
   prefs: Persisted<BrowserPrefs, BrowserPrefs>,
   picked: () => void
 ) {
-  const pickedTile = () => selectionKey(model.selection(), rail.routedKey());
+  const pickedTile = () => selectionKey(machines.pick(), rail.routedKey());
   const pickTile = (tile: RailTile) => {
     if (tile.key === pickedTile()) return;
-    model.select(tile.selection);
+    machines.select(tile.selection);
     picked();
     prefs.update((draft) => {
       draft.rail = tile.key === ALL_KEY ? 'all' : 'project';
@@ -326,7 +361,7 @@ export function createRailPick(
       return undefined;
     });
   };
-  /** Picks the tile `delta` places along the rail, stopping at its ends. */
+  /** Picks the tile `delta` places along the rail, across machines, stopping at its ends. */
   const moveTile = (delta: number) => {
     const tiles = rail.tiles();
     const index = tiles.findIndex((tile) => tile.key === pickedTile());
@@ -338,7 +373,6 @@ export function createRailPick(
 
 /** Props of {@link ListBody}. */
 export interface ListBodyProps {
-  readonly model: BrowserModel;
   readonly browser: BrowserView;
   readonly list: ListState;
   readonly view: PageView;
@@ -355,7 +389,7 @@ export interface ListBodyProps {
  */
 export function ListBody(props: ListBodyProps) {
   const ctx = usePlugin();
-  const store = props.model.data;
+  const store = props.browser.data;
   const pullView = () => props.view === 'pulls';
   /** The note of the view's empty list. */
   const emptyNote = () =>
@@ -364,9 +398,33 @@ export function ListBody(props: ListBodyProps) {
       : ctx.t(`browser.empty.${props.view}`);
   return (
     <>
-      <Show when={props.model.loading() && store.status === 'ready'}>
+      <Show when={props.browser.loading() && store.status === 'ready'}>
         <div class="ss-progress" aria-hidden="true" />
       </Show>
+      {/* A machine that failed or is not connected says so above the others' rows. */}
+      <Show when={store.status === 'ready'}>
+        <For each={props.browser.failedOn()}>
+          {(server) => (
+            <div class="ss-machine-note" data-machine-note={server.id}>
+              <p class="ss-note">{ctx.t('browser.machine.failed', { machine: server.name })}</p>
+              <ctx.ui.Button
+                variant="neutral"
+                size="small"
+                onClick={() => void props.browser.load(true)}
+              >
+                {ctx.t('browser.retry')}
+              </ctx.ui.Button>
+            </div>
+          )}
+        </For>
+      </Show>
+      <For each={props.browser.offline()}>
+        {(server) => (
+          <p class="ss-note" data-machine-note={server.id}>
+            {ctx.t('browser.machine.offline', { machine: server.name })}
+          </p>
+        )}
+      </For>
       <Switch>
         <Match when={store.status === 'loading'}>
           <div class="ss-state">
@@ -412,6 +470,28 @@ export function ListBody(props: ListBodyProps) {
         </Match>
       </Switch>
     </>
+  );
+}
+
+/**
+ * The note that a listed server runs no server plugin, once for every such server. With more
+ * than one machine it names them, since the other machines' rows keep their refs.
+ */
+export function PluginNote(props: { browser: BrowserView; machines: Machines }) {
+  const ctx = usePlugin();
+  const text = () => {
+    const missing = props.browser.missingOn();
+    if (props.machines.servers().length < 2) return ctx.t('browser.pluginMissing');
+    return ctx.t('browser.pluginMissingOn', {
+      machines: missing.map((server) => server.name).join(', ')
+    });
+  };
+  return (
+    <Show when={props.browser.missingOn().length > 0}>
+      <p class="ss-note" data-note="plugin-missing">
+        {text()}
+      </p>
+    </Show>
   );
 }
 

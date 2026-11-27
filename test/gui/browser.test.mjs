@@ -455,11 +455,12 @@ test('a project tile counts its running sessions, and All counts them all', asyn
 test('alt+down picks the next project on the rail, alt+up the one before', async () => {
   await openBrowser();
   await until(() => tile('project:other'), 'the rail');
-  // Newest activity first: the routed project, then the other one.
+  // Newest activity first: the routed project, then the other one. One machine, no divider.
   assert.deepEqual(
     [...document.querySelectorAll('[data-tile]')].map((node) => node.dataset.tile),
     ['all', 'project:proj', 'project:other']
   );
+  assert.equal(document.querySelector('.ss-rail-machine'), null);
 
   press({ key: 'ArrowDown', altKey: true });
   await until(() => listed().join() === 'ses_other', 'the next project');
@@ -578,4 +579,126 @@ test('a running session sits under Running with the app spinner, a plain one has
   const head = row('ses_busy').querySelector('.ss-row-head');
   const age = head.querySelector('.ss-row-age').textContent;
   assert.equal(head.textContent, `Split the build${age}`);
+});
+
+// A second machine the app is connected to: its session, in a project of its own, tracks a pull
+// request of its own.
+const WINDOWS_ID = 'http://192.168.1.20:4096';
+const WIN = {
+  ...session('ses_win', 'Port the installer', {
+    created: NOW - 6 * HOUR,
+    updated: NOW - 6 * HOUR
+  }),
+  projectID: 'winproj',
+  location: { directory: 'C:\\Users\\me\\installer' }
+};
+const winView = sessionRefViewSchema.parse({
+  links: [{ ref: pr(5100), source: 'agent', linkedAt: 1 }],
+  branchRefs: [],
+  states: { [key(pr(5100))]: state(pr(5100)) }
+});
+
+/** The Windows machine: another server than the app's own, with its sessions and the plugin. */
+function windowsServer(handlers = {}) {
+  const client = createClient({
+    'session.get': () => WIN,
+    'session.list': ({ archived }) => ({ data: archived ? [] : [WIN] }),
+    'session.update': () => undefined,
+    'message.list': () => ({ data: [], cursor: {} }),
+    'rpc.done.facts': () => ({}),
+    'rpc.refs': ({ sessionIDs }) => (sessionIDs.includes('ses_win') ? { ses_win: winView } : {}),
+    'rpc.refresh': ({ sessionIDs }) => (sessionIDs.includes('ses_win') ? { ses_win: winView } : {}),
+    'rpc.search': () => [],
+    ...handlers
+  });
+  return {
+    ...createServer({ id: WINDOWS_ID, client, builtin: false }),
+    name: 'Windows',
+    url: WINDOWS_ID,
+    local: false
+  };
+}
+
+/** Starts the GUI on Home with both machines and opens the browser on every project. */
+async function openOnBoth(windowsHandlers) {
+  const local = fixtureServer();
+  const windows = windowsServer(windowsHandlers);
+  gui = await startGui({ servers: [local, windows] });
+  await gui.command('browse').run();
+  await until(() => row('ses_win') && row('ses_busy'), 'both machines');
+  return { local, windows };
+}
+
+test('All lists every machine, and a remote row opens and archives on its own server', async () => {
+  const { local, windows } = await openOnBoth();
+
+  // The rail heads each machine's projects with its name; the remote row names its machine and
+  // the local one does not, as the app's sidebar labels them.
+  await until(() => tile('project:winproj'), 'the Windows project');
+  assert.deepEqual(
+    [...document.querySelectorAll('.ss-rail-machine, [data-tile]')].map(
+      (node) => node.dataset.machine ?? node.dataset.tile
+    ),
+    ['all', 'sidecar', 'project:proj', 'project:other', WINDOWS_ID, 'project:winproj']
+  );
+  assert.equal(row('ses_win').querySelector('.ss-row-machine').textContent, 'Windows');
+  assert.equal(row('ses_busy').querySelector('.ss-row-machine'), null);
+  await until(() => row('ses_win').querySelector('.ss-ref'), 'the remote ref line');
+
+  row('ses_win').click();
+  await until(() => row('ses_win').getAttribute('aria-selected') === 'true', 'the selection');
+  press({ key: 'Enter', ctrlKey: true });
+  assert.deepEqual(gui.tabs, [{ server: WINDOWS_ID, id: 'ses_win', focus: false }]);
+
+  row('ses_win').querySelector('[aria-label="Archive"]').click();
+  await until(() => !listed().includes('ses_win'), 'the archived row to leave');
+  const updates = (server) =>
+    server.client.calls.filter((call) => call.name === 'session.update').map((call) => call.input);
+  assert.deepEqual(updates(windows), [{ sessionID: 'ses_win', archived: true }]);
+  assert.deepEqual(updates(local), []);
+});
+
+test('a machine without the server plugin lists its sessions bare, the others keep theirs', async () => {
+  await openOnBoth({
+    'rpc.refs': () => Promise.reject(rpcUnavailable()),
+    'rpc.refresh': () => Promise.reject(rpcUnavailable()),
+    'rpc.done.facts': () => Promise.reject(rpcUnavailable()),
+    'rpc.search': () => Promise.reject(rpcUnavailable())
+  });
+
+  const note = await until(
+    () => document.querySelector('[data-note="plugin-missing"]'),
+    'the missing plugin note'
+  );
+  assert.ok(note.textContent.includes('not installed on Windows'));
+  assert.equal(document.querySelectorAll('[data-note="plugin-missing"]').length, 1);
+  await until(() => row('ses_busy').querySelector('.ss-ref'), 'the local ref lines');
+  await until(() => count('done') === '1', 'the local Done session');
+  assert.equal(row('ses_win').querySelector('.ss-ref'), null);
+  // Done is the server plugin's mark, so only the local row offers it.
+  assert.ok(row('ses_busy').querySelector('[aria-label="Mark Done"]'));
+  assert.equal(row('ses_win').querySelector('[aria-label="Mark Done"]'), null);
+});
+
+test('projects of one name tell their folders apart in the rail tooltips', async () => {
+  const dev = (id, directory) => ({
+    ...session(`ses_${id}`, `Work in ${id}`),
+    projectID: id,
+    location: { directory }
+  });
+  const sessions = [
+    dev('outer', '/Users/me/dev/devlanes'),
+    dev('inner', '/Users/me/dev/devlanes/devlanes')
+  ];
+  const server = fixtureServer({
+    'session.get': ({ sessionID }) => sessions.find((item) => item.id === sessionID),
+    'session.list': ({ archived }) => ({ data: archived ? [] : sessions })
+  });
+  gui = await startGui({ servers: [server] });
+  await gui.command('browse').run();
+  await until(() => tile('project:inner'), 'the rail');
+
+  const tooltip = (key) => tile(key).getAttribute('aria-label');
+  assert.equal(tooltip('project:outer'), 'devlanes · ~/dev');
+  assert.equal(tooltip('project:inner'), 'devlanes · ~/dev/devlanes');
 });

@@ -5,14 +5,13 @@ import {
   type PanelProps,
   type PanelTab,
   type Persisted,
-  type ServerRef,
   type SessionRef,
   Style,
   usePlugin
 } from '@opencode/plugin/gui';
-import { createEffect, createSignal, on, Show, untrack } from 'solid-js';
+import { createEffect, createSignal, on, untrack } from 'solid-js';
 import { PANEL_MENU, panelKey, togglePinnedTab } from '../../host/gui.js';
-import type { BrowserModel } from '../browser/model.js';
+import type { Machines } from '../browser/machines.js';
 import type { BrowserPrefs } from '../browser/prefs.js';
 import { LinkScopeProvider } from '../links.js';
 import { Octicon } from '../octicons.js';
@@ -47,8 +46,8 @@ export interface SideControls {
 export interface SideDeps {
   readonly refs: RefsStore;
   readonly icons: StatusIcons;
-  /** The server's browser model, the dialog's own. */
-  readonly models: (server: ServerRef) => BrowserModel;
+  /** Every server's browser model, the dialog's own. */
+  readonly machines: Machines;
   readonly browserPrefs: Persisted<BrowserPrefs, BrowserPrefs>;
   readonly sidePrefs: Persisted<SidePrefs, SidePrefs>;
 }
@@ -145,8 +144,8 @@ interface SidePanelProps extends PanelProps {
 }
 
 /**
- * The tab's content. It renders once and follows the routed session through `props.session`;
- * only a session on another server lists from that server's model.
+ * The tab's content. It renders once and follows the routed session through `props.session`,
+ * across servers too, since its list covers every machine.
  */
 function SidePanel(props: SidePanelProps) {
   const ctx = usePlugin();
@@ -172,23 +171,13 @@ function SidePanel(props: SidePanelProps) {
             work = element;
           }}
         />
-        <Show when={props.session.server.id} keyed>
-          {(id) => {
-            // The window's ref of the server, which outlives the session's screen (see the
-            // models in ../index.tsx).
-            const server = untrack(() => ctx.servers.get(id) ?? props.session.server);
-            return (
-              <SideSessions
-                model={deps.models(server)}
-                server={server}
-                session={props.session}
-                prefs={deps.browserPrefs}
-                panelKey={props.panelKey}
-                shown={shown()}
-              />
-            );
-          }}
-        </Show>
+        <SideSessions
+          machines={deps.machines}
+          session={props.session}
+          prefs={deps.browserPrefs}
+          panelKey={props.panelKey}
+          shown={shown()}
+        />
       </div>
     </LinkScopeProvider>
   );

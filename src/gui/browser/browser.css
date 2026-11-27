@@ -476,6 +476,20 @@
   text-align: right;
 }
 
+/* The machine of another server's session, as the sidebar labels such a row
+   (packages/app/src/shell/titlebar/project-session-row.tsx:166 at v2.4.2): faint, 11px, at most
+   40% of the row and cut with an ellipsis. */
+.ss-row-machine {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The sidebar's 16px status slot at the row's end: the activity spinner or the unread dot. */
 .ss-row-status {
   display: inline-flex;
@@ -645,6 +659,48 @@
 .ss-rail-tile:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: 2px;
+}
+
+/* A machine's divider over its tiles: a rule, then the server icon and the machine's name in
+   the faint 10px of the sidebar's section labels, cut to the rail's width. */
+.ss-rail-machine {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 4px 0;
+  border-top: 1px solid var(--v2-border-border-base);
+  color: var(--v2-text-text-faint);
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.ss-rail-machine [data-icon],
+.ss-rail-machine svg {
+  width: 14px;
+  height: 14px;
+  color: var(--v2-icon-icon-muted);
+}
+
+.ss-rail-machine-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-rail-machine[data-connected="false"] {
+  opacity: 0.5;
+}
+
+/* A machine whose lists failed, with its Retry, above the other machines' rows. */
+.ss-machine-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* The app's avatar at tile size; the sidebar draws it at 16px. */

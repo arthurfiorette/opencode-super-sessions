@@ -127,6 +127,11 @@ export interface SessionRowProps {
    * sidebar's flat lists do. Undefined in a one-project list.
    */
   readonly project?: ProjectLook | undefined;
+  /**
+   * The name of the machine the session runs on, muted at the row's end as the sidebar labels a
+   * row of another server. Undefined for this machine's sessions and with one machine.
+   */
+  readonly machine?: string | undefined;
   /** The session the window routes, which the side tab's list marks. Defaults to false. */
   readonly current?: boolean;
   readonly onSelect: () => void;
@@ -140,9 +145,8 @@ function onControl(event: MouseEvent): boolean {
 }
 
 /**
- * One session: its project in a list of every project, its title, age and status, and under it
- * the lines of
- * {@link rowLines}. A click selects the row, a double click opens it; a click on a ref line opens
+ * One session: its project in a list of every project, its title, machine, age and status, and
+ * under it the lines of {@link rowLines}. A click selects the row, a double click opens it; a click on a ref line opens
  * the ref's page instead.
  */
 export function SessionRow(props: SessionRowProps) {
@@ -184,6 +188,13 @@ export function SessionRow(props: SessionRowProps) {
         </Show>
         <span class="ss-row-title">{props.session.title || ctx.t('browser.untitled')}</span>
         <span class="ss-row-actions">{props.actions}</span>
+        <Show when={props.machine}>
+          {(machine) => (
+            <span class="ss-row-machine" title={machine()}>
+              {machine()}
+            </span>
+          )}
+        </Show>
         <span class="ss-row-age">{age()}</span>
         <RowStatus
           running={props.running}

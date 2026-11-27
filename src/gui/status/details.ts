@@ -57,6 +57,7 @@ export function createPullDetails(
         const key = refKey(ref);
         try {
           const answer = await input.queue.run(
+            target.server.id,
             () => rpcOn(target.server)['pull.details']({ ref }, { ...options, signal }),
             signal
           );

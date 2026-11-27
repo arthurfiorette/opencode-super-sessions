@@ -1,6 +1,6 @@
 import type { SessionInfo } from '@opencode/client';
 import { createKeyed, type ServerRef } from '@opencode/plugin/gui';
-import { createEffect, createMemo, createSignal, on, onCleanup, untrack } from 'solid-js';
+import { createEffect, createSignal, onCleanup, untrack } from 'solid-js';
 import { createStore, reconcile } from 'solid-js/store';
 import {
   inScope,
@@ -8,20 +8,7 @@ import {
   sessionScope,
   wholeProject
 } from '../../host/session-info.js';
-import {
-  createPageController,
-  filterPulls,
-  type Group,
-  groupPulls,
-  groupSearch,
-  groupSessions,
-  type PageData,
-  type PageScope,
-  type PageView,
-  type PullGroup,
-  pullRows,
-  rowsOf
-} from '../../page/state.js';
+import { createPageController, type PageData, type PageScope } from '../../page/state.js';
 import type { SearchScope } from '../../rpc.js';
 import { rpcAt, rpcOn, serverPluginMissing, warmRpc } from '../server.js';
 import type { RailSelection } from './rail.js';
@@ -30,20 +17,14 @@ import type { RailSelection } from './rail.js';
 // window's `ServerRef`, as `src/page/model.ts` binds it to the TUI's client and `data`. The model
 // lives as long as the window, from the first open on, so reopening draws the cached lists at
 // once and reloads them in the background when they are old or a session event changed them. A
-// view (the dialog, and later the side panel) attaches to it while it shows and reads the same
-// data; `createBrowserView` holds what is the view's own.
+// view (the dialog, and the side tab's list) attaches to the model of every server it lists while
+// it shows, and merges their data (`createBrowserView` in ./view.ts).
 
 // A reload waits for a burst of session events to settle, like the TUI's.
 const RELOAD_DELAY = 500;
 // Reopening within this window shows the cached lists without asking the server again, as the
 // TUI's browser does (FRESH_FOR in src/page/model.ts).
 const FRESH_FOR = 30_000;
-// Rows of the view on screen asked from the forge again while it stays open.
-const REFRESH_INTERVAL = 60_000;
-// Rows a view asks the forge about per open or view switch, from the top of the list: about what
-// the dialog shows. The `refs` read has the server refresh every stale row in the background
-// anyway, so the rest of the list stays current without a call of the window's own.
-const REFRESH_ROWS = 30;
 // Every project's active sessions asked for the rail and the instant switch: the list's own page.
 const EVERY_LIMIT = 200;
 // The All scope's key among the cached scopes.
@@ -70,22 +51,16 @@ export interface ListTarget {
 }
 
 /**
- * Loads and groups the sessions of one server for every view of the window. Call it once per
- * server, under an owner that lives as long as the window: its event listeners keep the cached
- * lists current between opens, and end with it. `selection` is the rail's first pick.
+ * Loads the sessions of one server for every view of the window. Call it once per server, under
+ * an owner that lives as long as the window: its event listeners keep the cached lists current
+ * between opens, and end with it. The views group and merge the lists of every server they show
+ * (`createBrowserView` in ./view.ts).
  */
-export function createBrowserModel(server: ServerRef, selection: RailSelection) {
+export function createBrowserModel(server: ServerRef) {
   const client = () => server.client;
   const data = () => server.data;
-  // The rail's pick, one for every view: the lists hold one scope at a time, so the dialog and
-  // the side tab always list the same one.
-  const [picked, setPicked] = createSignal<RailSelection>(selection);
-  // Counts the views that went away. A view that stays syncs and searches again, since the one
-  // that left may have listed or searched for something else.
-  const [released, setReleased] = createSignal(0);
   // Set once a refs call answers that this server runs no server half; the rows then show no refs.
   const [missing, setMissing] = createSignal(false);
-  const [now, setNow] = createSignal(Date.now());
   // What the latest sync listed; the controller's requests read it when they start.
   let target: ListTarget = { origin: undefined, selection: { type: 'all' } };
 
@@ -184,31 +159,6 @@ export function createBrowserModel(server: ServerRef, selection: RailSelection) 
     { hold: 0 }
   );
   const [store, setStore] = createStore<PageData>(structuredClone(controller.snapshot()));
-
-  const groupsFor = (view: Exclude<PageView, 'pulls'>): Group[] =>
-    groupSessions({
-      view,
-      sessions: view === 'archived' ? store.archived : store.active,
-      refs: store.refs,
-      extra: store.extra,
-      running,
-      pins: [],
-      now: now()
-    });
-  const activeGroups = createMemo(() => groupsFor('active'));
-  const doneGroups = createMemo(() => groupsFor('done'));
-  const archivedGroups = createMemo(() => groupsFor('archived'));
-  // Archived sessions count too: a pull request someone worked on stays listed after cleanup.
-  const allPulls = createMemo(() => pullRows([...store.active, ...store.archived], store.refs));
-  const counts = createMemo(() => ({
-    active: rowsOf(activeGroups()).length,
-    done: rowsOf(doneGroups()).length,
-    archived: rowsOf(archivedGroups()).length,
-    pulls: allPulls().length
-  }));
-  /** Whether a session is in the Done view now, by the rule or the user's mark. */
-  const isDone = (sessionID: string) =>
-    rowsOf(doneGroups()).some((session) => session.id === sessionID);
 
   // Every project's active sessions: the All lists while they show, else one list asked for the
   // rail, at most once per FRESH_FOR. The rail's tiles count from it, and a switch to a project
@@ -409,14 +359,7 @@ export function createBrowserModel(server: ServerRef, selection: RailSelection) 
     server,
     data: store,
     missing,
-    now,
     controller,
-    activeGroups,
-    doneGroups,
-    archivedGroups,
-    allPulls,
-    counts,
-    isDone,
     /** Whether the session or one of its subagents runs, by the server's live status. */
     isRunning: running,
     sync,
@@ -439,141 +382,9 @@ export function createBrowserModel(server: ServerRef, selection: RailSelection) 
         if (done) return;
         done = true;
         attached--;
-        setReleased((count) => count + 1);
       };
-    },
-    /** The rail's pick every view lists. */
-    selection: picked,
-    /** Picks a rail tile for every view. */
-    select: (next: RailSelection) => setPicked(next),
-    /** Moves each time a view goes away; see {@link createBrowserView}. */
-    released,
-    /** Moves the clock the rows' ages read. */
-    tick: () => setNow(Date.now())
+    }
   };
 }
 
 export type BrowserModel = ReturnType<typeof createBrowserModel>;
-
-/** What {@link createBrowserView} reads besides the model. */
-export interface BrowserViewInput {
-  /** The routed session the view opened on, and the rail's pick. */
-  readonly target: () => ListTarget;
-  readonly view: () => PageView;
-  readonly query: () => string;
-  /**
-   * Whether the view is on screen. A view that stays mounted while hidden, as the side tab does,
-   * syncs, searches and asks the forge only while it shows. Defaults to always.
-   */
-  readonly shown?: () => boolean;
-}
-
-/**
- * One view of the model: the groups of its view and search, and the forge calls it makes while
- * it shows. Call it under the view's owner. Its calls end when it hides or goes: an open's
- * `refresh` is aborted when the dialog closes, so the request does not hold one of the app's four
- * request slots for the seconds the forge takes.
- *
- * The lists and the search are the model's, one for every view, so each view syncs and searches
- * for itself when it shows and again when another view goes away (`released`).
- */
-export function createBrowserView(model: BrowserModel, input: BrowserViewInput) {
-  const store = model.data;
-  const shown = input.shown ?? (() => true);
-  // The forge calls of the current showing, aborted when it hides or the view goes.
-  let abort = new AbortController();
-  createEffect(() => {
-    if (!shown()) return;
-    const current = new AbortController();
-    abort = current;
-    onCleanup(model.attach());
-    onCleanup(() => current.abort());
-    // Cached rows show their ages as of now, not as of the last time they showed.
-    untrack(model.tick);
-  });
-
-  const pullGroups = createMemo((): PullGroup[] =>
-    input.view() === 'pulls'
-      ? groupPulls(filterPulls(model.allPulls(), input.query()), model.now())
-      : []
-  );
-  /** Session groups of the list on screen: the search results, or the view's groups. */
-  const groups = createMemo((): Group[] => {
-    const view = input.view();
-    if (view === 'pulls') return [];
-    const search = store.search;
-    if (search) return groupSearch(search.sessions, search.reasons, model.isRunning, model.now());
-    if (view === 'done') return model.doneGroups();
-    if (view === 'archived') return model.archivedGroups();
-    return model.activeGroups();
-  });
-  /** Sessions of the view on screen in list order; in the Pull requests view, each one's newest. */
-  const visibleIDs = () =>
-    input.view() === 'pulls'
-      ? pullGroups().flatMap((group) => group.pulls.flatMap((pull) => pull.sessions[0]?.id ?? []))
-      : rowsOf(groups()).map((session) => session.id);
-
-  // Set once this open's sync settled: the lists, their refs and Done facts are in.
-  const [settled, setSettled] = createSignal(false);
-  let syncToken = 0;
-  /** Syncs the model for the view's target; `force` reloads fresh lists too, as Retry does. */
-  const load = async (force = false) => {
-    const token = ++syncToken;
-    setSettled(false);
-    await model.sync(untrack(input.target), force);
-    if (token === syncToken) setSettled(true);
-  };
-  createEffect(
-    on([input.target, shown, model.released], () => {
-      if (untrack(shown)) void load();
-    })
-  );
-  // The search runs after the sync above, which shows a newly picked scope's lists first, so it
-  // searches those. The Pull requests view filters its own rows, so the session search is off
-  // there.
-  createEffect(() => {
-    if (!shown()) return;
-    model.released();
-    const all = input.target().selection.type === 'all';
-    const pulls = input.view() === 'pulls';
-    model.controller.search(
-      pulls ? '' : input.query(),
-      input.view() === 'archived',
-      all ? 'all' : 'project'
-    );
-  });
-
-  // Sessions this view already asked the forge about; the server refetches only stale refs, so
-  // asking once per newly shown row, then every minute, keeps the rows current.
-  const requested = new Set<string>();
-  /** Asks the forge about the first rows of `ids` this view has not asked about yet. */
-  const refreshNew = (ids: readonly string[]) => {
-    const fresh = ids.slice(0, REFRESH_ROWS).filter((id) => !requested.has(id));
-    for (const id of fresh) requested.add(id);
-    void model.controller.refresh(fresh, abort.signal);
-  };
-  // Only once the first paint and its refs settled, so the forge call never queues ahead of the
-  // reads the rows wait for. Switching views and searching show rows the load never asked about;
-  // a listed row waits for its cached read, while search hits outside the lists go at once.
-  createEffect(() => {
-    if (!shown() || !settled() || store.status !== 'ready') return;
-    const listed = new Set([...store.active, ...store.archived].map((session) => session.id));
-    const ids = visibleIDs().filter((id) => store.refs[id] !== undefined || !listed.has(id));
-    untrack(() => refreshNew(ids));
-  });
-
-  const ticker = setInterval(() => {
-    if (!untrack(shown)) return;
-    model.tick();
-    void model.controller.refresh(visibleIDs().slice(0, REFRESH_ROWS), abort.signal);
-  }, REFRESH_INTERVAL);
-  onCleanup(() => clearInterval(ticker));
-
-  return {
-    groups,
-    pullGroups,
-    load,
-    /** The current showing's signal, for the forge calls the view's actions make. */
-    signal: () => abort.signal
-  };
-}

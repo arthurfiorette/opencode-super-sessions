@@ -1,10 +1,10 @@
-import { Command, type DialogHandle, Plugin, type ServerRef, Style } from '@opencode/plugin/gui';
-import { createRoot, getOwner, onCleanup, untrack } from 'solid-js';
+import { Command, type DialogHandle, Plugin, Style } from '@opencode/plugin/gui';
+import { onCleanup, untrack } from 'solid-js';
 import { claimCommandKeys } from '../host/gui.js';
 import browserCss from './browser/browser.css?inline';
 import { openBrowser } from './browser/dialog.js';
 import { browserEn } from './browser/en.js';
-import { type BrowserModel, createBrowserModel } from './browser/model.js';
+import { createMachines } from './browser/machines.js';
 import { browserPrefs, opensOnAll } from './browser/prefs.js';
 import { en } from './en.js';
 import { createForgeQueue } from './forge-queue.js';
@@ -33,44 +33,22 @@ export default Plugin.define({
     ctx.add(Style, browserCss);
     const refs = createRefsStore(createForgeQueue());
     reportPresence(ctx);
-    // One browser model per server, made on first use by the dialog or the side tab and kept for
-    // the window's life, so both draw the cached lists at once. Each gets a root under setup's
-    // owner, since the first open runs from a command, outside any owner, and the roots end with
-    // setup.
-    const owner = getOwner();
-    // By server id: each mounted session hands out a ref of its own for its server, which lives
-    // with that session's screen, while the app's server list keeps one ref per server for the
-    // window (packages/app/src/runtime/plugin/host-apis.tsx:547 at v2.4.2). The model takes the
-    // window's, so it outlives the session it first opened over.
-    const models = new Map<string, { model: BrowserModel; dispose: () => void }>();
-    /** The server's browser model, created on first use. */
-    const modelFor = (server: ServerRef): BrowserModel => {
-      const known = models.get(server.id);
-      if (known !== undefined) return known.model;
-      const ref = ctx.servers.get(server.id) ?? server;
-      // The rail's first pick, until a view picks: the user's last, else the `scope` option.
-      const all = opensOnAll(
+    // Every server's browser model, made on first use by the dialog or the side tab and kept for
+    // the window's life, so both draw the cached lists at once. The rail's first pick, until a
+    // view picks, is the user's last, else the `scope` option.
+    const machines = createMachines(
+      ctx,
+      opensOnAll(
         untrack(() => ctx.stores.browser.value),
         ctx.options.scope
-      );
-      const entry = createRoot(
-        (dispose) => ({
-          model: createBrowserModel(ref, all ? { type: 'all' } : { type: 'routed' }),
-          dispose
-        }),
-        owner
-      );
-      models.set(server.id, entry);
-      return entry.model;
-    };
-    onCleanup(() => {
-      for (const entry of models.values()) entry.dispose();
-      models.clear();
-    });
+      )
+        ? { type: 'all' }
+        : { type: 'routed' }
+    );
     const side = addSidePanel(ctx, {
       refs,
       icons: ctx.icons,
-      models: modelFor,
+      machines,
       browserPrefs: ctx.stores.browser,
       sidePrefs: ctx.stores.side
     });
@@ -80,7 +58,7 @@ export default Plugin.define({
     let browser: DialogHandle | undefined;
     const browse = () => {
       if (browser !== undefined) return;
-      const handle = openBrowser(ctx, ctx.stores.browser, refs, modelFor, () => {
+      const handle = openBrowser(ctx, ctx.stores.browser, refs, machines, () => {
         if (browser === handle) browser = undefined;
       });
       browser = handle;

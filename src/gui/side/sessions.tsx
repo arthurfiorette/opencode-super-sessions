@@ -2,13 +2,11 @@ import type { SessionInfo } from '@opencode/client';
 import {
   type MountedSession,
   type Persisted,
-  type ServerRef,
   type SessionRef,
   usePlugin
 } from '@opencode/plugin/gui';
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js';
 import { openSessionKeepingTab, type ProjectLook } from '../../host/gui.js';
-import { isUnread } from '../../host/session-info.js';
 import { type PageView, VIEWS } from '../../page/state.js';
 import { TAB_ICONS } from '../browser/dialog.js';
 import {
@@ -16,61 +14,69 @@ import {
   createRailPick,
   createRowActions,
   ListBody,
-  RowButtons
+  PluginNote,
+  RowButtons,
+  railSources
 } from '../browser/list.js';
-import { type BrowserModel, createBrowserView } from '../browser/model.js';
+import type { Machines, Origin } from '../browser/machines.js';
 import type { BrowserPrefs } from '../browser/prefs.js';
 import { createRail } from '../browser/rail.js';
 import { ProjectRail } from '../browser/rail-view.js';
 import { PullItem, SessionRow } from '../browser/row.js';
+import { createBrowserView } from '../browser/view.js';
 import { type LinkScope, LinkScopeProvider } from '../links.js';
 import { Octicon } from '../octicons.js';
 import { sessionProjectLook } from '../project-avatar.js';
 
-// The side tab's session list: the browser's rows, views, search and project rail over the
-// browser's model, without the preview. It never remounts while the tab stays listed, so the
-// selection, the scroll and the search survive session switches.
+// The side tab's session list: the browser's rows, views, search and project rail over every
+// machine's browser model, without the preview. It never remounts while the tab stays listed, so
+// the selection, the scroll and the search survive session switches.
 
 /** Props of {@link SideSessions}. */
 export interface SideSessionsProps {
-  /** The server's browser model, the dialog's own. */
-  readonly model: BrowserModel;
-  readonly server: ServerRef;
+  /** Every server's browser model, the dialog's own. */
+  readonly machines: Machines;
   /** The routed session. */
   readonly session: MountedSession;
   readonly prefs: Persisted<BrowserPrefs, BrowserPrefs>;
   /** The side tab's layout key, whose state says whether it shows. */
   readonly panelKey: string;
-  /** The tab is on screen; the list asks nothing of the server while it is not. */
+  /** The tab is on screen; the list asks nothing of the servers while it is not. */
   readonly shown: boolean;
 }
 
 /**
  * The views as a segmented control with their counts, the search field, the rail down the left
- * edge and the rows. A click on a row opens its session in its tab. Up, down and enter move and
- * open while the list has the focus; the tab takes no key of its own anywhere else.
+ * edge and the rows. A click on a row opens its session in its tab, on the session's own server.
+ * Up, down and enter move and open while the list has the focus; the tab takes no key of its own
+ * anywhere else.
  */
 export function SideSessions(props: SideSessionsProps) {
   const ctx = usePlugin();
-  const model = props.model;
-  const server = props.server;
+  const machines = props.machines;
   const [view, setView] = createSignal<PageView>('active');
   const [query, setQuery] = createSignal('');
   /** The routed session, read where used, as the panel's session getter changes on a switch. */
-  const origin = () => ({ id: props.session.id, directory: props.session.directory });
-  const browser = createBrowserView(model, {
-    target: () => ({ origin: origin(), selection: model.selection() }),
+  const origin = (): Origin => ({
+    server: props.session.server.id,
+    id: props.session.id,
+    directory: props.session.directory
+  });
+  /** The routed session's server, as the window's server list holds it. */
+  const routedServer = () => ctx.servers.get(props.session.server.id) ?? props.session.server;
+  const browser = createBrowserView(machines, {
+    target: () => ({ origin: origin(), pick: machines.pick() }),
     view,
     query,
     shown: () => props.shown
   });
-  const store = model.data;
+  const store = browser.data;
   const list = createListState(browser, view);
-  const row = createRowActions(ctx, model, server, browser.signal);
-  const allProjects = () => model.selection().type === 'all';
+  const row = createRowActions(ctx, browser, routedServer);
+  const allProjects = () => machines.pick().type === 'all';
 
   const rail = createRail({
-    server,
+    ...railSources(machines),
     origin,
     local: () => {
       const project = props.session.project;
@@ -78,15 +84,10 @@ export function SideSessions(props: SideSessionsProps) {
         ? undefined
         : { id: project.id, name: project.name, icon: project.icon };
     },
-    every: model.everyActive,
-    want: model.wantEveryActive,
-    all: allProjects,
-    active: () => (store.status === 'ready' ? store.active : undefined),
-    running: (session) => row.running(session),
-    unread: (session) => isUnread(row.live(session)) || row.waiting(session.id) !== undefined
+    all: allProjects
   });
   let listElement: HTMLDivElement | undefined;
-  const { pickedTile, pickTile } = createRailPick(model, rail, props.prefs, () => {
+  const { pickedTile, pickTile } = createRailPick(machines, rail, props.prefs, () => {
     list.setSelected(undefined);
     list.setPull(undefined);
     listElement?.scrollTo?.({ top: 0 });
@@ -94,14 +95,25 @@ export function SideSessions(props: SideSessionsProps) {
 
   /** The open session a row's links belong to: its own tab's, else the routed one. */
   const linkScope = (id: () => string | undefined): LinkScope => ({
-    session: (): SessionRef | undefined =>
-      ctx.sessions.list().find((open) => open.server.id === server.id && open.id === id()) ??
-      props.session
+    session: (): SessionRef | undefined => {
+      const sessionID = id();
+      return (
+        ctx.sessions
+          .list()
+          .find(
+            (open) =>
+              sessionID !== undefined &&
+              open.server.id === row.serverOf(sessionID).id &&
+              open.id === sessionID
+          ) ?? props.session
+      );
+    }
   });
   /** The row's project avatar in the all-projects list, as in the dialog. */
   const projectOf = (session: SessionInfo): ProjectLook | undefined => {
     if (!allProjects()) return undefined;
-    const local = props.session.project;
+    const server = row.serverOf(session.id);
+    const local = server.id === props.session.server.id ? props.session.project : undefined;
     return sessionProjectLook(
       server,
       session.projectID,
@@ -110,14 +122,19 @@ export function SideSessions(props: SideSessionsProps) {
     );
   };
   /**
-   * Opens the session in its tab, focused, and keeps this tab on screen there when it shows here
-   * (openSessionKeepingTab in src/host/gui.ts).
+   * Opens the session in its tab on its own server, focused, and keeps this tab on screen there
+   * when it shows here (openSessionKeepingTab in src/host/gui.ts).
    */
   const open = (session: SessionInfo | undefined) => {
     if (session === undefined) return;
     list.setSelected(session.id);
     const keep = ctx.layout.state(props.panelKey, props.session) === 'visible';
-    openSessionKeepingTab(ctx, props.panelKey, { server: server.id, id: session.id }, keep);
+    openSessionKeepingTab(
+      ctx,
+      props.panelKey,
+      { server: row.serverOf(session.id).id, id: session.id },
+      keep
+    );
   };
 
   // The selected row scrolls into view as the keys move it.
@@ -155,7 +172,7 @@ export function SideSessions(props: SideSessionsProps) {
 
   return (
     <div class="ss-side-sessions">
-      <ProjectRail tiles={rail.tiles()} picked={pickedTile()} onPick={pickTile} />
+      <ProjectRail sections={rail.sections()} picked={pickedTile()} onPick={pickTile} />
       <div class="ss-side-main">
         <div class="ss-seg" role="tablist" aria-label={ctx.t('browser.views')}>
           <For each={VIEWS}>
@@ -180,7 +197,7 @@ export function SideSessions(props: SideSessionsProps) {
                     </>
                   )}
                 </Show>
-                <span class="ss-tab-count">{model.counts()[item]}</span>
+                <span class="ss-tab-count">{browser.counts()[item]}</span>
               </button>
             )}
           </For>
@@ -197,20 +214,17 @@ export function SideSessions(props: SideSessionsProps) {
             list.setPull(undefined);
           }}
         />
-        <Show when={model.missing()}>
-          <p class="ss-note">{ctx.t('browser.pluginMissing')}</p>
-        </Show>
+        <PluginNote browser={browser} machines={machines} />
         <div
           ref={listElement}
           class="ss-list"
           role="listbox"
           tabIndex={0}
           aria-label={ctx.t(`browser.view.${view()}`)}
-          aria-busy={model.loading()}
+          aria-busy={browser.loading()}
           on:keydown={onKeyDown}
         >
           <ListBody
-            model={model}
             browser={browser}
             list={list}
             view={view()}
@@ -234,13 +248,17 @@ export function SideSessions(props: SideSessionsProps) {
                   session={row.live(item)}
                   view={store.refs[item.id]}
                   selected={list.selected() === item.id}
-                  current={item.id === props.session.id}
+                  current={
+                    item.id === props.session.id &&
+                    row.serverOf(item.id).id === props.session.server.id
+                  }
                   running={row.running(item)}
                   waiting={row.waiting(item.id)}
-                  now={model.now()}
+                  now={browser.now()}
                   archivedAge={view() === 'archived' && store.search === undefined}
-                  actions={<RowButtons session={item} model={model} actions={row} />}
+                  actions={<RowButtons session={item} browser={browser} actions={row} />}
                   project={projectOf(row.live(item))}
+                  machine={browser.machine(item.id)}
                   ref={track(item.id)}
                   onSelect={() => open(item)}
                   onOpen={() => open(item)}
