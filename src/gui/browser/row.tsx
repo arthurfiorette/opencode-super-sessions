@@ -1,9 +1,8 @@
 import type { SessionInfo } from '@opencode/client';
 import { usePlugin } from '@opencode/plugin/gui';
 import { createMemo, For, type JSX, Match, Show, Switch } from 'solid-js';
-import { activitySpinner, type ProjectLook } from '../../host/gui.js';
+import { activitySpinner, type ProjectLook, relativeTime } from '../../host/gui.js';
 import { activityTime, isUnread } from '../../host/session-info.js';
-import { formatAge } from '../../page/age.js';
 import type { PullRow } from '../../page/state.js';
 import { type Ref, refKey } from '../../refs/ref.js';
 import { rowRefs, type ShownLink, workLinks } from '../../refs/summary.js';
@@ -13,6 +12,21 @@ import { RefLine, WorkLinkLine } from '../ref-view.js';
 
 // The browser's rows: a session with its pull request, issue and link lines, and a pull request
 // of the Pull requests view. The preview's Work list is the side tab's (src/gui/status).
+
+/**
+ * Formats a time as the app's session search does (`relativeTime` in src/host/gui.ts), in the
+ * user's interface language. Call it under a component.
+ */
+export function useAge() {
+  const ctx = usePlugin();
+  const copy = {
+    justNow: ctx.t('time.justNow'),
+    minutes: (count: number) => ctx.t('time.minutes', { count }),
+    hours: (count: number) => ctx.t('time.hours', { count }),
+    days: (count: number) => ctx.t('time.days', { count })
+  };
+  return (then: number, now: number) => relativeTime(then, now, copy, ctx.locale.locale());
+}
 
 /**
  * Issue and link lines a row lists before the rest fold into `+N more`, as the TUI's rows do
@@ -46,7 +60,7 @@ export function rowLines(view: SessionRefView) {
 }
 
 /** Props of {@link RowStatus}. */
-interface RowStatusProps {
+export interface RowStatusProps {
   readonly running: boolean;
   readonly waiting: 'permission' | 'question' | undefined;
   readonly unread: boolean;
@@ -54,12 +68,12 @@ interface RowStatusProps {
 
 /**
  * The status at a row's end, as the app's sidebar draws it beside a session
- * (packages/app/src/shell/titlebar/project-session-row.tsx:163 at v2.4.2): its dot while the
- * session waits on the user, which also hides the spinner, else the activity spinner while it
+ * (packages/app/src/shell/titlebar/project-session-row.tsx:171-187 at v2.4.2): its dot while the
+ * session waits on the user, which also hides the spinner, else the 14px activity ring while it
  * runs, else the dot while it is unread, else nothing. The tooltip says which. The TUI's pin
  * numbers have no source in the window: pins live in the TUI's own storage.
  */
-function RowStatus(props: RowStatusProps) {
+export function RowStatus(props: RowStatusProps) {
   const ctx = usePlugin();
   return (
     <span class="ss-row-status">
@@ -122,16 +136,13 @@ export interface SessionRowProps {
   readonly archivedAge: boolean;
   /** The row's hover buttons. */
   readonly actions: JSX.Element;
+  /** The session's project avatar, before the title as the app's session search draws it. */
+  readonly project: ProjectLook;
   /**
-   * The session's project, drawn before the title where no project names the list, as the
-   * sidebar's flat lists do. Undefined in a one-project list.
+   * The faint text after the title: the project in a list of every project, then the machine of
+   * a session on another server (`PALETTE_ROW` in src/host/gui.ts). Undefined for none.
    */
-  readonly project?: ProjectLook | undefined;
-  /**
-   * The name of the machine the session runs on, muted at the row's end as the sidebar labels a
-   * row of another server. Undefined for this machine's sessions and with one machine.
-   */
-  readonly machine?: string | undefined;
+  readonly description?: string | undefined;
   /** The session the window routes, which the side tab's list marks. Defaults to false. */
   readonly current?: boolean;
   readonly onSelect: () => void;
@@ -140,32 +151,90 @@ export interface SessionRowProps {
 }
 
 /** Whether a pointer event started on a control of its own, which the row leaves alone. */
-function onControl(event: MouseEvent): boolean {
+export function onControl(event: MouseEvent): boolean {
   return event.target instanceof Element && event.target.closest('a, button') !== null;
 }
 
 /**
- * One session: its project in a list of every project, its title, machine, age and status, and
- * under it the lines of {@link rowLines}. A click selects the row, a double click opens it; a click on a ref line opens
+ * The detail lines under a session's title, by the TUI's rule ({@link rowLines}): pull requests,
+ * then issues and links, with the `+N` of the refs left out. `limit` caps the lines, the rest
+ * folding into one more `+N`. Nothing when the session tracks nothing.
+ */
+export function RowLines(props: { view: SessionRefView | undefined; limit?: number }) {
+  const ctx = usePlugin();
+  const view = createMemo(() => props.view);
+  const lines = createMemo(() => {
+    const current = view();
+    if (current === undefined) return undefined;
+    const all = rowLines(current);
+    const limit = props.limit;
+    if (limit === undefined || all.prs.length + all.items.length <= limit) return all;
+    const prs = all.prs.slice(0, limit);
+    const items = all.items.slice(0, limit - prs.length);
+    const cut = all.prs.length - prs.length + (all.items.length - items.length);
+    return { ...all, prs, items, hidden: all.hidden + cut };
+  });
+  return (
+    <Show when={lines()?.empty === false ? lines() : undefined}>
+      {(shown) => (
+        <div class="ss-row-lines">
+          <For each={shown().prs}>
+            {(ref, index) => (
+              <div class="ss-row-line">
+                <RefLine item={ref} state={view()?.states[refKey(ref)]} />
+                <Show when={index() === 0}>
+                  <Extra count={shown().extra} />
+                </Show>
+              </div>
+            )}
+          </For>
+          <For each={shown().items}>
+            {(item, index) => (
+              <div class="ss-row-line">
+                {item.kind === 'ref' ? (
+                  <RefLine item={item.ref} state={view()?.states[refKey(item.ref)]} />
+                ) : (
+                  <WorkLinkLine link={item.link} />
+                )}
+                <Show when={index() === 0 && shown().prs.length === 0}>
+                  <Extra count={shown().extra} />
+                </Show>
+              </div>
+            )}
+          </For>
+          <Show when={shown().hidden > 0}>
+            <div class="ss-row-line ss-row-extra">
+              {props.limit === undefined
+                ? ctx.t('browser.more', { count: shown().hidden })
+                : `+${shown().hidden}`}
+            </div>
+          </Show>
+        </div>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * One session as the app's session search lists it (`PALETTE_ROW` in src/host/gui.ts): the
+ * project avatar, the title and its faint description, the age at the end, or the activity ring
+ * while it runs, and the dot while it waits or is unread. Under it the lines of
+ * {@link RowLines}. A click selects the row, a double click opens it; a click on a ref line opens
  * the ref's page instead.
  */
 export function SessionRow(props: SessionRowProps) {
   const ctx = usePlugin();
-  const lines = createMemo(() => (props.view === undefined ? undefined : rowLines(props.view)));
-  const age = () => {
+  const age = useAge();
+  const time = () => {
     const archived = props.archivedAge ? props.session.time.archived : undefined;
-    return formatAge(props.now - (archived ?? activityTime(props.session)));
+    return archived ?? activityTime(props.session);
   };
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the list's keys are the browser's, on its root.
     <div
       ref={props.ref}
       class="ss-row"
-      classList={{
-        'ss-row-selected': props.selected,
-        'ss-row-avatared': !!props.project,
-        'ss-row-current': props.current === true
-      }}
+      classList={{ 'ss-row-selected': props.selected, 'ss-row-current': props.current === true }}
       role="option"
       tabIndex={-1}
       aria-selected={props.selected}
@@ -179,68 +248,33 @@ export function SessionRow(props: SessionRowProps) {
       }}
     >
       <div class="ss-row-head">
-        <Show when={props.project}>
-          {(look) => (
-            <span class="ss-row-project" title={look().name}>
-              <ProjectAvatar look={look()} />
-            </span>
-          )}
-        </Show>
-        <span class="ss-row-title">{props.session.title || ctx.t('browser.untitled')}</span>
-        <Show when={props.current === true}>
-          <span class="ss-visually-hidden">{ctx.t('side.current')}</span>
-        </Show>
+        <span class="ss-row-project" title={props.project.name}>
+          <ProjectAvatar look={props.project} />
+        </span>
+        <span class="ss-row-text">
+          <span class="ss-row-title">{props.session.title || ctx.t('browser.untitled')}</span>
+          <Show when={props.description}>
+            {(description) => <span class="ss-row-description">{description()}</span>}
+          </Show>
+        </span>
         <span class="ss-row-actions">{props.actions}</span>
-        <Show when={props.machine}>
-          {(machine) => (
-            <span class="ss-row-machine" title={machine()}>
-              {machine()}
-            </span>
-          )}
+        <Show
+          when={props.running && props.waiting === undefined}
+          fallback={<span class="ss-row-meta">{age(time(), props.now)}</span>}
+        >
+          <span
+            class="ss-row-meta ss-row-running"
+            data-marker="running"
+            role="img"
+            aria-label={ctx.t('browser.running')}
+            title={ctx.t('browser.running')}
+          >
+            <span {...activitySpinner(14)} />
+          </span>
         </Show>
-        <span class="ss-row-age">{age()}</span>
-        <RowStatus
-          running={props.running}
-          waiting={props.waiting}
-          unread={isUnread(props.session)}
-        />
+        <RowStatus running={false} waiting={props.waiting} unread={isUnread(props.session)} />
       </div>
-      {/* A row without refs or links is its title line alone, with no empty block under it. */}
-      <Show when={lines()?.empty === false ? lines() : undefined}>
-        {(shown) => (
-          <div class="ss-row-lines">
-            <For each={shown().prs}>
-              {(ref, index) => (
-                <div class="ss-row-line">
-                  <RefLine item={ref} state={props.view?.states[refKey(ref)]} />
-                  <Show when={index() === 0}>
-                    <Extra count={shown().extra} />
-                  </Show>
-                </div>
-              )}
-            </For>
-            <For each={shown().items}>
-              {(item, index) => (
-                <div class="ss-row-line">
-                  {item.kind === 'ref' ? (
-                    <RefLine item={item.ref} state={props.view?.states[refKey(item.ref)]} />
-                  ) : (
-                    <WorkLinkLine link={item.link} />
-                  )}
-                  <Show when={index() === 0 && shown().prs.length === 0}>
-                    <Extra count={shown().extra} />
-                  </Show>
-                </div>
-              )}
-            </For>
-            <Show when={shown().hidden > 0}>
-              <div class="ss-row-line ss-row-extra">
-                {ctx.t('browser.more', { count: shown().hidden })}
-              </div>
-            </Show>
-          </div>
-        )}
-      </Show>
+      <RowLines view={props.view} />
     </div>
   );
 }
@@ -282,7 +316,9 @@ export function PullItem(props: PullItemProps) {
         <span class="ss-row-pull">
           <RefLine item={props.pull.ref} state={props.pull.state} />
         </span>
-        <span class="ss-row-age">{ctx.plural('browser.sessions', props.pull.sessions.length)}</span>
+        <span class="ss-row-meta">
+          {ctx.plural('browser.sessions', props.pull.sessions.length)}
+        </span>
       </div>
     </div>
   );

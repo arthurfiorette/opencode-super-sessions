@@ -350,14 +350,12 @@ export function createBrowserView(machines: Machines, input: BrowserViewInput) {
       listsAll() ? machines.servers().filter((server) => !server.connected) : []
     ),
     /**
-     * The machine name a session's row shows at its end: in All, for a session of a server other
-     * than this machine's, once the app lists more than one (`machineTag` in src/host/gui.ts).
+     * The machine name a session's row shows: for a session of a server other than this
+     * machine's, once the app lists more than one (`machineTag` in src/host/gui.ts).
      */
     machine: (sessionID: string): string | undefined => {
       const server = modelOf(sessionID)?.server;
-      return server === undefined || !listsAll()
-        ? undefined
-        : machineTag(server, machines.servers().length);
+      return server === undefined ? undefined : machineTag(server, machines.servers().length);
     },
     /** A load runs on one of the listed servers, over the rows on screen when there are any. */
     loading: () => listed().some((model) => model.loading()),

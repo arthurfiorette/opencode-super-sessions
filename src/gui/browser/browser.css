@@ -1,11 +1,11 @@
-/* The session browser dialog, laid out like the TUI's browser (src/page/view.ts): a left column
-   with the header, search and list, the preview beside it down to the footer, and the key hints
-   under both. The list's rows, group headers and detail lines take the app sidebar's metrics and
-   colors (packages/app/src/shell/titlebar/project-session-row.tsx and sidebar-customized.tsx at
-   v2.4.2): 13px titles on the compact 16px line in 28px rows, 8px padding and gaps, 6px corners,
-   the sidebar's faint text, hover and pressed overlays, and its 11px secondary text. Everything
-   uses the app's font; numbers line up with tabular figures, as in the sidebar. Only the list and
-   the preview's parts scroll. */
+/* The session browser dialog, laid out like the app's main window (WINDOW_SURFACES in
+   src/host/gui.ts): the header, the preview and the key hints on the window's shell color, the
+   list in an island of the session content's color with its 10px corners and raised elevation.
+   The list's rows follow the app's session search (PALETTE_ROW), its search field the Settings
+   screen's "Search models" field (TEXT_INPUT), its view tabs the app's segmented control
+   (SEGMENTED_CONTROL) and the project picker the Settings server switcher (BUTTON and MENU).
+   Those stylesheets load with their own screens, so the values are stated here. Only the list
+   and the preview's parts scroll. */
 
 /* The app's x-large dialog stops at 880 by 680px, a small box in a large window, while the
    terminal browser takes about 95% of the screen. The frame that holds the browser grows to most
@@ -19,6 +19,8 @@
      Stated again here, so the grown frame keeps them whatever the size rules do. */
   border-radius: 12px;
   box-shadow: var(--v2-elevation-overlay);
+  /* The main window's shell, under the island. */
+  background: var(--v2-background-bg-deep);
 }
 
 /* The browser draws its own header, so the app's title row leaves the layout. The title stays in
@@ -48,13 +50,23 @@
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: 12px;
   height: 100%;
   min-height: 0;
-  padding-top: 16px;
+  padding-top: 12px;
   font-size: 13px;
   line-height: var(--ss-line);
   outline: none;
   container-type: inline-size;
+}
+
+.ss-browser-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  height: 28px;
 }
 
 .ss-browser-main {
@@ -64,20 +76,22 @@
   min-height: 0;
 }
 
-.ss-browser-left {
+/* The island: the session content's surface, corners and elevation in the main window. */
+.ss-island {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 8px;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--v2-background-bg-base);
+  box-shadow: var(--v2-elevation-raised);
 }
 
-.ss-browser-bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
+.ss-island > .ss-note,
+.ss-island > [data-note] {
+  padding: 6px 14px 0;
 }
 
 /* The TUI's title: fading from the theme's warning color to orange, at the app's heading size. */
@@ -91,40 +105,58 @@
   white-space: nowrap;
 }
 
+/* The views as the app's segmented control: a 28px track of layer-01 with a hairline ring, the
+   picked view on the base surface with a stronger ring. */
 .ss-tabs {
   display: flex;
-  flex: 1;
-  gap: 2px;
+  flex: 0 1 auto;
+  align-items: center;
   min-width: 0;
+  height: 28px;
   overflow: hidden;
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: 0 0 0 0.5px var(--v2-border-border-base);
 }
 
-/* The tabs read like the sidebar's project rows: 13px, muted, base on hover and when current. */
 .ss-tab {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
   height: 28px;
-  padding: 0 8px;
+  padding: 0 10px;
   border: none;
   border-radius: 6px;
-  background: none;
+  background: transparent;
   color: var(--v2-text-text-muted);
   font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
   font-weight: 440;
+  letter-spacing: -0.04px;
   cursor: pointer;
+  transition: color 0.15s ease;
 }
 
 .ss-tab:hover {
-  background: var(--v2-overlay-simple-overlay-hover);
   color: var(--v2-text-text-base);
 }
 
 .ss-tab[aria-selected="true"] {
-  background: var(--v2-overlay-simple-overlay-pressed);
+  background: var(--v2-background-bg-base);
+  box-shadow: 0 0 0 0.5px var(--v2-border-border-strong);
   color: var(--v2-text-text-base);
-  font-weight: 500;
+}
+
+.ss-tab:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: -2px;
+}
+
+.ss-tab-icon {
+  flex-shrink: 0;
+  color: var(--v2-icon-icon-muted);
 }
 
 /* The sidebar's count beside a collapsed project: 11px and faint. */
@@ -132,7 +164,6 @@
   color: var(--v2-text-text-faint);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  font-weight: 400;
 }
 
 .ss-esc {
@@ -152,20 +183,50 @@
   color: var(--v2-text-text-base);
 }
 
-/* `esc` sits at the top right of the preview while it shows, else at the end of the header. */
-.ss-esc-bar {
-  margin-left: auto;
+/* The search field at the island's top, the Settings screen's filter field (settings.css:
+   1400-1420): 36px, filled with layer-02 at 60%, no shadow and no ring, the full fill on hover
+   and focus, the magnifying glass 16px in. A hairline under it, as under the session search's
+   field (dialog.css:152-158). */
+.ss-search {
+  flex-shrink: 0;
+  padding: 6px;
 }
 
-.ss-esc-preview {
-  display: flex;
-  justify-content: flex-end;
+.ss-search [data-component="text-input-v2"] {
+  width: 100%;
+  height: 36px;
+  border-radius: 6px;
+  outline: 0;
+  background: color-mix(in oklab, var(--v2-background-bg-layer-02) 60%, transparent);
+  box-shadow: none;
+}
+
+.ss-search [data-component="text-input-v2"]:is(:hover, :focus-within) {
+  background: var(--v2-background-bg-layer-02);
+  box-shadow: none;
+}
+
+.ss-search [data-slot="text-input-v2-value"] {
+  gap: 8px;
+}
+
+.ss-search [data-slot="text-input-v2-leading-icon"] {
+  padding-inline-start: 16px;
+}
+
+.ss-search [data-slot="text-input-v2-input"] {
+  padding-inline-end: 12px;
 }
 
 .ss-list {
   flex: 1;
   min-height: 0;
+  padding: 0 6px 6px;
   overflow-y: auto;
+}
+
+.ss-list-note {
+  padding: 10px 8px;
 }
 
 /* A load over rows already on screen: a thin bar at the list's top that takes no room, and the
@@ -209,11 +270,8 @@
   opacity: 0.5;
 }
 
-/* The preview sits on layer-01, a step off the dialog's background in both modes, the list on
-   the dialog's own background, set off by the
-   app's 1px divider color (`--v2-border-border-base`, the hairline of its search dialogs in
-   packages/app/src/shell/search-list.css:335). The preview needs room beside the list; a small
-   window keeps the list alone. */
+/* The preview sits on the shell beside the island, as the main window's side panels do. It needs
+   room beside the list; a small window keeps the list alone. */
 .ss-preview {
   display: none;
   flex: 0 0 var(--ss-preview-share, 40%);
@@ -221,20 +279,13 @@
   gap: 8px;
   min-width: 0;
   min-height: 0;
-  padding: 8px 12px;
-  border-left: 1px solid var(--v2-border-border-base);
-  border-radius: 0 8px 8px 0;
-  background: var(--v2-background-bg-layer-01);
-  --ss-work-bg: var(--v2-background-bg-layer-01);
+  padding: 4px 0;
+  --ss-work-bg: var(--v2-background-bg-deep);
 }
 
 @container (min-width: 720px) {
   .ss-browser[data-preview="on"] .ss-preview {
     display: flex;
-  }
-
-  .ss-browser[data-preview="on"] .ss-esc-bar {
-    display: none;
   }
 }
 
@@ -245,7 +296,7 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   min-height: 0;
   container-type: size;
 }
@@ -257,18 +308,20 @@
   gap: 8px;
 }
 
+/* The Settings rows' title: 13px at weight 530, base text. */
 .ss-preview-title {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--v2-text-text-base);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 530;
+  letter-spacing: -0.04px;
 }
 
 .ss-section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -280,16 +333,19 @@
   font-weight: 500;
 }
 
+/* The Settings rows' description: 13px muted. */
 .ss-context {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 12px;
   color: var(--v2-text-text-muted);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 440;
 }
 
 .ss-context-item {
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .ss-context-status[data-status="running"] {
@@ -368,64 +424,65 @@
 
 /* A group of rows. A list of a few hundred rows laid out about 9,000 objects on every open, so a
    group off screen skips layout and paint, at the size it last had, or the estimate its inline
-   `contain-intrinsic-size` gives before (GroupBlock in dialog.tsx). Rows carry no containment of
+   `contain-intrinsic-size` gives before (GroupBlock in list.tsx). Rows carry no containment of
    their own, so each is exactly as tall as its content. */
 .ss-group {
   content-visibility: auto;
-}
-
-.ss-group + .ss-group {
-  margin-top: 8px;
-}
-
-/* The sidebar's section header: a 24px line of 12px medium faint text, 8px in. */
-.ss-group-title {
-  display: flex;
-  align-items: center;
-  height: 24px;
-  margin: 0;
-  padding: 0 8px;
-  color: var(--v2-text-text-faint);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-/* The search field spans the list column. The app's text input sets a fixed 280px width in its
-   `components` layer (packages/ui/src/forms/text-input/text-input.css at v2.4.2), which this
-   unlayered rule outranks. It matches the input's markup (TEXT_INPUT in src/host/gui.ts); when
-   that changes, the field goes back to the app's width. */
-.ss-browser-left > [data-component="text-input-v2"] {
-  width: 100%;
-}
-
-/* The sidebar's session row (project-session-row.tsx and tab-nav.css at v2.4.2): 28px for its
-   title line, 6px corners, faint text until it is the chosen one, which takes the base text
-   color over the pressed overlay, a step above the hover overlay. The detail lines keep their own
-   state colors either way. */
-.ss-row {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 8px;
-  border-radius: 6px;
+}
+
+.ss-group + .ss-group {
+  padding-top: 4px;
+}
+
+/* The session search's section header (dialog.css:196-204): 12px faint text on an 18px line,
+   10px above it and 14px in. */
+.ss-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 8px 2px;
   color: var(--v2-text-text-faint);
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 440;
+  letter-spacing: 0.05px;
+  line-height: 18px;
+}
+
+.ss-machine-title [data-slot="icon-svg"],
+.ss-machine-title svg {
+  flex-shrink: 0;
+  color: var(--v2-icon-icon-muted);
+}
+
+/* The session search's row (dialog.css:44-235): 32px with 8px and 6px insets and 6px corners,
+   the avatar, the 13px title at weight 440 and its faint description in one line, the 11px muted
+   age at the end. The selected row takes the overlay the search gives its active row; hovering
+   another shows a lighter one. The detail lines keep their own state colors. */
+.ss-row {
+  display: flex;
+  flex-direction: column;
+  padding: 0 6px 0 8px;
+  border-radius: 6px;
+  color: var(--v2-text-text-base);
   cursor: default;
+  scroll-margin: 6px 0;
   user-select: none;
 }
 
 .ss-row:hover {
-  background: var(--v2-overlay-simple-overlay-hover);
+  background: color-mix(in srgb, var(--v2-overlay-simple-overlay-hover) 50%, transparent);
 }
 
 .ss-row-selected,
 .ss-row-selected:hover {
-  background: var(--v2-overlay-simple-overlay-pressed);
-  color: var(--v2-text-text-base);
+  background: var(--v2-overlay-simple-overlay-hover);
 }
 
-/* The keys move the selection from the search field; a row that has the focus itself, after a
-   click, shows the app's focus ring inside its edges, as the sidebar's rows do. */
+/* A row that has the focus itself, after a click, shows the app's focus ring inside its edges. */
 .ss-row:focus-visible {
   outline: 2px solid var(--v2-border-border-focus);
   outline-offset: -2px;
@@ -440,11 +497,9 @@
 }
 
 .ss-row-head {
-  min-height: var(--ss-line);
+  height: 32px;
 }
 
-/* The project avatar in the leading slot of a list without a project header, as in the
-   sidebar's flat lists. */
 .ss-row-project {
   display: inline-flex;
   flex: 0 0 var(--ss-avatar);
@@ -452,45 +507,64 @@
   justify-content: center;
 }
 
-.ss-row-title,
-.ss-row-pull {
+.ss-row-text {
+  display: flex;
   flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ss-row-title,
+.ss-row-description,
+.ss-row-pull {
   min-width: 0;
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 440;
+  letter-spacing: -0.04px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ss-row-title {
+  color: var(--v2-text-text-base);
+}
+
+.ss-row-text:has(.ss-row-description) > .ss-row-title {
+  flex-shrink: 0;
+  max-width: 60%;
+}
+
+.ss-row-description {
+  flex: 1;
+  color: var(--v2-text-text-faint);
 }
 
 .ss-row-pull {
   display: flex;
+  flex: 1;
 }
 
-/* The sidebar's trailing label: 11px, regular and faint. */
-.ss-row-age,
+/* The session search's trailing age: 11px, muted, tabular. */
+.ss-row-meta,
 .ss-row-extra {
+  display: inline-flex;
   flex-shrink: 0;
-  color: var(--v2-text-text-faint);
+  align-items: center;
+  gap: 4px;
+  color: var(--v2-text-text-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  font-weight: 400;
-  text-align: right;
+  font-weight: 440;
+  letter-spacing: 0.05px;
 }
 
-/* The machine of another server's session, as the sidebar labels such a row
-   (packages/app/src/shell/titlebar/project-session-row.tsx:166 at v2.4.2): faint, 11px, at most
-   40% of the row and cut with an ellipsis. */
-.ss-row-machine {
-  flex-shrink: 0;
-  max-width: 40%;
-  overflow: hidden;
+.ss-row-extra {
   color: var(--v2-text-text-faint);
-  font-size: 11px;
-  font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-/* The sidebar's 16px status slot at the row's end: the activity spinner or the unread dot. */
+/* The sidebar's 16px status slot at the row's end: the unread or waiting dot. */
 .ss-row-status {
   display: inline-flex;
   flex: 0 0 16px;
@@ -504,6 +578,7 @@
 }
 
 .ss-row-dot {
+  flex-shrink: 0;
   width: 6px;
   height: 6px;
   border-radius: 9999px;
@@ -515,18 +590,16 @@
   color: var(--v2-icon-icon-muted);
 }
 
-/* The detail lines: the sidebar's secondary text, starting under the title. */
+/* The detail lines: the sidebar's 11px secondary text, starting under the title. */
 .ss-row-lines {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin-top: -6px;
+  padding: 0 0 8px calc(var(--ss-avatar) + var(--ss-gap));
   color: var(--v2-text-text-faint);
   font-size: 11px;
   font-weight: 400;
-}
-
-.ss-row-avatared .ss-row-lines {
-  padding-left: calc(var(--ss-avatar) + var(--ss-gap));
 }
 
 .ss-row-lines .ss-ref-title {
@@ -543,13 +616,43 @@
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  margin-block: -6px;
   visibility: hidden;
 }
 
 .ss-row:hover .ss-row-actions,
-.ss-row:focus-within .ss-row-actions {
+.ss-row:focus-within .ss-row-actions,
+.ss-row-selected .ss-row-actions {
   visibility: visible;
+}
+
+/* A running or waiting session under its project in the Projects view: a line of the detail
+   text that opens the session. */
+.ss-project-session {
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.ss-project-session-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-project-session:hover .ss-project-session-title {
+  color: var(--v2-text-text-base);
+  text-decoration: underline;
+}
+
+.ss-project-session .ss-row-status {
+  flex-basis: 12px;
 }
 
 .ss-state {
@@ -561,13 +664,14 @@
   height: 100%;
 }
 
-/* The TUI's footer: the row's keys at the bottom left, the scope at the bottom right. */
+/* The TUI's footer: the row's keys at the bottom left, the picker's at the bottom right. */
 .ss-hints {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 0 4px;
+  padding: 0 0 12px;
   color: var(--v2-text-text-faint);
   font-size: 12px;
 }
@@ -589,6 +693,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 8px;
 }
 
 /* The project picker's trigger: the Settings server switcher's small outline button, whose look

@@ -320,6 +320,7 @@ export function createContext(plugin, options = {}) {
       Object.keys(plugin.icons ?? {}).map((name) => [name, `${PLUGIN_ID}:${name}`])
     ),
     appearance: { mode: () => options.mode ?? 'dark', font: () => 'monospace' },
+    locale: { locale: () => 'en-US', direction: () => 'ltr' },
     sessions: { current: session, list: () => (session() ? [session()] : []) },
     screen: { current: () => undefined },
     servers: {

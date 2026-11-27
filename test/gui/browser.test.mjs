@@ -654,8 +654,11 @@ test('All lists every machine, and a remote row opens and archives on its own se
     ['all', 'sidecar', 'project:proj', 'project:other', WINDOWS_ID, 'project:winproj']
   );
   document.querySelector('.ss-picker-trigger').click();
-  assert.equal(row('ses_win').querySelector('.ss-row-machine').textContent, 'Windows');
-  assert.equal(row('ses_busy').querySelector('.ss-row-machine'), null);
+  assert.equal(
+    row('ses_win').querySelector('.ss-row-description').textContent,
+    'installer · Windows'
+  );
+  assert.equal(row('ses_busy').querySelector('.ss-row-description').textContent, 'widgets');
   await until(() => row('ses_win').querySelector('.ss-ref'), 'the remote ref line');
 
   row('ses_win').click();
@@ -669,6 +672,38 @@ test('All lists every machine, and a remote row opens and archives on its own se
     server.client.calls.filter((call) => call.name === 'session.update').map((call) => call.input);
   assert.deepEqual(updates(windows), [{ sessionID: 'ses_win', archived: true }]);
   assert.deepEqual(updates(local), []);
+});
+
+test("the Projects view lists each machine's projects, and enter lists one in Active", async () => {
+  const { windows } = await openOnBoth();
+
+  tab('projects').click();
+  await until(() => document.querySelector('[data-project$="project:winproj"]'), 'the projects');
+  // Under each machine's name, newest activity first, as the app's sidebar groups by server.
+  assert.deepEqual(
+    [...document.querySelectorAll('.ss-machine-title, [data-project]')].map(
+      (node) => node.dataset.machine ?? node.dataset.project.split('\n').at(-1)
+    ),
+    ['sidecar', 'project:proj', 'project:other', WINDOWS_ID, 'project:winproj']
+  );
+
+  // The search narrows the projects by name or path.
+  const input = search();
+  input.value = 'install';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  await until(() => document.querySelectorAll('[data-project]').length === 1, 'the match');
+  press({ key: 'Enter' });
+
+  await until(() => tab('active').getAttribute('aria-selected') === 'true', 'the Active view');
+  await until(() => listed().join() === 'ses_win', "the project's sessions");
+  assert.equal(search().value, '');
+  await until(
+    () =>
+      windows.client.calls.some(
+        (call) => call.name === 'session.list' && call.input.project === 'winproj'
+      ),
+    "the project's own list"
+  );
 });
 
 test('a machine without the server plugin lists its sessions bare, the others keep theirs', async () => {

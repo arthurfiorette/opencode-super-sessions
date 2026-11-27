@@ -22,6 +22,7 @@ import { PullItem, SessionRow } from '../browser/row.js';
 import { createBrowserView } from '../browser/view.js';
 import { type LinkScope, LinkScopeProvider } from '../links.js';
 import { Octicon } from '../octicons.js';
+import { createProjectLooks } from '../project-looks.js';
 
 // The side tab's session list: the browser's rows, views and search over the routed project's
 // browser model, without the preview. It never remounts while the tab stays listed, so
@@ -68,6 +69,12 @@ export function SideSessions(props: SideSessionsProps) {
   const list = createListState(browser, view);
   const row = createRowActions(ctx, browser, routedServer);
   let listElement: HTMLDivElement | undefined;
+  const looks = createProjectLooks(() => {
+    const project = props.session.project;
+    return project === undefined
+      ? undefined
+      : { server: props.session.server.id, id: project.id, name: project.name, icon: project.icon };
+  });
 
   /** The open session a row's links belong to: its own tab's, else the routed one. */
   const linkScope = (id: () => string | undefined): LinkScope => ({
@@ -228,7 +235,8 @@ export function SideSessions(props: SideSessionsProps) {
                   now={browser.now()}
                   archivedAge={view() === 'archived' && store.search === undefined}
                   actions={<RowButtons session={item} browser={browser} actions={row} />}
-                  machine={browser.machine(item.id)}
+                  project={looks.of(row.serverOf(item.id), item.projectID, item.location.directory)}
+                  description={browser.machine(item.id)}
                   ref={track(item.id)}
                   onSelect={() => open(item)}
                   onOpen={() => open(item)}

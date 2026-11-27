@@ -8,7 +8,16 @@ import {
   type SessionRef,
   usePlugin
 } from '@opencode/plugin/gui';
-import { createEffect, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  untrack
+} from 'solid-js';
 import { openSession, openWebLink, PICKER_KEY, type ProjectLook } from '../../host/gui.js';
 import { type PageView, VIEWS } from '../../page/state.js';
 import { refUrl } from '../../refs/look.js';
@@ -33,7 +42,8 @@ import type { Machines, Origin } from './machines.js';
 import { ProjectPicker } from './picker.js';
 import { type BrowserPrefs, opensOnAll } from './prefs.js';
 import { Preview } from './preview.js';
-import { createProjects } from './projects.js';
+import { createProjects, type ProjectEntry } from './projects.js';
+import { ProjectList, ProjectPreview, projectMatches } from './projects-view.js';
 import { PullItem, SessionRow } from './row.js';
 import { createBrowserView } from './view.js';
 
@@ -54,6 +64,12 @@ interface BrowserTarget {
 
 /** The dialog's chords without a letter that its hints show. */
 const KEYS = { open: 'enter' } as const;
+
+/** The dialog's views: the TUI's, then Projects. */
+type DialogView = PageView | 'projects';
+
+/** The dialog's views in tab order. */
+const DIALOG_VIEWS: readonly DialogView[] = [...VIEWS, 'projects'];
 
 /** The TUI's tab icons (`tabLabel` in src/page/view.ts); Active has none. */
 export const TAB_ICONS: Record<PageView, OcticonName | undefined> = {
@@ -196,17 +212,25 @@ function SessionBrowser(props: SessionBrowserProps) {
   );
   /** Whether the dialog lists every project now. */
   const allProjects = () => machines.pick().type === 'all';
-  const [view, setView] = createSignal<PageView>('active');
+  const [view, setView] = createSignal<DialogView>('active');
   const [query, setQuery] = createSignal('');
+  const projectsView = () => view() === 'projects';
+  /** The session view the list shows; the Projects view keeps the Active lists loaded. */
+  const sessionView = (): PageView => {
+    const current = view();
+    return current === 'projects' ? 'active' : current;
+  };
   const browser = createBrowserView(machines, {
     target: () => ({ origin: target.origin, pick: machines.pick() }),
-    view,
-    query
+    view: sessionView,
+    query: () => (projectsView() ? '' : query())
   });
   const store = browser.data;
   const pullView = () => view() === 'pulls';
-  const list = createListState(browser, view);
-  const { selected, pull, selectedPull, setSelected, setPull, current } = list;
+  const list = createListState(browser, sessionView);
+  const { selected, pull, selectedPull, setSelected, setPull } = list;
+  /** The session the keys act on; none in the Projects view. */
+  const current = () => (projectsView() ? undefined : list.current());
   const row = createRowActions(ctx, browser, () => target.server);
   const { serverOf, live, running, waiting, archive, toggleDone } = row;
 
@@ -241,14 +265,21 @@ function SessionBrowser(props: SessionBrowserProps) {
       ? undefined
       : { server: target.server.id, id: project.id, name: project.name, icon: project.icon };
   });
+  /** The project avatar a row draws: one cached object per project (src/gui/project-looks.ts). */
+  const projectOf = (session: SessionInfo): ProjectLook =>
+    looks.of(serverOf(session.id), session.projectID, session.location.directory);
   /**
-   * The project a row draws before its title in the all-projects list, as the sidebar's flat
-   * lists do: one cached object per project (src/gui/project-looks.ts).
+   * A row's description, as the app's session search writes it: the project in a list of every
+   * project, then the machine of a session on another server (`PALETTE_ROW` in src/host/gui.ts).
    */
-  const projectOf = (session: SessionInfo): ProjectLook | undefined =>
-    allProjects()
-      ? looks.of(serverOf(session.id), session.projectID, session.location.directory)
-      : undefined;
+  const describe = (session: SessionInfo): string | undefined => {
+    const machine = browser.machine(session.id);
+    const project = allProjects() ? projectOf(session).name : undefined;
+    if (project !== undefined && machine !== undefined) {
+      return ctx.t('browser.location', { project, machine });
+    }
+    return project ?? machine;
+  };
   // The TUI's `preview` and `previewWidth` options, which the GUI gets unparsed.
   const showPreview = ctx.options.preview !== false;
   const previewShare = previewShareOf(ctx.options.previewWidth);
@@ -271,10 +302,35 @@ function SessionBrowser(props: SessionBrowserProps) {
   });
   const [picking, setPicking] = createSignal(false);
 
+  // The Projects view: every machine's projects the search matches, and the selected one, the
+  // first until the user picks another.
+  const headed = () => machines.servers().length > 1;
+  const shownProjects = createMemo(() =>
+    projects
+      .machines()
+      .map((machine) => ({
+        server: machine.server,
+        projects: machine.projects.filter((project) => projectMatches(project, query()))
+      }))
+      .filter((machine) => machine.projects.length > 0 || !machine.server.connected)
+  );
+  const projectRows = createMemo(() => shownProjects().flatMap((machine) => machine.projects));
+  const [projectPick, setProjectPick] = createSignal<string>();
+  const selectedProject = () => {
+    const rows = projectRows();
+    return rows.find((project) => project.key === projectPick()) ?? rows[0];
+  };
+  /** Moves the project selection by `delta` rows, clamped to the list. */
+  const moveProject = (delta: number) => {
+    const rows = projectRows();
+    const index = rows.findIndex((project) => project.key === selectedProject()?.key);
+    setProjectPick(rows[Math.min(rows.length - 1, Math.max(0, index + delta))]?.key);
+  };
+
   // The selected row scrolls into view as the keys move it.
   const elements = new Map<string, HTMLElement>();
   createEffect(() => {
-    const key = pullView() ? pull() : selected();
+    const key = projectsView() ? selectedProject()?.key : pullView() ? pull() : selected();
     if (key !== undefined) elements.get(key)?.scrollIntoView?.({ block: 'nearest' });
   });
   /**
@@ -305,16 +361,29 @@ function SessionBrowser(props: SessionBrowserProps) {
   });
 
   const toast = (title: string) => ctx.toast.show({ title, variant: 'error' });
-  const switchView = (to: PageView) => {
+  const switchView = (to: DialogView) => {
     setView(to);
     setSelected(undefined);
     setPull(undefined);
+    setProjectPick(undefined);
   };
   /** Opens the session in a tab, focused unless `background`, and closes the dialog. */
   const open = (session: SessionInfo | undefined, background = false) => {
     if (session === undefined) return;
     openSession(ctx.tabs, { server: serverOf(session.id).id, id: session.id }, !background);
     if (!background) props.close();
+  };
+  /** Lists a project's sessions in the Active view; the project search does not carry over. */
+  const scopeTo = (project: ProjectEntry | undefined) => {
+    if (project === undefined) return;
+    pick(project);
+    setQuery('');
+    switchView('active');
+  };
+  /** Opens a session the Projects view lists, on its project's own machine. */
+  const openListed = (project: ProjectEntry, session: SessionInfo) => {
+    openSession(ctx.tabs, { server: project.server.id, id: session.id }, true);
+    props.close();
   };
   /**
    * Opens the selected pull request in the Pull requests view; otherwise the selected session's
@@ -377,19 +446,24 @@ function SessionBrowser(props: SessionBrowserProps) {
     const missing =
       selectedSession === undefined ? browser.allMissing() : browser.missing(selectedSession.id);
     let handled = true;
-    if (event.key === 'ArrowDown' && plain) list.move(1);
-    else if (event.key === 'ArrowUp' && plain) list.move(-1);
-    else if (
+    if (event.key === 'ArrowDown' && plain) {
+      if (projectsView()) moveProject(1);
+      else list.move(1);
+    } else if (event.key === 'ArrowUp' && plain) {
+      if (projectsView()) moveProject(-1);
+      else list.move(-1);
+    } else if (
       event.key === 'Tab' &&
       !mod &&
       !event.altKey &&
       (event.target === search || event.target === root)
     ) {
-      const index = VIEWS.indexOf(view()) + (event.shiftKey ? -1 : 1);
-      switchView(VIEWS[(index + VIEWS.length) % VIEWS.length] ?? 'active');
+      const index = DIALOG_VIEWS.indexOf(view()) + (event.shiftKey ? -1 : 1);
+      switchView(DIALOG_VIEWS[(index + DIALOG_VIEWS.length) % DIALOG_VIEWS.length] ?? 'active');
     } else if (event.key === 'Enter' && !event.altKey && !event.shiftKey) {
       if (event.target instanceof Element && event.target.closest('button, a')) return;
-      open(current(), mod);
+      if (projectsView()) scopeTo(selectedProject());
+      else open(current(), mod);
     } else if (event.key === 'F5' && plain) void reload();
     else if (onlyAlt && ALT_CODES[event.code] !== undefined) {
       // Taken even when it does nothing, so the field does not type the key's `alt` symbol.
@@ -416,58 +490,69 @@ function SessionBrowser(props: SessionBrowserProps) {
       tabIndex={-1}
       on:keydown={onKeyDown}
     >
-      <div class="ss-browser-main">
-        <div class="ss-browser-left">
-          <div class="ss-browser-bar">
-            <span class="ss-title" aria-hidden="true" style={{ '--ss-title-end': titleEnd() }}>
-              {ctx.t('browser.title')}
-            </span>
-            <div class="ss-tabs" role="tablist" aria-label={ctx.t('browser.views')}>
-              <For each={VIEWS}>
-                {(item) => (
-                  <button
-                    type="button"
-                    role="tab"
-                    class="ss-tab"
-                    aria-selected={view() === item}
-                    data-view={item}
-                    onClick={() => switchView(item)}
-                  >
-                    <Show when={TAB_ICONS[item]}>
+      <div class="ss-browser-bar">
+        <span class="ss-title" aria-hidden="true" style={{ '--ss-title-end': titleEnd() }}>
+          {ctx.t('browser.title')}
+        </span>
+        <div class="ss-tabs" role="tablist" aria-label={ctx.t('browser.views')}>
+          <For each={DIALOG_VIEWS}>
+            {(item) => (
+              <button
+                type="button"
+                role="tab"
+                class="ss-tab"
+                aria-selected={view() === item}
+                data-view={item}
+                onClick={() => switchView(item)}
+              >
+                <Show
+                  when={item === 'projects'}
+                  fallback={
+                    <Show when={item === 'projects' ? undefined : TAB_ICONS[item]}>
                       {(icon) => <Octicon name={icon()} size={14} class="ss-tab-icon" />}
                     </Show>
-                    <span class="ss-tab-label">{ctx.t(`browser.view.${item}`)}</span>
-                    <span class="ss-tab-count">{browser.counts()[item]}</span>
-                  </button>
-                )}
-              </For>
-            </div>
-            <ProjectPicker
-              machines={projects.machines()}
-              picked={pickedKey()}
-              onPick={pick}
-              open={picking()}
-              setOpen={setPicking}
-            />
-            <span class="ss-esc-bar">
-              <CloseHint close={props.close} />
-            </span>
-          </div>
-          <ctx.ui.TextInput
-            type="search"
-            size="large"
-            autofocus
+                  }
+                >
+                  <ctx.ui.Icon name="folder" size="small" class="ss-tab-icon" />
+                </Show>
+                <span class="ss-tab-label">{ctx.t(`browser.view.${item}`)}</span>
+                <span class="ss-tab-count">
+                  {item === 'projects' ? projects.entries().length : browser.counts()[item]}
+                </span>
+              </button>
+            )}
+          </For>
+        </div>
+        <ProjectPicker
+          machines={projects.machines()}
+          picked={pickedKey()}
+          onPick={pick}
+          open={picking()}
+          setOpen={setPicking}
+        />
+        <CloseHint close={props.close} />
+      </div>
+      <div class="ss-browser-main">
+        <div class="ss-island">
+          <SearchField
             label={ctx.t('browser.search')}
-            placeholder={ctx.t(pullView() ? 'browser.search.pulls' : 'browser.search.placeholder')}
+            placeholder={ctx.t(
+              projectsView()
+                ? 'browser.search.projects'
+                : pullView()
+                  ? 'browser.search.pulls'
+                  : 'browser.search.placeholder'
+            )}
             value={query()}
             onInput={(value) => {
               setQuery(value);
               setSelected(undefined);
               setPull(undefined);
+              setProjectPick(undefined);
             }}
           />
           <PluginNote browser={browser} machines={machines} />
-          <Show when={store.search?.status === 'error' && !pullView()}>
+          <Show when={store.search?.status === 'error' && !pullView() && !projectsView()}>
             <p class="ss-note">{ctx.t('browser.search.failed')}</p>
           </Show>
           <div
@@ -477,71 +562,105 @@ function SessionBrowser(props: SessionBrowserProps) {
             aria-label={ctx.t(`browser.view.${view()}`)}
             aria-busy={browser.loading()}
           >
-            <ListBody
-              browser={browser}
-              list={list}
-              view={view()}
-              pull={(item) => (
-                <LinkScopeProvider scope={linkScope(() => item.sessions[0]?.id)}>
-                  <PullItem
-                    pull={item}
-                    selected={pull() === item.key}
-                    ref={track(item.key)}
-                    onSelect={() => setPull(item.key)}
-                    onOpen={() => open(item.sessions[0])}
-                  />
-                </LinkScopeProvider>
-              )}
-              session={(item) => (
-                <LinkScopeProvider scope={linkScope(() => item.id)}>
-                  <SessionRow
-                    session={live(item)}
-                    view={store.refs[item.id]}
-                    selected={selected() === item.id}
-                    running={running(item)}
-                    waiting={waiting(item.id)}
-                    now={browser.now()}
-                    archivedAge={view() === 'archived' && store.search === undefined}
-                    actions={
-                      <RowButtons session={item} browser={browser} actions={row} keys={alt} />
-                    }
-                    project={projectOf(live(item))}
-                    machine={browser.machine(item.id)}
-                    ref={track(item.id)}
-                    onSelect={() => setSelected(item.id)}
-                    onOpen={() => open(item)}
-                  />
-                </LinkScopeProvider>
-              )}
-            />
+            <Show
+              when={projectsView()}
+              fallback={
+                <ListBody
+                  browser={browser}
+                  list={list}
+                  view={sessionView()}
+                  pull={(item) => (
+                    <LinkScopeProvider scope={linkScope(() => item.sessions[0]?.id)}>
+                      <PullItem
+                        pull={item}
+                        selected={pull() === item.key}
+                        ref={track(item.key)}
+                        onSelect={() => setPull(item.key)}
+                        onOpen={() => open(item.sessions[0])}
+                      />
+                    </LinkScopeProvider>
+                  )}
+                  session={(item) => (
+                    <LinkScopeProvider scope={linkScope(() => item.id)}>
+                      <SessionRow
+                        session={live(item)}
+                        view={store.refs[item.id]}
+                        selected={selected() === item.id}
+                        running={running(item)}
+                        waiting={waiting(item.id)}
+                        now={browser.now()}
+                        archivedAge={view() === 'archived' && store.search === undefined}
+                        actions={
+                          <RowButtons session={item} browser={browser} actions={row} keys={alt} />
+                        }
+                        project={projectOf(item)}
+                        description={describe(item)}
+                        ref={track(item.id)}
+                        onSelect={() => setSelected(item.id)}
+                        onOpen={() => open(item)}
+                      />
+                    </LinkScopeProvider>
+                  )}
+                />
+              }
+            >
+              <Show
+                when={projectRows().length > 0 || shownProjects().length > 0}
+                fallback={<p class="ss-note ss-list-note">{ctx.t('browser.empty.projects')}</p>}
+              >
+                <ProjectList
+                  machines={shownProjects()}
+                  headed={headed()}
+                  selected={selectedProject()?.key}
+                  now={browser.now()}
+                  onSelect={(project) => setProjectPick(project.key)}
+                  onOpen={scopeTo}
+                  onSession={openListed}
+                  ref={track}
+                />
+              </Show>
+            </Show>
           </div>
         </div>
-        {/* A full-height column beside the list, with `esc` on the line of the list's header. */}
+        {/* A full-height column beside the island, on the dialog's shell surface. */}
         <Show when={showPreview}>
           <aside class="ss-preview">
-            <div class="ss-esc-preview">
-              <CloseHint close={props.close} />
-            </div>
             <Show
-              when={current()}
-              fallback={<p class="ss-note">{ctx.t('browser.preview.empty')}</p>}
+              when={projectsView()}
+              fallback={
+                <Show
+                  when={current()}
+                  fallback={<p class="ss-note">{ctx.t('browser.preview.empty')}</p>}
+                >
+                  {(session) => (
+                    <LinkScopeProvider scope={linkScope(() => session().id)}>
+                      {/* Keyed by server: the preview reads its server's events and client once. */}
+                      <Show when={serverOf(session().id)} keyed>
+                        {(server) => (
+                          <Preview
+                            server={server}
+                            session={live(session())}
+                            running={running(session())}
+                            now={browser.now()}
+                            refs={props.refs}
+                          />
+                        )}
+                      </Show>
+                    </LinkScopeProvider>
+                  )}
+                </Show>
+              }
             >
-              {(session) => (
-                <LinkScopeProvider scope={linkScope(() => session().id)}>
-                  {/* Keyed by server: the preview reads its server's events and client once. */}
-                  <Show when={serverOf(session().id)} keyed>
-                    {(server) => (
-                      <Preview
-                        server={server}
-                        session={live(session())}
-                        running={running(session())}
-                        now={browser.now()}
-                        refs={props.refs}
-                      />
-                    )}
-                  </Show>
-                </LinkScopeProvider>
-              )}
+              <Show when={selectedProject()} keyed>
+                {(project) => (
+                  <ProjectPreview
+                    project={project}
+                    headed={headed()}
+                    now={browser.now()}
+                    onSession={(session) => openListed(project, session)}
+                  />
+                )}
+              </Show>
             </Show>
           </aside>
         </Show>
@@ -549,21 +668,26 @@ function SessionBrowser(props: SessionBrowserProps) {
       {/* The TUI's footer: actions on the selected row on the left, the picker's key on the right. */}
       <div class="ss-hints">
         <div class="ss-hints-actions">
-          <Hint keys={KEYS.open} label={ctx.t('browser.hint.open')} />
+          <Hint
+            keys={KEYS.open}
+            label={ctx.t(projectsView() ? 'browser.hint.scope' : 'browser.hint.open')}
+          />
           <Show
-            when={pullView()}
+            when={projectsView() ? undefined : pullView()}
             fallback={
-              <>
-                <Hint
-                  keys={alt('archive')}
-                  label={ctx.t(
-                    view() === 'archived' ? 'browser.hint.restore' : 'browser.hint.archive'
-                  )}
-                />
-                <Show when={!browser.allMissing()}>
-                  <Hint keys={alt('done')} label={ctx.t('browser.hint.done')} />
-                </Show>
-              </>
+              projectsView() ? undefined : (
+                <>
+                  <Hint
+                    keys={alt('archive')}
+                    label={ctx.t(
+                      view() === 'archived' ? 'browser.hint.restore' : 'browser.hint.archive'
+                    )}
+                  />
+                  <Show when={!browser.allMissing()}>
+                    <Hint keys={alt('done')} label={ctx.t('browser.hint.done')} />
+                  </Show>
+                </>
+              )
             }
           >
             <Show when={!browser.allMissing()}>
@@ -585,6 +709,49 @@ function Hint(props: { keys: string; label: string }) {
       <ctx.ui.Keybind keys={ctx.keybinds.keys(props.keys)} />
       <span>{props.label}</span>
     </span>
+  );
+}
+
+/** Props of {@link SearchField}. */
+interface SearchFieldProps {
+  readonly label: string;
+  readonly placeholder: string;
+  readonly value: string;
+  readonly onInput: (value: string) => void;
+}
+
+/**
+ * The search field at the top of the list, as the Settings screen's "Search models" field: the
+ * app's text input markup with its magnifying glass (TEXT_INPUT in src/host/gui.ts), filled and
+ * without a ring. `ui.TextInput` has no leading icon.
+ */
+function SearchField(props: SearchFieldProps) {
+  const ctx = usePlugin();
+  return (
+    <div class="ss-search">
+      <div
+        data-component="text-input-v2"
+        data-appearance="base"
+        data-surface="base"
+        data-leading-icon=""
+      >
+        <div data-slot="text-input-v2-value">
+          <span data-slot="text-input-v2-leading-icon">
+            <ctx.ui.Icon name="magnifying-glass" />
+          </span>
+          <input
+            data-slot="text-input-v2-input"
+            type="search"
+            aria-label={props.label}
+            placeholder={props.placeholder}
+            value={props.value}
+            spellcheck={false}
+            autocomplete="off"
+            onInput={(event) => props.onInput(event.currentTarget.value)}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
